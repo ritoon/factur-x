@@ -69,9 +69,9 @@ type Options struct {
 	Profile invoice.Profile
 	// Rules selects the rule sets; zero means Default.
 	Rules RuleSet
-	// Auto adds the French rules when the seller is in France (BT-40 = FR)
-	// and the German rules when the seller is in Germany and the profile is
-	// EN 16931 or XRECHNUNG.
+	// Auto adds the French rules when the seller is in France (BT-40 = FR).
+	// The German rules need no option: they apply to XRECHNUNG invoices,
+	// which declare themselves in BT-24.
 	Auto bool
 }
 
@@ -126,12 +126,8 @@ func RulesFor(doc *rules.Doc, opts *Options) RuleSet {
 		}
 	}
 	if opts.Auto {
-		seller := doc.Agreement.Value("SellerTradeParty/PostalTradeAddress/CountryID")
-		switch {
-		case seller == "FR":
+		if doc.Agreement.Value("SellerTradeParty/PostalTradeAddress/CountryID") == "FR" {
 			set |= France
-		case seller == "DE" && (doc.Profile == invoice.ProfileEN16931 || doc.Profile == invoice.ProfileXRechnung):
-			set |= Germany
 		}
 	}
 	return set

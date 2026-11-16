@@ -58,6 +58,17 @@ func TestParseErrors(t *testing.T) {
 	}
 }
 
+func TestMaxDepth(t *testing.T) {
+	deep := strings.Repeat("<a>", MaxDepth+1) + strings.Repeat("</a>", MaxDepth+1)
+	if _, err := Parse([]byte(deep)); err == nil {
+		t.Error("document nested deeper than MaxDepth accepted")
+	}
+	ok := strings.Repeat("<a>", MaxDepth) + strings.Repeat("</a>", MaxDepth)
+	if _, err := Parse([]byte(ok)); err != nil {
+		t.Errorf("document nested MaxDepth levels refused: %v", err)
+	}
+}
+
 func TestLatin1(t *testing.T) {
 	doc := append([]byte(`<?xml version="1.0" encoding="ISO-8859-1"?><a>caf`), 0xe9, '<', '/', 'a', '>')
 	root, err := Parse(doc)
