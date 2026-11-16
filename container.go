@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"errors"
 	"fmt"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -92,7 +93,8 @@ type fileSpec struct {
 	name     string // /UF, /F... of the file specification
 	treeName string // key in the EmbeddedFiles name tree
 	inTree   bool
-	inAF     bool
+	inAF     bool // listed in the /AF array of the catalog
+	inPageAF bool // listed in the /AF array of a page
 }
 
 func (fs *fileSpec) filename() string {
@@ -142,7 +144,7 @@ func specName(r *pdf.Reader, d pdf.Dict) string {
 }
 
 // add records a file specification, merging duplicates.
-func (c *container) add(o pdf.Object, treeName string, inTree, inAF bool) {
+func (c *container) add(o pdf.Object, treeName string, inTree, inAF, inPageAF bool) {
 	ref, _ := o.(pdf.Ref)
 	d, ok := c.r.Resolve(o).(pdf.Dict)
 	if !ok {
@@ -152,6 +154,7 @@ func (c *container) add(o pdf.Object, treeName string, inTree, inAF bool) {
 		if (ref != pdf.Ref{} && fs.ref == ref) || (ref == pdf.Ref{} && sameDict(fs.dict, d)) {
 			fs.inTree = fs.inTree || inTree
 			fs.inAF = fs.inAF || inAF
+			fs.inPageAF = fs.inPageAF || inPageAF
 			if fs.treeName == "" {
 				fs.treeName = treeName
 			}
@@ -161,7 +164,7 @@ func (c *container) add(o pdf.Object, treeName string, inTree, inAF bool) {
 	if !d.Has("EF") {
 		return // not an embedded file
 	}
-	c.specs = append(c.specs, &fileSpec{ref: ref, dict: d, name: specName(c.r, d), treeName: treeName, inTree: inTree, inAF: inAF})
+	c.specs = append(c.specs, &fileSpec{ref: ref, dict: d, name: specName(c.r, d), treeName: treeName, inTree: inTree, inAF: inAF, inPageAF: inPageAF})
 }
 
 // sameDict reports whether two direct dictionaries are the same object.
@@ -174,12 +177,12 @@ func sameDict(a, b pdf.Dict) bool {
 func (c *container) collect() {
 	if names, ok := c.r.Dict(c.catalog.Get("Names")); ok {
 		c.walkNameTree(names.Get("EmbeddedFiles"), 0, func(key pdf.String, val pdf.Object) {
-			c.add(val, pdf.Text(key), true, false)
+			c.add(val, pdf.Text(key), true, false, false)
 		})
 	}
 	if af, ok := c.r.Resolve(c.catalog.Get("AF")).(pdf.Array); ok {
 		for _, o := range af {
-			c.add(o, "", false, true)
+			c.add(o, "", false, true, false)
 		}
 	}
 }
@@ -205,7 +208,7 @@ func (c *container) collectPages() {
 		}
 		if af, ok := c.r.Resolve(d.Get("AF")).(pdf.Array); ok {
 			for _, x := range af {
-				c.add(x, "", false, false)
+				c.add(x, "", false, false, true)
 			}
 		}
 		if kids, ok := c.r.Resolve(d.Get("Kids")).(pdf.Array); ok {
@@ -641,6 +644,160 @@ type EmbedOptions struct {
 	Version string
 	// DocumentType is fx:DocumentType; "INVOICE" when empty.
 	DocumentType string
+	// Attachments are supplementary files embedded besides the invoice: a
+	// purchase order, a timesheet, a delivery note...
+	Attachments []File
+}
+
+// File is a supplementary file that Embed attaches to the PDF besides the
+// invoice.
+type File struct {
+	// Name of the file (/F and /UF of the file specification); required.
+	// The invoice names (factur-x.xml, xrechnung.xml, zugferd-invoice.xml)
+	// and EmbedOptions.Filename are refused, whatever the case.
+	Name string
+	// MimeType is the MIME type of the file (/Subtype of the embedded file
+	// stream), such as "application/pdf". When empty, it is guessed from the
+	// extension of Name (pdf, xml, csv, txt, json, png, jpg, gif, tif, svg,
+	// zip, odt, ods, docx, xlsx, doc, xls), "application/octet-stream"
+	// otherwise.
+	MimeType string
+	// Description of the file (/Desc); none when empty.
+	Description string
+	// Data is the content of the file.
+	Data []byte
+	// Relationship is the /AFRelationship of the file: "Supplement" when
+	// empty, or "Data", "Source", "Alternative", "Unspecified".
+	Relationship string
+	// ModDate is the modification date of the file (/Params /ModDate);
+	// EmbedOptions.ModDate when zero.
+	ModDate time.Time
+}
+
+// mimeTypes maps file extensions to the MIME type of supplementary files.
+// mime.TypeByExtension is not used: it reads the tables of the system, which
+// would make the output depend on the machine.
+var mimeTypes = map[string]string{
+	".pdf":  "application/pdf",
+	".xml":  "text/xml",
+	".csv":  "text/csv",
+	".txt":  "text/plain",
+	".json": "application/json",
+	".png":  "image/png",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".gif":  "image/gif",
+	".tif":  "image/tiff",
+	".tiff": "image/tiff",
+	".svg":  "image/svg+xml",
+	".zip":  "application/zip",
+	".odt":  "application/vnd.oasis.opendocument.text",
+	".ods":  "application/vnd.oasis.opendocument.spreadsheet",
+	".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+	".doc":  "application/msword",
+	".xls":  "application/vnd.ms-excel",
+}
+
+// mimeType guesses the MIME type of a file from the extension of its name.
+func mimeType(name string) string {
+	if t, ok := mimeTypes[strings.ToLower(path.Ext(name))]; ok {
+		return t
+	}
+	return "application/octet-stream"
+}
+
+// validMIME reports whether s is a MIME type without parameters:
+// type/subtype, made of the characters RFC 6838 allows in names.
+func validMIME(s string) bool {
+	typ, sub, ok := strings.Cut(s, "/")
+	return ok && mimeName(typ) && mimeName(sub)
+}
+
+func mimeName(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !('a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || strings.IndexByte("!#$&-^_.+", c) >= 0) {
+			return false
+		}
+	}
+	return true
+}
+
+// supplements checks the supplementary files of Embed and fills in their
+// defaults. invoiceName is the name of the invoice attachment.
+func supplements(files []File, invoiceName string, date time.Time) ([]File, error) {
+	out := make([]File, len(files))
+	for i, f := range files {
+		switch {
+		case f.Name == "":
+			return nil, fmt.Errorf("facturx: attachment %d has no name", i+1)
+		case nameRank(f.Name) >= 0 || strings.EqualFold(f.Name, invoiceName):
+			return nil, fmt.Errorf("facturx: attachment name %q is reserved for the invoice", f.Name)
+		}
+		for _, g := range out[:i] {
+			if strings.EqualFold(g.Name, f.Name) {
+				return nil, fmt.Errorf("facturx: two attachments are named %q", f.Name)
+			}
+		}
+		if f.Relationship == "" {
+			f.Relationship = "Supplement"
+		}
+		switch f.Relationship {
+		case "Supplement", "Data", "Source", "Alternative", "Unspecified":
+		default:
+			return nil, fmt.Errorf("facturx: attachment %q: AFRelationship %q not allowed (Supplement, Data, Source, Alternative or Unspecified)", f.Name, f.Relationship)
+		}
+		if f.MimeType == "" {
+			f.MimeType = mimeType(f.Name)
+		} else if !validMIME(f.MimeType) {
+			return nil, fmt.Errorf("facturx: attachment %q: %q is not a MIME type (type/subtype)", f.Name, f.MimeType)
+		}
+		if f.ModDate.IsZero() {
+			f.ModDate = date
+		}
+		f.ModDate = f.ModDate.Truncate(time.Second)
+		out[i] = f
+	}
+	return out, nil
+}
+
+// putFile writes an embedded file stream and its file specification, and
+// returns the reference of the file specification and the MD5 checksum of
+// data. The description is left out when empty.
+func putFile(u *pdf.Update, name, desc, rel, mime string, date time.Time, data []byte) (pdf.Ref, [md5.Size]byte) {
+	sum := md5.Sum(data)
+	efRef := u.Alloc()
+	u.PutStream(efRef, pdf.Dict{
+		{Key: "Type", Val: pdf.Name("EmbeddedFile")},
+		{Key: "Subtype", Val: pdf.Name(mime)},
+		{Key: "Filter", Val: pdf.Name("FlateDecode")},
+		{Key: "Params", Val: pdf.Dict{
+			{Key: "ModDate", Val: pdf.String(pdf.FormatDate(date))},
+			{Key: "Size", Val: pdf.Int(len(data))},
+			{Key: "CheckSum", Val: pdf.String(sum[:])},
+		}},
+	}, pdf.Deflate(data))
+
+	fsRef := u.Alloc()
+	fname := pdf.EncodeText(name)
+	spec := pdf.Dict{
+		{Key: "Type", Val: pdf.Name("Filespec")},
+		{Key: "F", Val: fname},
+		{Key: "UF", Val: fname},
+	}
+	if desc != "" {
+		spec = append(spec, pdf.KV{Key: "Desc", Val: pdf.EncodeText(desc)})
+	}
+	spec = append(spec,
+		pdf.KV{Key: "AFRelationship", Val: pdf.Name(rel)},
+		pdf.KV{Key: "EF", Val: pdf.Dict{{Key: "F", Val: efRef}, {Key: "UF", Val: efRef}}},
+	)
+	u.Put(fsRef, spec)
+	return fsRef, sum
 }
 
 // Embed attaches an invoice XML to a PDF as Factur-X requires and returns
@@ -658,6 +815,15 @@ type EmbedOptions struct {
 // attachment of the same name and any other invoice attachment
 // (factur-x.xml, xrechnung.xml, zugferd-invoice.xml) are replaced: the
 // result carries a single invoice. Other attachments are kept.
+//
+// The supplementary files of EmbedOptions.Attachments are written like the
+// invoice: embedded file stream with its MIME type and /Params /ModDate,
+// file specification with /F, /UF and /AFRelationship (Supplement by
+// default), listed in the EmbeddedFiles name tree and after the invoice in
+// the catalog /AF array. An attachment of the host with the same name is
+// replaced. Embed fails when a supplementary file has no name, an invoice
+// name, the name of another one, an AFRelationship PDF/A-3 does not define
+// or a malformed MIME type.
 //
 // Embed does not convert the PDF to PDF/A: fonts, colour spaces and output
 // intents are left as they are. CheckContainer reports what is missing. Nor
@@ -705,6 +871,10 @@ func Embed(pdfData, xml []byte, opts *EmbedOptions) ([]byte, error) {
 	if o.DocumentType == "" {
 		o.DocumentType = "INVOICE"
 	}
+	files, err := supplements(o.Attachments, o.Filename, o.ModDate)
+	if err != nil {
+		return nil, err
+	}
 
 	c, err := openContainer(pdfData)
 	if err != nil {
@@ -714,37 +884,30 @@ func Embed(pdfData, xml []byte, opts *EmbedOptions) ([]byte, error) {
 	u := pdf.NewUpdate(r)
 	date := pdf.String(pdf.FormatDate(o.ModDate))
 
-	// Embedded file stream.
-	sum := md5.Sum(xml)
-	efRef := u.Alloc()
-	u.PutStream(efRef, pdf.Dict{
-		{Key: "Type", Val: pdf.Name("EmbeddedFile")},
-		{Key: "Subtype", Val: pdf.Name("text/xml")},
-		{Key: "Filter", Val: pdf.Name("FlateDecode")},
-		{Key: "Params", Val: pdf.Dict{
-			{Key: "ModDate", Val: date},
-			{Key: "Size", Val: pdf.Int(len(xml))},
-			{Key: "CheckSum", Val: pdf.String(sum[:])},
-		}},
-	}, pdf.Deflate(xml))
-
-	// File specification.
-	fsRef := u.Alloc()
+	// Embedded files and their file specifications: the invoice, then the
+	// supplementary files.
+	fsRef, sum := putFile(u, o.Filename, o.Description, o.Relationship, "text/xml", o.ModDate, xml)
 	fname := pdf.EncodeText(o.Filename)
-	u.Put(fsRef, pdf.Dict{
-		{Key: "Type", Val: pdf.Name("Filespec")},
-		{Key: "F", Val: fname},
-		{Key: "UF", Val: fname},
-		{Key: "Desc", Val: pdf.EncodeText(o.Description)},
-		{Key: "AFRelationship", Val: pdf.Name(o.Relationship)},
-		{Key: "EF", Val: pdf.Dict{{Key: "F", Val: efRef}, {Key: "UF", Val: efRef}}},
-	})
+	suppRefs := make([]pdf.Ref, len(files))
+	suppSums := make([][md5.Size]byte, len(files))
+	for i, f := range files {
+		suppRefs[i], suppSums[i] = putFile(u, f.Name, f.Description, f.Relationship, f.MimeType, f.ModDate, f.Data)
+	}
 
 	cat := c.catalog.Clone()
 	// A hybrid PDF carries a single invoice: the attachment of the same
-	// name and any other invoice attachment are replaced.
+	// name and any other invoice attachment are replaced, as are the
+	// attachments named like a supplementary file.
 	replacedName := func(name string) bool {
-		return strings.EqualFold(name, o.Filename) || nameRank(name) >= 0
+		if strings.EqualFold(name, o.Filename) || nameRank(name) >= 0 {
+			return true
+		}
+		for _, f := range files {
+			if strings.EqualFold(name, f.Name) {
+				return true
+			}
+		}
+		return false
 	}
 	replaced := func(fs *fileSpec) bool {
 		return replacedName(fs.name) || (fs.name == "" && replacedName(fs.treeName))
@@ -768,6 +931,9 @@ func Embed(pdfData, xml []byte, opts *EmbedOptions) ([]byte, error) {
 		leaves = append(leaves, leaf{key, val})
 	})
 	leaves = append(leaves, leaf{fname, fsRef})
+	for i, f := range files {
+		leaves = append(leaves, leaf{pdf.EncodeText(f.Name), suppRefs[i]})
+	}
 	sort.SliceStable(leaves, func(i, j int) bool { return bytes.Compare(leaves[i].key, leaves[j].key) < 0 })
 	arr := make(pdf.Array, 0, 2*len(leaves))
 	for _, l := range leaves {
@@ -801,6 +967,9 @@ func Embed(pdfData, xml []byte, opts *EmbedOptions) ([]byte, error) {
 		}
 	}
 	af = append(af, fsRef)
+	for _, ref := range suppRefs {
+		af = append(af, ref)
+	}
 	if ref, ok := afObj.(pdf.Ref); ok {
 		u.Put(ref, af)
 	} else {
@@ -883,6 +1052,9 @@ func Embed(pdfData, xml []byte, opts *EmbedOptions) ([]byte, error) {
 	h.Write(first)
 	h.Write(date)
 	h.Write(sum[:])
+	for _, s := range suppSums {
+		h.Write(s[:])
+	}
 	fmt.Fprintf(h, "%d", len(pdfData))
 	second := pdf.String(h.Sum(nil))
 	if len(first) == 0 {

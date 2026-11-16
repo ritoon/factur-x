@@ -75,6 +75,23 @@ L'exemple `Example_vatOnDebits` de [example_test.go](example_test.go) écrit et 
 
 Pour injecter un XML produit ailleurs : `facturx.Embed(pdf, xml, nil)`. Pour écrire le XML seul : `cii.Marshal(inv, &cii.MarshalOptions{Profile: invoice.ProfileBasic})` ; seuls les éléments que le profil autorise sont écrits, dans l'ordre de son schéma, et l'option `Strict` signale les données perdues.
 
+#### Pièces jointes complémentaires
+
+Factur-X admet d'autres pièces jointes que la facture : bon de commande, relevé de temps, bon de livraison… `EmbedOptions.Attachments` (et donc `CreateOptions.Embed`) les écrit comme le XML : flux avec type MIME et date de modification, `/F` et `/UF`, `/AFRelationship /Supplement` par défaut, entrée dans `/EmbeddedFiles` et dans le `/AF` du catalogue.
+
+```go
+pdf, err := facturx.Embed(host, xml, &facturx.EmbedOptions{
+	Attachments: []facturx.File{
+		{Name: "commande-4512.pdf", Data: commande, Description: "Bon de commande 4512"},
+		{Name: "releve-temps.csv", Data: releve}, // type MIME déduit de l'extension : text/csv
+	},
+})
+```
+
+- Sans `MimeType`, le type est déduit de l'extension (PDF, XML, CSV, texte, JSON, images, ZIP, OpenDocument, Office), `application/octet-stream` à défaut. Sans `ModDate`, la date est celle de la facture.
+- Les noms de la facture (`factur-x.xml`, `xrechnung.xml`, `zugferd-invoice.xml`, ou `EmbedOptions.Filename`) sont refusés, quelle que soit la casse. Une pièce jointe de l'hôte qui porte le même nom qu'une pièce jointe ajoutée est remplacée.
+- `Check` signale une pièce jointe sans `/AFRelationship` (PDF-36), sans type MIME (PDF-37) ou absente de tout tableau `/AF` (PDF-39).
+
 ### Lire une facture reçue
 
 ```go
@@ -170,12 +187,12 @@ go install github.com/ritoon/factur-x/cmd/facturx@latest
 facturx extract [-o out.xml] facture.pdf
 facturx info facture.pdf
 facturx validate [-fr] [-de] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-json] facture.pdf|facture.xml
-facturx embed -xml facture.xml [-profile p] [-o out.pdf] entree.pdf
+facturx embed -xml facture.xml [-profile p] [-attach fichier]... [-o out.pdf] entree.pdf
 facturx json facture.pdf|facture.xml
 facturx rules [-fr] [-de] [-choruspro]
 ```
 
-`validate` sort avec le code 1 quand la facture a des erreurs, ce qui permet de l'utiliser en intégration continue.
+`validate` sort avec le code 1 quand la facture a des erreurs, ce qui permet de l'utiliser en intégration continue. `embed -attach` ajoute une pièce jointe complémentaire (`/AFRelationship /Supplement`, type MIME d'après l'extension) ; l'option se répète.
 
 ```text
 $ facturx validate testdata/EN16931_Einfach.pdf
@@ -208,7 +225,7 @@ warning [PDF] PDF-06: the catalog has no PDF/A output intent (/S /GTS_PDFA1) (ca
 | France (BR-FR) | 59 règles, 170 assertions : SIREN/SIRET, adresses électroniques, mentions obligatoires, cadres de facturation, multi-vendeurs ; 3 contrôles des profils admis (FR-PROFILE) | Schematron FNFE-MPE v1.4.0.04 |
 | Allemagne (BR-DE) | 52 assertions (BR-DE, BR-DE-CVD, BR-DEX, BR-TMP) ; contrôle des profils acceptés par le BMF (DE-PROFILE-01) | Schematron KoSIT XRechnung 3.0.2 ; BMF |
 | Chorus Pro (B2G) | 8 contrôles (CPRO-01 à CPRO-08) : SIRET de la structure publique, code service, numéro d'engagement, type de document, numéro de facture | Spécifications externes Chorus Pro (annexe EDI V4.23) |
-| Conteneur PDF | 38 contrôles (PDF-01 à PDF-38) : PDF/A-3 ou PDF/A-4f déclaré, cohérent avec la version PDF, XMP `fx` cohérent avec le XML, pièce jointe, `/AF`, `/AFRelationship`, type MIME, chiffrement ; prérequis PDF/A vérifiables sans rendu : polices incorporées, JavaScript et actions interdites (`/OpenAction`, liens, signets, `/AA`), cohérence entre `/Info` et le XMP, pièces jointes annexes, filtre `LZWDecode` | Spécification Factur-X 1.08, ISO 19005-3 et 19005-4 |
+| Conteneur PDF | 39 contrôles (PDF-01 à PDF-39) : PDF/A-3 ou PDF/A-4f déclaré, cohérent avec la version PDF, XMP `fx` cohérent avec le XML, pièce jointe, `/AF`, `/AFRelationship`, type MIME, chiffrement ; prérequis PDF/A vérifiables sans rendu : polices incorporées, JavaScript et actions interdites (`/OpenAction`, liens, signets, `/AA`), cohérence entre `/Info` et le XMP, pièces jointes annexes (`/AFRelationship`, type MIME, présence dans un `/AF`), filtre `LZWDecode` | Spécification Factur-X 1.08, ISO 19005-3 et 19005-4 |
 
 Les messages sont ceux des artefacts officiels. Les listes de codes (pays, devises, unités, schémas d'identifiants, motifs d'exonération…) sont embarquées.
 

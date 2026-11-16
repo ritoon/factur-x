@@ -71,6 +71,24 @@ func TestCreateProfiles(t *testing.T) {
 	}
 }
 
+func TestCreateAttachments(t *testing.T) {
+	order := []byte("%PDF-1.7 purchase order")
+	pdf, err := facturx.Create(readFile(t, "testdata/host.pdf"), newInvoice(), &facturx.CreateOptions{
+		Calculate: true,
+		Embed:     facturx.EmbedOptions{Attachments: []facturx.File{{Name: "commande.pdf", Data: order}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	all, err := facturx.ExtractAll(pdf)
+	if err != nil || len(all) != 2 {
+		t.Fatalf("%d attachments, %v", len(all), err)
+	}
+	if a := all[0]; a.Filename != "commande.pdf" || string(a.XML) != string(order) || a.Relationship != "Supplement" || a.MimeType != "application/pdf" {
+		t.Errorf("attachment %+v", a)
+	}
+}
+
 func TestCreateInvalid(t *testing.T) {
 	inv := newInvoice()
 	inv.Seller.Name = "" // BR-6

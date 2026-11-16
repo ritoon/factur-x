@@ -76,6 +76,9 @@ type fixture struct {
 	// extra, when set, adds objects and returns entries appended to the
 	// catalog and page dictionaries.
 	extra func(b *pdftest.Builder) (catalog, page string)
+	// specs holds the object numbers of the file specifications of files,
+	// set by build before it calls extra.
+	specs []int
 }
 
 // testInfo is the document information dictionary of the fixtures, and
@@ -143,6 +146,7 @@ func (f *fixture) build() []byte {
 		fs += fmt.Sprintf(" /EF << /F %d 0 R /UF %d 0 R >> >>", ef, ef)
 		specs = append(specs, b.Add(fs))
 	}
+	f.specs = specs
 
 	var tree, af []string
 	var leaves []int
@@ -635,6 +639,136 @@ func TestEmbedOptions(t *testing.T) {
 	enc.encrypted = true
 	if _, err := Embed(enc.build(), ciiXML(invoice.URNBasic), nil); !errors.Is(err, ErrEncrypted) {
 		t.Errorf("encrypted: %v", err)
+	}
+}
+
+func TestEmbedAttachments(t *testing.T) {
+	// The host has an attachment that a supplementary file replaces.
+	f := &fixture{files: []file{
+		{name: "Timesheet.csv", data: []byte("old"), rel: "Supplement", subtype: "text#2Fcsv"},
+		{name: "logo.png", data: []byte("png"), rel: "Unspecified", subtype: "image#2Fpng"},
+	}}
+	in := f.build()
+	order := []byte("%PDF-1.7 purchase order")
+	later := testDate.Add(-24 * time.Hour)
+	opts := &EmbedOptions{ModDate: testDate, Attachments: []File{
+		{Name: "commande.pdf", Data: order, Description: "Bon de commande n° 12"},
+		{Name: "timesheet.csv", Data: []byte("day;hours\n1;7\n")},
+		{Name: "notes", MimeType: "text/markdown", Data: nil, Relationship: "Data", ModDate: later},
+	}}
+	out, err := Embed(in, ciiXML(invoice.URNEN16931), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, findings, err := CheckContainer(out); err != nil || len(findings) != 0 {
+		t.Errorf("CheckContainer: %v %v", findings, err)
+	}
+	again, _ := Embed(in, ciiXML(invoice.URNEN16931), opts)
+	if !bytes.Equal(out, again) {
+		t.Error("outputs differ")
+	}
+	plain, _ := Embed(in, ciiXML(invoice.URNEN16931), &EmbedOptions{ModDate: testDate})
+	if a, b := fileID(t, out), fileID(t, plain); bytes.Equal(a, b) {
+		t.Error("the attachments do not change the file identifier")
+	}
+
+	all, err := ExtractAll(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]*Attachment{}
+	var names []string
+	for _, a := range all {
+		got[a.Filename] = a
+		names = append(names, a.Filename)
+	}
+	// The name tree is sorted by key; Timesheet.csv of the host is replaced.
+	if strings.Join(names, ",") != "commande.pdf,factur-x.xml,logo.png,notes,timesheet.csv" {
+		t.Fatalf("attachments %v", names)
+	}
+	for _, want := range []Attachment{
+		{Filename: "commande.pdf", XML: order, Relationship: "Supplement", MimeType: "application/pdf", Description: "Bon de commande n° 12", ModDate: testDate},
+		{Filename: "timesheet.csv", XML: []byte("day;hours\n1;7\n"), Relationship: "Supplement", MimeType: "text/csv", ModDate: testDate},
+		{Filename: "notes", XML: []byte{}, Relationship: "Data", MimeType: "text/markdown", ModDate: later},
+	} {
+		a := got[want.Filename]
+		if a == nil || !bytes.Equal(a.XML, want.XML) || a.Relationship != want.Relationship || a.MimeType != want.MimeType ||
+			a.Description != want.Description || !a.ModDate.Equal(want.ModDate) || !a.InAF {
+			t.Errorf("%s: %+v", want.Filename, a)
+		}
+	}
+	// The invoice comes first in /AF, then the supplementary files in their
+	// order; logo.png, kept, stays before them.
+	c, _ := openContainer(out)
+	af, _ := c.r.Resolve(c.catalog.Get("AF")).(pdf.Array)
+	var afNames []string
+	for _, x := range af {
+		d, _ := c.r.Dict(x)
+		afNames = append(afNames, specName(c.r, d))
+	}
+	if strings.Join(afNames, ",") != "logo.png,factur-x.xml,commande.pdf,timesheet.csv,notes" {
+		t.Errorf("AF %v", afNames)
+	}
+	if a, _ := Extract(out); a.Filename != "factur-x.xml" {
+		t.Errorf("invoice %q", a.Filename)
+	}
+
+	x := ciiXML(invoice.URNBasic)
+	for name, files := range map[string][]File{
+		"no name":                 {{Data: order}},
+		"factur-x.xml":            {{Name: "factur-x.xml", Data: x}},
+		"XRECHNUNG.XML":           {{Name: "XRECHNUNG.XML", Data: x}},
+		"zugferd-invoice.xml":     {{Name: "zugferd-invoice.xml", Data: x}},
+		"invoice filename":        {{Name: "Invoice.xml", Data: x}},
+		"duplicate name":          {{Name: "a.pdf"}, {Name: "A.PDF"}},
+		"bad relationship":        {{Name: "a.pdf", Relationship: "Attachment"}},
+		"MIME type without slash": {{Name: "a.pdf", MimeType: "pdf"}},
+		"MIME type with a space":  {{Name: "a.pdf", MimeType: "application/ pdf"}},
+		"MIME type parameters":    {{Name: "a.txt", MimeType: "text/plain; charset=utf-8"}},
+	} {
+		if _, err := Embed(in, x, &EmbedOptions{Filename: "invoice.xml", Attachments: files}); err == nil {
+			t.Errorf("%s: no error", name)
+		}
+	}
+}
+
+// fileID returns the second part of the file identifier of a PDF.
+func fileID(t *testing.T, data []byte) []byte {
+	t.Helper()
+	c, err := openContainer(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := c.r.Resolve(c.r.Trailer().Get("ID")).(pdf.Array)
+	if len(id) != 2 {
+		t.Fatalf("ID %v", id)
+	}
+	s, _ := id[1].(pdf.String)
+	return s
+}
+
+func TestMimeType(t *testing.T) {
+	for name, want := range map[string]string{
+		"a.pdf":          "application/pdf",
+		"A.PDF":          "application/pdf",
+		"x.y.XLSX":       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		"photo.jpeg":     "image/jpeg",
+		"releve.xml":     "text/xml",
+		"archive.tar":    "application/octet-stream",
+		"README":         "application/octet-stream",
+		"dir.pdf/README": "application/octet-stream",
+	} {
+		if got := mimeType(name); got != want {
+			t.Errorf("mimeType(%q) = %q, want %q", name, got, want)
+		}
+	}
+	for s, want := range map[string]bool{
+		"application/pdf": true, "image/svg+xml": true, "application/vnd.ms-excel": true,
+		"": false, "pdf": false, "/pdf": false, "application/": false, "a/b/c": false, "text/plain; charset=utf-8": false, "téxt/plain": false,
+	} {
+		if got := validMIME(s); got != want {
+			t.Errorf("validMIME(%q) = %v", s, got)
+		}
 	}
 }
 

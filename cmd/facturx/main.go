@@ -4,7 +4,7 @@
 //	facturx extract [-o out.xml] invoice.pdf
 //	facturx info invoice.pdf
 //	facturx validate [-fr] [-de] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-json] invoice.pdf|invoice.xml
-//	facturx embed -xml invoice.xml [-profile p] [-o out.pdf] input.pdf
+//	facturx embed -xml invoice.xml [-profile p] [-attach file]... [-o out.pdf] input.pdf
 //	facturx json invoice.pdf|invoice.xml
 //	facturx rules [-fr] [-de] [-choruspro]
 //
@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -34,7 +35,7 @@ Usage:
   facturx extract [-o out.xml] invoice.pdf
   facturx info invoice.pdf
   facturx validate [-fr] [-de] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-json] invoice.pdf|invoice.xml
-  facturx embed -xml invoice.xml [-profile p] [-o out.pdf] input.pdf
+  facturx embed -xml invoice.xml [-profile p] [-attach file]... [-o out.pdf] input.pdf
   facturx json invoice.pdf|invoice.xml
   facturx rules [-fr] [-de] [-choruspro]
 
@@ -231,11 +232,19 @@ func validateCmd(args []string) (int, error) {
 	return 0, nil
 }
 
+// fileList is a repeatable flag.
+type fileList []string
+
+func (l *fileList) String() string     { return strings.Join(*l, ",") }
+func (l *fileList) Set(s string) error { *l = append(*l, s); return nil }
+
 func embed(args []string) error {
 	fs := flag.NewFlagSet("embed", flag.ContinueOnError)
 	xmlPath := fs.String("xml", "", "invoice XML to embed (required)")
 	profile := fs.String("profile", "", "profile (default: read from BT-24)")
 	rel := fs.String("relationship", "", "AFRelationship (default: Data for MINIMUM and BASIC WL, Alternative otherwise)")
+	var attach fileList
+	fs.Var(&attach, "attach", "supplementary file to embed besides the invoice, with AFRelationship Supplement and the MIME type of its extension (repeatable)")
 	out := fs.String("o", "", "output PDF (default: standard output)")
 	_, pdf, err := oneFile(fs, args)
 	if err != nil {
@@ -249,6 +258,13 @@ func embed(args []string) error {
 		return err
 	}
 	opts := &facturx.EmbedOptions{Relationship: *rel}
+	for _, p := range attach {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		opts.Attachments = append(opts.Attachments, facturx.File{Name: filepath.Base(p), Data: data})
+	}
 	if *profile != "" {
 		if opts.Profile = invoice.ParseProfile(*profile); opts.Profile == invoice.ProfileUnknown {
 			return fmt.Errorf("unknown profile %q", *profile)

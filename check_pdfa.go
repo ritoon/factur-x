@@ -40,29 +40,33 @@ const (
 	roleField
 	roleOutline
 	roleAction
+	roleAF
+	roleStruct
 )
 
 // pdfaScan checks the PDF/A requirements that can be verified without
 // rendering the pages: embedded fonts (PDF-31), JavaScript and actions
-// (PDF-32 to PDF-34), the other embedded files (PDF-36, PDF-37) and the
-// LZWDecode filter (PDF-38). It walks the document catalog, the outlines,
-// the form fields and the page tree with the resources of the pages, form
-// XObjects, patterns, soft masks, Type 3 fonts and annotation appearances.
-// The content streams are not parsed.
+// (PDF-32 to PDF-34), the other embedded files (PDF-36, PDF-37, PDF-39) and
+// the LZWDecode filter (PDF-38). It walks the document catalog, the
+// outlines, the form fields and the page tree with the resources of the
+// pages, form XObjects, patterns, soft masks, Type 3 fonts and annotation
+// appearances, and the structure tree when an embedded file is not found in
+// another /AF array. The content streams are not parsed.
 type pdfaScan struct {
 	c      *container
 	k      *containerCheck
 	seen   map[pdf.Ref]uint16 // roles in which an indirect object was visited
 	visits int
-	fonts  map[string]bool // fonts reported, by name and subtype
-	files  []*fileSpec     // file specifications of FileAttachment annotations
-	counts map[string]int  // findings per rule
+	fonts  map[string]bool  // fonts reported, by name and subtype
+	files  []*fileSpec      // file specifications of FileAttachment annotations
+	afRefs map[pdf.Ref]bool // file specifications listed in an /AF array besides the catalog's
+	counts map[string]int   // findings per rule
 }
 
 // pdfa runs the PDF/A scan. invoice is the file specification of the
 // invoice attachment, checked by CheckContainer itself; it may be nil.
 func (k *containerCheck) pdfa(c *container, invoice *fileSpec) {
-	s := &pdfaScan{c: c, k: k, seen: map[pdf.Ref]uint16{}, fonts: map[string]bool{}, counts: map[string]int{}}
+	s := &pdfaScan{c: c, k: k, seen: map[pdf.Ref]uint16{}, fonts: map[string]bool{}, afRefs: map[pdf.Ref]bool{}, counts: map[string]int{}}
 	r := c.r
 	cat := c.catalog
 	if s.present(cat, "AA") {
@@ -86,7 +90,7 @@ func (k *containerCheck) pdfa(c *container, invoice *fileSpec) {
 	}
 	s.embeddedFiles(invoice)
 
-	for _, id := range []string{"PDF-31", "PDF-32", "PDF-33", "PDF-34", "PDF-36", "PDF-37", "PDF-38"} {
+	for _, id := range []string{"PDF-31", "PDF-32", "PDF-33", "PDF-34", "PDF-36", "PDF-37", "PDF-38", "PDF-39"} {
 		if n := s.counts[id] - maxReported; n > 0 {
 			k.add(id, "", "%d more occurrences not listed", n)
 		}
@@ -242,6 +246,7 @@ func (s *pdfaScan) pages() {
 		}
 		n++
 		where := fmt.Sprintf("page %d", n)
+		s.associate(d.Get("AF"))
 		if s.present(d, "AA") {
 			s.report("PDF-34", where+" /AA", "the page has an additional-actions dictionary (/AA)")
 		}
@@ -277,6 +282,7 @@ func (s *pdfaScan) annotation(o pdf.Object, where string) {
 	if s.present(d, "AA") {
 		s.report("PDF-34", where+" /AA", "the annotation has an additional-actions dictionary (/AA)")
 	}
+	s.associate(d.Get("AF"))
 	s.action(d.Get("A"), where+" /A", 0)
 	if ap, ok := r.Dict(d.Get("AP")); ok {
 		for _, key := range []pdf.Name{"N", "R", "D"} {
@@ -336,6 +342,13 @@ func (s *pdfaScan) resources(o pdf.Object, where string, depth int) {
 			s.stream(sh.Val, where+" /Shading /"+string(sh.Key))
 		}
 	}
+	if props, ok := r.Dict(d.Get("Properties")); ok {
+		for _, p := range props {
+			if pl, ok := r.Dict(p.Val); ok {
+				s.associate(pl.Get("AF"))
+			}
+		}
+	}
 	if states, ok := r.Dict(d.Get("ExtGState")); ok {
 		for _, gs := range states {
 			if g, ok := r.Dict(gs.Val); ok {
@@ -358,6 +371,7 @@ func (s *pdfaScan) xobject(o pdf.Object, where string, depth int) {
 	if depth > maxScanDepth || !s.visit(o, roleXObject) {
 		return
 	}
+	s.associate(st.Dict.Get("AF"))
 	if s.name(st.Dict, "Subtype") == "Image" {
 		s.stream(st.Dict.Get("SMask"), where+" /SMask")
 		s.stream(st.Dict.Get("Mask"), where+" /Mask")
@@ -433,15 +447,63 @@ func (s *pdfaScan) stream(o pdf.Object, where string) {
 	}
 }
 
+// associate records the file specifications listed in an /AF array. A
+// direct file specification cannot be listed anywhere else: only references
+// are recorded.
+func (s *pdfaScan) associate(o pdf.Object) {
+	if o == nil || !s.visit(o, roleAF) {
+		return
+	}
+	if af, ok := s.c.r.Resolve(o).(pdf.Array); ok {
+		for _, x := range af {
+			if ref, ok := x.(pdf.Ref); ok {
+				s.afRefs[ref] = true
+			}
+		}
+	}
+}
+
+// associated reports whether a file specification is listed in the /AF
+// array of the catalog or of a page, or in one recorded by associate.
+func (s *pdfaScan) associated(fs *fileSpec) bool {
+	return fs.inAF || fs.inPageAF || (fs.ref != pdf.Ref{} && s.afRefs[fs.ref])
+}
+
+// structure records the /AF arrays of the structure elements.
+func (s *pdfaScan) structure() {
+	r := s.c.r
+	root, ok := r.Dict(s.c.catalog.Get("StructTreeRoot"))
+	if !ok {
+		return
+	}
+	var walk func(o pdf.Object, depth int)
+	walk = func(o pdf.Object, depth int) {
+		if o == nil || depth > maxScanDepth || !s.visit(o, roleStruct) {
+			return
+		}
+		switch v := r.Resolve(o).(type) {
+		case pdf.Array:
+			for _, x := range v {
+				walk(x, depth)
+			}
+		case pdf.Dict:
+			s.associate(v.Get("AF"))
+			walk(v.Get("K"), depth+1)
+		}
+	}
+	walk(root.Get("K"), 0)
+}
+
 // embeddedFiles checks the embedded files besides the invoice: an
-// /AFRelationship and a MIME type, as PDF/A-3 requires for every embedded
-// file. The filters of every embedded file stream are checked too.
+// /AFRelationship, a MIME type and an /AF array listing them, as PDF/A-3
+// requires for every embedded file. The filters of every embedded file
+// stream are checked too.
 func (s *pdfaScan) embeddedFiles(invoice *fileSpec) {
 	c := s.c
 	r := c.r
 	c.collectPages()
 	files := append(append([]*fileSpec(nil), c.specs...), s.files...)
-	var seen []*fileSpec
+	var seen, unlisted []*fileSpec
 	for _, fs := range files {
 		dup := false
 		for _, o := range seen {
@@ -469,6 +531,26 @@ func (s *pdfaScan) embeddedFiles(invoice *fileSpec) {
 		}
 		if st, ok := c.embeddedStream(fs); ok && s.name(st.Dict, "Subtype") == "" {
 			s.report("PDF-37", "embedded file "+name+" /Subtype", "the embedded file %s has no MIME type (/Subtype)", name)
+		}
+		if !s.associated(fs) {
+			unlisted = append(unlisted, fs)
+		}
+	}
+
+	// PDF-39: the structure tree is only walked when a file is not listed
+	// elsewhere. A scan cut short by maxScanObjects reports nothing, the
+	// /AF arrays not visited being unknown.
+	if len(unlisted) == 0 {
+		return
+	}
+	s.structure()
+	if s.visits >= maxScanObjects {
+		return
+	}
+	for _, fs := range unlisted {
+		if !s.associated(fs) {
+			name := strconv.Quote(fs.filename())
+			s.report("PDF-39", specPath(fs), "the embedded file %s is not listed in any /AF array (catalog, page, annotation, XObject, marked-content property list or structure element)", name)
 		}
 	}
 }
