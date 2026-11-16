@@ -56,7 +56,7 @@ jobs:
           go test -run '^$' -fuzz '^FuzzDeflate$' -fuzztime 30s ./internal/pdf
       - name: Fuzz the XML reader against encoding/xml
         run: go test -run '^$' -fuzz '^FuzzParse$' -fuzztime 30s ./internal/xmltree
-      - name: Fuzz the BT-24 reading of the attachment
+      - name: Fuzz the quick BT-24 reading against xmltree
         run: go test -run '^$' -fuzz '^FuzzSpecificationID$' -fuzztime 30s .
 
   bench:
