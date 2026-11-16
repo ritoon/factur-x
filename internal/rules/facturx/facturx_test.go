@@ -209,7 +209,18 @@ var bwlMutations = []mutation{
 	{"charge without total", "</ram:SpecifiedTradeAllowanceCharge>", `</ram:SpecifiedTradeAllowanceCharge><ram:SpecifiedTradeAllowanceCharge><ram:ChargeIndicator><udt:Indicator>true</udt:Indicator></ram:ChargeIndicator><ram:ActualAmount>10.00</ram:ActualAmount><ram:Reason>Shipping</ram:Reason><ram:CategoryTradeTax><ram:TypeCode>VAT</ram:TypeCode><ram:CategoryCode>S</ram:CategoryCode><ram:RateApplicablePercent>20</ram:RateApplicablePercent></ram:CategoryTradeTax></ram:SpecifiedTradeAllowanceCharge>`, "BR-CO-12"},
 	{"total VAT decimals", `<ram:TaxTotalAmount currencyID="EUR">122.00`, `<ram:TaxTotalAmount currencyID="EUR">122.001`, "BR-CO-14 BR-DEC-13"},
 	{"line total decimals", "<ram:LineTotalAmount>1000.00", "<ram:LineTotalAmount>1000.000", "BR-DEC-09"},
-	{"payment terms", "<ram:SpecifiedTradePaymentTerms>\n<ram:DueDateDateTime><udt:DateTimeString format=\"102\">20240215</udt:DateTimeString></ram:DueDateDateTime>\n</ram:SpecifiedTradePaymentTerms>", "", "BR-CO-25"},
+	// BR-CO-25 and BR-CO-18 left the BASIC WL schematron in Factur-X 1.09.
+	{"payment terms", "<ram:SpecifiedTradePaymentTerms>\n<ram:DueDateDateTime><udt:DateTimeString format=\"102\">20240215</udt:DateTimeString></ram:DueDateDateTime>\n</ram:SpecifiedTradePaymentTerms>", "", ""},
+	{"blank account", "<ram:IBANID>FR7630006000011234567890189</ram:IBANID>", "<ram:IBANID> </ram:IBANID>", "BR-50"},
+	{"full card number", "<ram:TypeCode>30</ram:TypeCode>", "<ram:TypeCode>30</ram:TypeCode><ram:ApplicableTradeSettlementFinancialCard><ram:ID>4111111111111111</ram:ID></ram:ApplicableTradeSettlementFinancialCard>", "BR-51"},
+	{"masked card number", "<ram:TypeCode>30</ram:TypeCode>", "<ram:TypeCode>30</ram:TypeCode><ram:ApplicableTradeSettlementFinancialCard><ram:ID>  123   567890 </ram:ID></ram:ApplicableTradeSettlementFinancialCard>", ""},
+	{"tax representative without address", "</ram:BuyerTradeParty>", `</ram:BuyerTradeParty><ram:SellerTaxRepresentativeTradeParty><ram:Name> </ram:Name><ram:SpecifiedTaxRegistration><ram:ID schemeID="VA">FR32123456789</ram:ID></ram:SpecifiedTaxRegistration></ram:SellerTaxRepresentativeTradeParty>`, "BR-18 BR-19 BR-20 FX-SCH-A-000032"},
+	{"charge reason code", "</ram:SpecifiedTradeAllowanceCharge>", "</ram:SpecifiedTradeAllowanceCharge>" + charge("<ram:ReasonCode>XYZ</ram:ReasonCode>"), "BR-CO-12 FX-SCH-A-000376"},
+	{"charge reason code in UNTDID 7161", "</ram:SpecifiedTradeAllowanceCharge>", "</ram:SpecifiedTradeAllowanceCharge>" + charge("<ram:ReasonCode>ABL</ram:ReasonCode>"), "BR-CO-12"},
+	{"charge reason code of list 5153", "</ram:SpecifiedTradeAllowanceCharge>", "</ram:SpecifiedTradeAllowanceCharge>" + charge(`<ram:ReasonCode listID="5153">XYZ</ram:ReasonCode>`), "BR-CO-12"},
+	{"charge reason code of another list", "</ram:SpecifiedTradeAllowanceCharge>", "</ram:SpecifiedTradeAllowanceCharge>" + charge(`<ram:ReasonCode listID="7161">ABL</ram:ReasonCode>`), "BR-CO-12 FX-NOT-USED"},
+	{"zero rated breakdown", secondTax, `<ram:ApplicableTradeTax><ram:CalculatedAmount>0.00</ram:CalculatedAmount><ram:TypeCode>VAT</ram:TypeCode><ram:BasisAmount>400.00</ram:BasisAmount><ram:CategoryCode>Z</ram:CategoryCode><ram:RateApplicablePercent>0</ram:RateApplicablePercent></ram:ApplicableTradeTax>`,
+		"BR-CO-14 BR-FXEXT-Z-08rev"},
 	{"IBAN and proprietary", "<ram:IBANID>FR7630006000011234567890189</ram:IBANID>", "<ram:IBANID>FR7630006000011234567890189</ram:IBANID><ram:ProprietaryID>123</ram:ProprietaryID>", "BR-CO-27"},
 	{"no account", "<ram:PayeePartyCreditorFinancialAccount><ram:IBANID>FR7630006000011234567890189</ram:IBANID></ram:PayeePartyCreditorFinancialAccount>", "<ram:PayeePartyCreditorFinancialAccount/>", "BR-50 BR-61 BR-CO-27"},
 	{"type code", "<ram:TypeCode>380</ram:TypeCode>", "<ram:TypeCode>999</ram:TypeCode>", "FX-SCH-A-000023"},
@@ -237,6 +248,33 @@ var bwlMutations = []mutation{
 	{"issue date format", `<udt:DateTimeString format="102">20240115</udt:DateTimeString></ram:IssueDateTime>`, `<udt:DateTimeString format="610">202401</udt:DateTimeString></ram:IssueDateTime>`, "BR-03 FX-SCH-A-000022"},
 }
 
+// charge returns a document level charge of 10.00 at 20 % with the given
+// reason elements.
+func charge(reason string) string {
+	return `<ram:SpecifiedTradeAllowanceCharge><ram:ChargeIndicator><udt:Indicator>true</udt:Indicator></ram:ChargeIndicator><ram:ActualAmount>10.00</ram:ActualAmount>` + reason +
+		`<ram:CategoryTradeTax><ram:TypeCode>VAT</ram:TypeCode><ram:CategoryCode>S</ram:CategoryCode><ram:RateApplicablePercent>20</ram:RateApplicablePercent></ram:CategoryTradeTax></ram:SpecifiedTradeAllowanceCharge>`
+}
+
+// minTax returns a mutation of the MINIMUM invoice that inserts elems
+// before the totals, which the MINIMUM schema forbids but the MINIMUM
+// schematron checks.
+func minTax(name, elems, want string) mutation {
+	const at = "<ram:SpecifiedTradeSettlementHeaderMonetarySummation>"
+	return mutation{name, at, elems + at, want}
+}
+
+// breakdown returns a VAT breakdown of category cat.
+func breakdown(cat, basis, calc, rest string) string {
+	return "<ram:ApplicableTradeTax><ram:CalculatedAmount>" + calc + "</ram:CalculatedAmount><ram:TypeCode>VAT</ram:TypeCode>" + rest +
+		"<ram:BasisAmount>" + basis + "</ram:BasisAmount><ram:CategoryCode>" + cat + "</ram:CategoryCode><ram:RateApplicablePercent>0</ram:RateApplicablePercent></ram:ApplicableTradeTax>"
+}
+
+// minLine returns an invoice line of category cat at rate.
+func minLine(cat, rate string) string {
+	return "<ram:IncludedSupplyChainTradeLineItem><ram:SpecifiedLineTradeSettlement><ram:ApplicableTradeTax><ram:TypeCode>VAT</ram:TypeCode><ram:CategoryCode>" + cat +
+		"</ram:CategoryCode><ram:RateApplicablePercent>" + rate + "</ram:RateApplicablePercent></ram:ApplicableTradeTax></ram:SpecifiedLineTradeSettlement></ram:IncludedSupplyChainTradeLineItem>"
+}
+
 var minMutations = []mutation{
 	{"buyer address", "<ram:Name>Buyer SAS</ram:Name>", "<ram:Name>Buyer SAS</ram:Name><ram:PostalTradeAddress><ram:CountryID>FR</ram:CountryID></ram:PostalTradeAddress>", "FX-NOT-USED"},
 	{"buyer VAT identifier", "<ram:Name>Buyer SAS</ram:Name>", `<ram:Name>Buyer SAS</ram:Name><ram:SpecifiedTaxRegistration><ram:ID schemeID="VA">FR45987654321</ram:ID></ram:SpecifiedTaxRegistration>`, "FX-NOT-USED"},
@@ -257,6 +295,28 @@ var minMutations = []mutation{
 <ram:PostalTradeAddress><ram:CountryID>FR</ram:CountryID></ram:PostalTradeAddress>
 <ram:SpecifiedTaxRegistration><ram:ID schemeID="VA">FR32123456789</ram:ID></ram:SpecifiedTaxRegistration>`, "<ram:PostalTradeAddress><ram:CountryID>FR</ram:CountryID></ram:PostalTradeAddress>", "BR-CO-26"},
 	{"invalid date", "20240115", "2024-01-15", "FX-DATE"},
+
+	// Rules of the MINIMUM schematron 1.09 whose contexts the MINIMUM schema
+	// forbids.
+	minTax("export breakdown", breakdown("G", "0.00", "0.00", "<ram:ExemptionReason>Export</ram:ExemptionReason>"), ""),
+	minTax("export breakdown at the lower tolerance bound", breakdown("G", "1.00", "0.00", "<ram:ExemptionReason>Export</ram:ExemptionReason>"),
+		"BR-FXEXT-G-08 BR-FXEXT-G-08b BR-FXEXT-G-08ini BR-FXEXT-G-08rev"),
+	minTax("export breakdown beyond the tolerance", breakdown("G", "1.01", "2.00", ""),
+		"BR-FXEXT-G-08 BR-FXEXT-G-08b BR-FXEXT-G-08ini BR-FXEXT-G-08rev BR-G-08 BR-G-09 BR-G-10"),
+	minTax("exempt breakdown", breakdown("E", "0.00", "5.00", ""), "BR-E-10"),
+	minTax("intra-community breakdown at the upper tolerance bound", breakdown("K", "-1.00", "0.00", "<ram:ExemptionReasonCode>VATEX-EU-IC</ram:ExemptionReasonCode>"),
+		"BR-FXEXT-IC-08b BR-FXEXT-IC-08ini BR-FXEXT-IC-08rev BR-IC-08 BR-IC-11 BR-IC-12"),
+	minTax("export allowance", `<ram:SpecifiedTradeAllowanceCharge><ram:ChargeIndicator><udt:Indicator>false</udt:Indicator></ram:ChargeIndicator><ram:ActualAmount>10.00</ram:ActualAmount><ram:CategoryTradeTax><ram:TypeCode>VAT</ram:TypeCode><ram:CategoryCode>G</ram:CategoryCode><ram:RateApplicablePercent>5</ram:RateApplicablePercent></ram:CategoryTradeTax></ram:SpecifiedTradeAllowanceCharge>`,
+		"BR-G-06"),
+	{"exempt and export lines", "<rsm:SupplyChainTradeTransaction>\n<ram:ApplicableHeaderTradeAgreement>\n<ram:BuyerReference>REF-42</ram:BuyerReference>\n<ram:SellerTradeParty>\n<ram:Name>Seller SARL</ram:Name>\n" +
+		`<ram:SpecifiedLegalOrganization><ram:ID schemeID="0002">12345678900011</ram:ID></ram:SpecifiedLegalOrganization>
+<ram:PostalTradeAddress><ram:CountryID>FR</ram:CountryID></ram:PostalTradeAddress>
+<ram:SpecifiedTaxRegistration><ram:ID schemeID="VA">`,
+		"<rsm:SupplyChainTradeTransaction>" + minLine("E", "5") + minLine("G", "0") + "\n<ram:ApplicableHeaderTradeAgreement>\n<ram:BuyerReference>REF-42</ram:BuyerReference>\n<ram:SellerTradeParty>\n<ram:Name>Seller SARL</ram:Name>\n" +
+			`<ram:SpecifiedLegalOrganization><ram:ID schemeID="0002">12345678900011</ram:ID></ram:SpecifiedLegalOrganization>
+<ram:PostalTradeAddress><ram:CountryID>FR</ram:CountryID></ram:PostalTradeAddress>
+<ram:SpecifiedTaxRegistration><ram:ID schemeID="FC">`,
+		"BR-E-05 BR-G-02"},
 }
 
 func TestMutations(t *testing.T) {
@@ -305,7 +365,7 @@ func TestProfile(t *testing.T) {
 		{"white space", strings.Replace(en, bt24, "<ram:ID>urn:cen.eu:en16931:2017 </ram:ID>", 1), invoice.ProfileUnknown, "FX-SCH-A-000026"},
 		{"BASIC WL checked as MINIMUM", basicWL, invoice.ProfileMinimum, "FX-NOT-USED FX-SCH-A-000026"},
 		{"missing, checked as MINIMUM", strings.Replace(minimum, "<ram:ID>urn:factur-x.eu:1p0:minimum</ram:ID>", "<ram:ID/>", 1), invoice.ProfileMinimum, "BR-01"},
-		{"MINIMUM checked as BASIC WL", minimum, invoice.ProfileBasicWL, "BR-10 BR-11 BR-12 BR-CO-13 BR-CO-14 BR-CO-16 BR-CO-18 BR-CO-25 FX-SCH-A-000026 FX-SCH-A-000032"},
+		{"MINIMUM checked as BASIC WL", minimum, invoice.ProfileBasicWL, "BR-10 BR-11 BR-12 BR-CO-13 BR-CO-14 BR-CO-16 FX-SCH-A-000026 FX-SCH-A-000032"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := ruleSet(run(t, tc.data, tc.profile)); got != tc.want {

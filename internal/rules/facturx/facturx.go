@@ -6,14 +6,16 @@
 //
 // For MINIMUM and BASIC WL, whose invoices are not complete EN 16931
 // invoices and are therefore not checked by package en16931, it implements
-// the official Factur-X 1.08 schematrons of these profiles
-// (Factur-X_1.08_MINIMUM.sch and Factur-X_1.08_BASICWL.sch, FNFE-MPE /
-// FeRD, 2025-12-04):
+// the official Factur-X 1.09 schematrons of these profiles
+// (Factur-X_1.09_MINIMUM.sch and Factur-X_1.09_BASICWL.sch, FNFE-MPE /
+// FeRD, 2026-06-10):
 //
 //   - the EN 16931 business rules they reuse, under their BR-* or CII-SR-*
 //     identifier: mandatory elements, totals (BR-CO-11 to BR-CO-16 computed
 //     from the header amounts, as BASIC WL has no lines), VAT breakdown and
 //     VAT category rules at document level, decimals (BR-DEC-*);
+//   - the BR-FXEXT-*-08 rules on the taxable amount of the VAT categories
+//     G, K, O and Z that they share with EXTENDED (see extended.go);
 //   - the structural assertions that the XML schema of the profile does not
 //     express (cardinalities of variants, required scheme identifiers, code
 //     values), under their FX-SCH-A-* identifier;
@@ -26,9 +28,9 @@
 // BR-CO-06, BR-AF-09, BR-AG-09, CII-SR-464) and those the schema of the
 // profile already enforces (FX-SCH-A-000021, the "exactly one" child
 // counts) are not implemented. The code lists that need the ISO 3166,
-// ISO 4217, ISO 6523, EAS, VATEX, UNTDID 4451, 4461 and 7161 lists are left
+// ISO 4217, ISO 6523, EAS, VATEX, UNTDID 4451 and 4461 lists are left
 // out (FX-SCH-A-000031, 000036, 000040, 000045, 000162, 000181, 000196 and
-// part of 000023 and 000186).
+// part of 000023).
 //
 // Two rules are additions: FX-DATE checks that dates in format 102 are real
 // calendar days, and FX-MIN-CO-15 (a warning) applies BR-CO-15 to MINIMUM

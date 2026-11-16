@@ -28,8 +28,9 @@ type rule struct {
 
 // table lists the rules. The identifiers are the business rule ones (BR-*,
 // CII-SR-*) when the official assertion carries one, the identifier of the
-// schematron assertion (FX-SCH-A-*) otherwise. The official schematrons set
-// no severity, so every assertion is an error.
+// schematron assertion (FX-SCH-A-*) otherwise. The MINIMUM and BASIC WL
+// schematrons only set a severity on the BR-FXEXT-*-08ini and -08rev
+// assertions, which are warnings: every other assertion is an error.
 var table = []rule{
 	// Profile identification, all profiles.
 	{"FX-PROFILE-01", rules.Error, mAny, "", "The specification identifier (BT-24) is present, so that the Factur-X profile can be determined."},
@@ -52,7 +53,6 @@ var table = []rule{
 	{"BR-62", rules.Error, mBWL, "FX-SCH-A-000158", "The seller electronic address (BT-34) has a scheme identifier."},
 	{"BR-63", rules.Error, mBWL, "FX-SCH-A-000159", "The buyer electronic address (BT-49) has a scheme identifier."},
 	{"BR-CO-09", rules.Error, mLight, "FX-SCH-A-000002", "VAT identifiers (BT-31, BT-48, BT-63) start with an ISO 3166-1 alpha-2 country prefix."},
-	{"BR-CO-25", rules.Error, mBWL, "FX-SCH-A-000155", "When the amount due for payment (BT-115) is positive, a payment due date (BT-9) or payment terms (BT-20) are present."},
 	{"BR-CO-26", rules.Error, mLight, "FX-SCH-A-000001", "The seller identifier (BT-29), legal registration identifier (BT-30) or VAT identifier (BT-31) is present."},
 
 	// Document totals.
@@ -69,7 +69,7 @@ var table = []rule{
 	{"FX-MIN-CO-15", rules.Warning, mMin, "", "MINIMUM adaptation of BR-CO-15, not in the official MINIMUM schematron: the invoice total with VAT (BT-112) is the total without VAT (BT-109) plus the total VAT amount (BT-110)."},
 	{"BR-53", rules.Error, mBWL, "FX-SCH-A-000129", "When the VAT accounting currency code (BT-6) is present, the total VAT amount in accounting currency (BT-111) is provided, and BT-6 differs from the invoice currency."},
 	{"BR-DEC-09", rules.Error, mBWL, "FX-SCH-A-000123", "The sum of invoice line net amounts (BT-106) has at most 2 decimals."},
-	{"BR-DEC-10", rules.Error, mBWL, "FX-SCH-A-000124", "The sum of allowances on document level (BT-107) has at most 2 decimals."},
+	{"BR-DEC-10", rules.Error, mBWL, "FX-SCH-A-000374", "The sum of allowances on document level (BT-107) has at most 2 decimals."},
 	{"BR-DEC-11", rules.Error, mBWL, "FX-SCH-A-000125", "The sum of charges on document level (BT-108) has at most 2 decimals."},
 	{"BR-DEC-12", rules.Error, mLight, "FX-SCH-A-000006", "The invoice total amount without VAT (BT-109) has at most 2 decimals."},
 	{"BR-DEC-13", rules.Error, mLight, "FX-SCH-A-000007", "The invoice total VAT amount (BT-110) has at most 2 decimals."},
@@ -80,7 +80,6 @@ var table = []rule{
 	{"BR-DEC-18", rules.Error, mLight, "FX-SCH-A-000009", "The amount due for payment (BT-115) has at most 2 decimals."},
 
 	// VAT breakdown.
-	{"BR-CO-18", rules.Error, mBWL, "FX-SCH-A-000135", "An invoice has at least one VAT breakdown group (BG-23)."},
 	{"BR-45", rules.Error, mBWL, "FX-SCH-A-000047", "Each VAT breakdown (BG-23) has a VAT category taxable amount (BT-116)."},
 	{"BR-46", rules.Error, mBWL, "FX-SCH-A-000048", "Each VAT breakdown (BG-23) has a VAT category tax amount (BT-117)."},
 	{"BR-47", rules.Error, mBWL, "FX-SCH-A-000049", "Each VAT breakdown (BG-23) is defined by a VAT category code (BT-118)."},
@@ -93,12 +92,13 @@ var table = []rule{
 	{"BR-S-10", rules.Error, mBWL, "FX-SCH-A-000058", "Standard rated: the VAT breakdown has no exemption reason (BT-120, BT-121)."},
 	{"BR-Z-09", rules.Error, mBWL, "FX-SCH-A-000055", "Zero rated: the VAT category tax amount (BT-117) is 0."},
 	{"BR-Z-10", rules.Error, mBWL, "FX-SCH-A-000056", "Zero rated: the VAT breakdown has no exemption reason (BT-120, BT-121)."},
-	{"BR-E-09", rules.Error, mBWL, "FX-SCH-A-000138", "Exempt from VAT: the VAT category tax amount (BT-117) is 0."},
-	{"BR-E-10", rules.Error, mBWL, "FX-SCH-A-000139", "Exempt from VAT: the VAT breakdown has an exemption reason (BT-120) or code (BT-121)."},
+	{"BR-E-09", rules.Error, mBWL, "FX-SCH-A-000375", "Exempt from VAT: the VAT category tax amount (BT-117) is 0."},
+	{"BR-E-10", rules.Error, mLight, "FX-SCH-A-000139", "Exempt from VAT: the VAT breakdown has an exemption reason (BT-120) or code (BT-121)."},
 	{"BR-AE-09", rules.Error, mBWL, "FX-SCH-A-000136", "Reverse charge: the VAT category tax amount (BT-117) is 0."},
 	{"BR-AE-10", rules.Error, mBWL, "FX-SCH-A-000137", "Reverse charge: the VAT breakdown has an exemption reason (BT-120) or code (BT-121)."},
-	{"BR-G-09", rules.Error, mBWL, "FX-SCH-A-000140", "Export outside the EU: the VAT category tax amount (BT-117) is 0."},
-	{"BR-G-10", rules.Error, mBWL, "FX-SCH-A-000141", "Export outside the EU: the VAT breakdown has an exemption reason (BT-120) or code (BT-121)."},
+	{"BR-G-08", rules.Error, mMin, "FX-SCH-A-000229", "Export outside the EU: the taxable amount (BT-116) is the sum of the line net amounts plus charges minus allowances of category G, within 1."},
+	{"BR-G-09", rules.Error, mLight, "FX-SCH-A-000140", "Export outside the EU: the VAT category tax amount (BT-117) is 0."},
+	{"BR-G-10", rules.Error, mLight, "FX-SCH-A-000141", "Export outside the EU: the VAT breakdown has an exemption reason (BT-120) or code (BT-121)."},
 	{"BR-IC-08", rules.Error, mMin, "FX-SCH-A-000230", "Intra-community supply: the taxable amount (BT-116) is the sum of the line net amounts plus charges minus allowances of category K, within 1."},
 	{"BR-IC-09", rules.Error, mLight, "FX-SCH-A-000142", "Intra-community supply: the VAT category tax amount (BT-117) is 0."},
 	{"BR-IC-10", rules.Error, mLight, "FX-SCH-A-000143", "Intra-community supply: the VAT breakdown has an exemption reason (BT-120) or code (BT-121)."},
@@ -119,7 +119,7 @@ var table = []rule{
 	{"BR-CO-19", rules.Error, mBWL, "FX-SCH-A-000060", "An invoicing period (BG-14) has a start date (BT-73) or an end date (BT-74)."},
 
 	// Document level allowances and charges.
-	{"CII-SR-463", rules.Error, mLight, "FX-SCH-A-000348; FX-SCH-A-000346 in MINIMUM", "A document level allowance or charge has a charge indicator."},
+	{"CII-SR-463", rules.Error, mLight, "FX-SCH-A-000348", "A document level allowance or charge has a charge indicator."},
 	{"BR-31", rules.Error, mBWL, "FX-SCH-A-000061", "A document level allowance (BG-20) has an amount (BT-92)."},
 	{"BR-32", rules.Error, mBWL, "FX-SCH-A-000062", "A document level allowance (BG-20) has a VAT category code (BT-95)."},
 	{"BR-33", rules.Error, mBWL, "FX-SCH-A-000063", "A document level allowance (BG-20) has a reason (BT-97) or a reason code (BT-98)."},
@@ -142,18 +142,18 @@ var table = []rule{
 	{"BR-Z-04", rules.Error, mBWL, "FX-SCH-A-000115", "Zero rated charge: the seller VAT identifier (BT-31), tax registration (BT-32) or tax representative VAT identifier (BT-63) is present."},
 	{"BR-Z-06", rules.Error, mBWL, "FX-SCH-A-000098", "Zero rated allowance: the VAT rate (BT-96) is 0."},
 	{"BR-Z-07", rules.Error, mBWL, "FX-SCH-A-000116", "Zero rated charge: the VAT rate (BT-103) is 0."},
-	{"BR-E-03", rules.Error, mBWL, "FX-SCH-A-000083", "Exempt allowance: the seller VAT identifier (BT-31), tax registration (BT-32) or tax representative VAT identifier (BT-63) is present."},
-	{"BR-E-04", rules.Error, mBWL, "FX-SCH-A-000101", "Exempt charge: the seller VAT identifier (BT-31), tax registration (BT-32) or tax representative VAT identifier (BT-63) is present."},
-	{"BR-E-06", rules.Error, mBWL, "FX-SCH-A-000084", "Exempt allowance: the VAT rate (BT-96) is 0."},
-	{"BR-E-07", rules.Error, mBWL, "FX-SCH-A-000102", "Exempt charge: the VAT rate (BT-103) is 0."},
+	{"BR-E-03", rules.Error, mLight, "FX-SCH-A-000083", "Exempt allowance: the seller VAT identifier (BT-31), tax registration (BT-32) or tax representative VAT identifier (BT-63) is present."},
+	{"BR-E-04", rules.Error, mLight, "FX-SCH-A-000101", "Exempt charge: the seller VAT identifier (BT-31), tax registration (BT-32) or tax representative VAT identifier (BT-63) is present."},
+	{"BR-E-06", rules.Error, mLight, "FX-SCH-A-000084", "Exempt allowance: the VAT rate (BT-96) is 0."},
+	{"BR-E-07", rules.Error, mLight, "FX-SCH-A-000102", "Exempt charge: the VAT rate (BT-103) is 0."},
 	{"BR-AE-03", rules.Error, mBWL, "FX-SCH-A-000081", "Reverse charge allowance: a seller VAT or tax identifier and the buyer VAT identifier or legal registration identifier are present."},
 	{"BR-AE-04", rules.Error, mBWL, "FX-SCH-A-000099", "Reverse charge charge: a seller VAT or tax identifier and the buyer VAT identifier or legal registration identifier are present."},
 	{"BR-AE-06", rules.Error, mBWL, "FX-SCH-A-000082", "Reverse charge allowance: the VAT rate (BT-96) is 0."},
 	{"BR-AE-07", rules.Error, mBWL, "FX-SCH-A-000100", "Reverse charge charge: the VAT rate (BT-103) is 0."},
-	{"BR-G-03", rules.Error, mBWL, "FX-SCH-A-000085", "Export allowance: the seller VAT identifier (BT-31) or tax representative VAT identifier (BT-63) is present."},
-	{"BR-G-04", rules.Error, mBWL, "FX-SCH-A-000103", "Export charge: the seller VAT identifier (BT-31) or tax representative VAT identifier (BT-63) is present."},
-	{"BR-G-06", rules.Error, mBWL, "FX-SCH-A-000086", "Export allowance: the VAT rate (BT-96) is 0."},
-	{"BR-G-07", rules.Error, mBWL, "FX-SCH-A-000104", "Export charge: the VAT rate (BT-103) is 0."},
+	{"BR-G-03", rules.Error, mLight, "FX-SCH-A-000085", "Export allowance: the seller VAT identifier (BT-31) or tax representative VAT identifier (BT-63) is present."},
+	{"BR-G-04", rules.Error, mLight, "FX-SCH-A-000103", "Export charge: the seller VAT identifier (BT-31) or tax representative VAT identifier (BT-63) is present."},
+	{"BR-G-06", rules.Error, mLight, "FX-SCH-A-000086", "Export allowance: the VAT rate (BT-96) is 0."},
+	{"BR-G-07", rules.Error, mLight, "FX-SCH-A-000104", "Export charge: the VAT rate (BT-103) is 0."},
 	{"BR-IC-03", rules.Error, mLight, "FX-SCH-A-000087", "Intra-community allowance: the seller (or tax representative) and the buyer VAT identifiers are present."},
 	{"BR-IC-04", rules.Error, mLight, "FX-SCH-A-000105", "Intra-community charge: the seller (or tax representative) and the buyer VAT identifiers are present."},
 	{"BR-IC-06", rules.Error, mLight, "FX-SCH-A-000088", "Intra-community allowance: the VAT rate (BT-96) is 0."},
@@ -172,24 +172,29 @@ var table = []rule{
 	{"BR-O-07", rules.Error, mBWL, "FX-SCH-A-000112", "Not subject to VAT charge: no VAT rate (BT-103) is given."},
 
 	// Invoice lines (contexts that only exist in the MINIMUM schematron).
+	{"BR-E-02", rules.Error, mMin, "FX-SCH-A-000237", "Exempt line: the seller VAT identifier (BT-31), tax registration (BT-32) or tax representative VAT identifier (BT-63) is present."},
+	{"BR-E-05", rules.Error, mMin, "FX-SCH-A-000238", "Exempt line: the VAT rate (BT-152) is 0."},
+	{"BR-G-02", rules.Error, mMin, "FX-SCH-A-000239", "Export line: the seller VAT identifier (BT-31) or tax representative VAT identifier (BT-63) is present."},
+	{"BR-G-05", rules.Error, mMin, "FX-SCH-A-000240", "Export line: the VAT rate (BT-152) is 0."},
 	{"BR-IC-02", rules.Error, mMin, "FX-SCH-A-000241", "Intra-community line: the seller (or tax representative) and the buyer VAT identifiers are present."},
 	{"BR-IC-05", rules.Error, mMin, "FX-SCH-A-000242", "Intra-community line: the VAT rate (BT-152) is 0."},
 
 	// Parties.
 	{"BR-17", rules.Error, mBWL, "FX-SCH-A-000075", "The payee (BG-10) has a name (BT-59)."},
-	{"BR-18", rules.Error, mBWL, "FX-SCH-A-000076", "The seller tax representative (BG-11) has a name (BT-62)."},
+	{"BR-18", rules.Error, mBWL, "FX-SCH-A-000076", "The seller tax representative (BG-11) has a name (BT-62) that is not blank."},
 	{"BR-19", rules.Error, mBWL, "FX-SCH-A-000077", "The seller tax representative (BG-11) has a postal address (BG-12)."},
-	{"BR-20", rules.Error, mBWL, "FX-SCH-A-000078", "The seller tax representative postal address has a country code (BT-69)."},
+	{"BR-20", rules.Error, mBWL, "FX-SCH-A-000078", "The seller tax representative postal address has a country code (BT-69) that is not blank."},
 	{"BR-56", rules.Error, mBWL, "FX-SCH-A-000079", "The seller tax representative (BG-11) has a VAT identifier (BT-63)."},
 	{"BR-57", rules.Error, mBWL, "FX-SCH-A-000170", "The deliver to address (BG-15) has a country code (BT-80)."},
-	{"CII-SR-465", rules.Error, mLight, "FX-SCH-A-000350; FX-SCH-A-000346 in MINIMUM", "The seller contact has a person name or a department name, not both."},
-	{"CII-SR-466", rules.Error, mLight, "FX-SCH-A-000351; FX-SCH-A-000346 in MINIMUM", "The buyer contact has a person name or a department name, not both."},
+	{"CII-SR-465", rules.Error, mLight, "FX-SCH-A-000350", "The seller contact has a person name or a department name, not both."},
+	{"CII-SR-466", rules.Error, mLight, "FX-SCH-A-000351", "The buyer contact has a person name or a department name, not both."},
 
 	// Payment.
 	{"BR-49", rules.Error, mBWL, "FX-SCH-A-000131", "A payment instruction (BG-16) has a payment means type code (BT-81)."},
-	{"BR-50", rules.Error, mBWL, "FX-SCH-A-000133", "A credit transfer has a payment account identifier (BT-84)."},
+	{"BR-50", rules.Error, mBWL, "FX-SCH-A-000133", "A credit transfer (codes 30, 58) has a payment account identifier (BT-84) that is not blank."},
 	{"BR-61", rules.Error, mBWL, "FX-SCH-A-000134", "A credit transfer (codes 30, 58) has a payment account identifier (BT-84)."},
 	{"BR-CO-27", rules.Error, mBWL, "FX-SCH-A-000132", "A credit transfer (codes 30, 58) has either an IBAN or a proprietary account identifier (BT-84), not both."},
+	{"BR-51", rules.Error, mBWL, "FX-SCH-A-000281", "The payment card primary account number (BT-87) shows at most 10 characters (the first 6 and the last 4 digits at most)."},
 	{"BR-55", rules.Error, mBWL, "FX-SCH-A-000182", "A preceding invoice reference (BG-3) has a preceding invoice number (BT-25)."},
 
 	// Structural constraints of the schematron that the schema does not express.
@@ -212,6 +217,7 @@ var table = []rule{
 	{"FX-SCH-A-000180", rules.Error, mBWL, "FX-SCH-A-000180", "The VAT point date code (BT-8) is 5, 29 or 72."},
 	{"FX-SCH-A-000186", rules.Error, mBWL, "FX-SCH-A-000186", "The document level allowance reason code (BT-98) is in UNTDID 5189 as restricted by EN 16931."},
 	{"FX-SCH-A-000192", rules.Error, mLight, "FX-SCH-A-000192", "At most one invoice total VAT amount is given in the VAT accounting currency."},
+	{"FX-SCH-A-000376", rules.Error, mBWL, "FX-SCH-A-000376", "The document level charge reason code (BT-105) given without a list identifier is in UNTDID 7161."},
 
 	// EXTENDED (BR-FXEXT, FeRD XSLT 1.09.2), some -08 rules also in the
 	// MINIMUM and BASIC WL schematrons 1.09. The descriptions are the
