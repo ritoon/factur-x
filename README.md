@@ -266,7 +266,7 @@ Le harnais est dans [bench/ecosystem](bench/ecosystem) ; chaque librairie y a so
 go test ./...
 ```
 
-Les tests de base n'ont besoin que du dépôt ; la CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) les exécute avec `-race` sur Go 1.24 et sur la dernière version, après `gofmt` et `go vet`, et fait tourner 30 secondes de fuzzing sur le lecteur PDF, le codec Flate et le lecteur XML. Des tests supplémentaires s'activent quand les artefacts officiels sont disponibles en local :
+Les tests de base n'ont besoin que du dépôt ; la CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) les exécute avec `-race` sur Go 1.24 et sur la dernière version, après `gofmt` et `go vet`, et fait tourner 30 secondes de fuzzing sur le lecteur PDF, le codec Flate, le lecteur XML et la lecture de BT-24 dans la pièce jointe. Des tests supplémentaires s'activent quand les artefacts officiels sont disponibles en local :
 
 | Variable | Contenu | Tests |
 |---|---|---|

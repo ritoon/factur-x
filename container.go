@@ -572,6 +572,9 @@ func scanSpecificationID(b []byte) (root, id string, ok bool) {
 			if depth == 2 && isContext(path[1]) {
 				return root, "", false // context closed without BT-24
 			}
+			if depth == 0 {
+				return root, "", false // end tag without a start tag: not well-formed
+			}
 			depth--
 			i += j + 1
 		default:
