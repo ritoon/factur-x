@@ -54,6 +54,8 @@ jobs:
           go test -run '^$' -fuzz '^FuzzOpen$' -fuzztime 30s ./internal/pdf
           go test -run '^$' -fuzz '^FuzzInflate$' -fuzztime 30s ./internal/pdf
           go test -run '^$' -fuzz '^FuzzDeflate$' -fuzztime 30s ./internal/pdf
+      - name: Fuzz the XML reader against encoding/xml
+        run: go test -run '^$' -fuzz '^FuzzParse$' -fuzztime 30s ./internal/xmltree
 
   bench:
     # The benchmark harness is made of separate modules; only the one that
