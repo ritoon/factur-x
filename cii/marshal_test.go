@@ -82,21 +82,26 @@ func TestMarshalExtendedLossless(t *testing.T) {
 }
 
 // TestMarshalEN16931Content checks the EN 16931 projection of the full
-// invoice: everything but the EXTENDED fields.
+// invoice: everything but the EXTENDED fields and the extensions.
 func TestMarshalEN16931Content(t *testing.T) {
 	inv := fullInvoice()
 	back := mustParse(t, mustMarshal(t, inv, &MarshalOptions{Profile: invoice.ProfileEN16931}))
 	want := fullInvoice()
 	want.Profile = invoice.ProfileEN16931
 	want.SpecificationID = invoice.URNEN16931
-	want.TestIndicator = false
+	want.TestIndicator, want.CopyIndicator = false, false
 	want.Language = ""
+	want.ProductEndUser, want.UltimateShipTo, want.ShipFrom = nil, nil, nil
+	want.DeliveryTerms, want.DeliveryNote, want.CurrencyExchange = nil, nil, nil
+	want.UltimateCustomerOrders, want.LogisticsCharges = nil, nil
+	want.Extensions, want.Seller.Extensions = nil, nil
+	want.PaymentTerms[0].Extensions, want.VATBreakdown[0].Extensions = nil, nil
 	want.Notes[0].ContentCode = ""
 	want.SalesAgent, want.BuyerAgent, want.Invoicer, want.Invoicee, want.Payer = nil, nil, nil, nil, nil
 	want.InvoicingPeriod.Description = ""
 	want.PaymentTerms = want.PaymentTerms[:1]
 	want.PaymentTerms[0].PartialAmount = invoice.Decimal{}
-	want.PrecedingInvoices[0].TypeCode = ""
+	want.PrecedingInvoices[0].TypeCode, want.PrecedingInvoices[0].LineID = "", ""
 	want.AdditionalDocuments[0].IssueDate = invoice.Date{}
 	want.Buyer.Description = ""
 	want.Buyer.TaxRegistrationID = ""
@@ -113,6 +118,9 @@ func TestMarshalEN16931Content(t *testing.T) {
 		return invoice.Party{IDs: p.IDs, Name: p.Name, Address: p.Address}
 	})
 	l := &want.Lines[0]
+	l.Extensions, l.Item.Attributes[0].Extensions = nil, nil
+	l.Item.ReferencedProducts, l.PriceAllowancesCharges = nil, nil
+	l.DeliveryTerms, l.UltimateCustomerOrders, l.UltimateShipTo, l.DeliveryNote = nil, nil, nil, nil
 	l.Item.Attributes[0].TypeCode = ""
 	l.Item.Classifications[0].Name = ""
 	l.OrderReference = ""
@@ -123,6 +131,7 @@ func TestMarshalEN16931Content(t *testing.T) {
 	l.InvoiceReference = nil
 	l2 := &want.Lines[1]
 	l2.ParentID, l2.StatusCode, l2.StatusReasonCode = "", "", ""
+	l2.Extensions = nil
 	if !reflect.DeepEqual(want, back) {
 		t.Errorf("EN 16931 projection differs\n%s", diffInvoices(want, back))
 	}
@@ -139,7 +148,20 @@ func TestMarshalStrict(t *testing.T) {
 		{invoice.ProfileEN16931,
 			[]string{"EXT TestIndicator", "EXT Language", "EXT Note.ContentCode", "EXT SalesAgent", "EXT Payer", "BT-215", "BT-216", "BG-34",
 				"EXT Line.ParentID", "EXT Line.OrderReference", "EXT Line.ShipTo", "EXT PaymentTerms[2:]",
-				"EXT Payee.Address", "EXT ShipTo.Contact", "EXT Buyer.Description", "EXT AdditionalDocument.IssueDate"},
+				"EXT Payee.Address", "EXT ShipTo.Contact", "EXT Buyer.Description", "EXT AdditionalDocument.IssueDate",
+				"EXT CopyIndicator", "EXT ProductEndUser", "EXT DeliveryTerms", "EXT UltimateCustomerOrders",
+				"EXT UltimateShipTo", "EXT ShipFrom", "EXT DeliveryNote", "EXT CurrencyExchange", "EXT LogisticsCharges",
+				"EXT PrecedingInvoice.LineID", "EXT Line.DeliveryTerms", "EXT Line.UltimateCustomerOrders",
+				"EXT Line.UltimateShipTo", "EXT Line.DeliveryNote", "EXT Line.PriceAllowancesCharges", "EXT Item.ReferencedProducts",
+				// Extensions, with their location from the root.
+				"EXT ExchangedDocument/Name", "EXT ExchangedDocument/ID/@schemeID",
+				"EXT SupplyChainTradeTransaction/ApplicableHeaderTradeAgreement/QuotationReferencedDocument",
+				"EXT SupplyChainTradeTransaction/ApplicableHeaderTradeAgreement/SellerTradeParty/RoleCode",
+				"EXT SupplyChainTradeTransaction/ApplicableHeaderTradeAgreement/SellerTradeParty/PostalTradeAddress/PostcodeCode/@listID",
+				"EXT SupplyChainTradeTransaction/IncludedSupplyChainTradeLineItem/SpecifiedTradeProduct/BrandName",
+				"EXT SupplyChainTradeTransaction/IncludedSupplyChainTradeLineItem/SpecifiedLineTradeDelivery/ChargeFreeQuantity",
+				"EXT SupplyChainTradeTransaction/ApplicableHeaderTradeSettlement/ApplicableTradeTax/LineTotalBasisAmount",
+				"EXT SupplyChainTradeTransaction/ApplicableHeaderTradeSettlement/SpecifiedTradePaymentTerms/ApplicableTradePaymentDiscountTerms"},
 			[]string{"BG-25", "BT-33", "BT-132", "BG-24"}},
 		{invoice.ProfileXRechnung, []string{"EXT SalesAgent"}, []string{"BG-25"}},
 		{invoice.ProfileBasic,

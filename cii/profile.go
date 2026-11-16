@@ -49,12 +49,17 @@ const (
 	roleInvoicee
 	rolePayer
 	roleLineShipTo
+	roleProductEndUser
+	roleUltimateShipTo
+	roleShipFrom
+	roleLineUltimateShipTo
 	numRoles
 )
 
 var roleNames = [numRoles]string{
 	"Seller", "Buyer", "SellerTaxRepresentative", "Payee", "ShipTo",
 	"SalesAgent", "BuyerAgent", "Invoicer", "Invoicee", "Payer", "Line.ShipTo",
+	"ProductEndUser", "UltimateShipTo", "ShipFrom", "Line.UltimateShipTo",
 }
 
 // Party fields, used to index partyTerms.
@@ -115,8 +120,7 @@ func rulesFor(r role, l level) partyRules {
 	if l >= lvlExtended {
 		return partyRules{
 			ids: true, legal: true, trading: true, contact: true, country: true,
-			address: true, uri: true, vat: true, fc: true,
-			desc: r == roleSeller || r == roleBuyer,
+			address: true, uri: true, vat: true, fc: true, desc: true,
 		}
 	}
 	switch r {

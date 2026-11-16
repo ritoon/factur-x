@@ -23,8 +23,10 @@ import (
 //
 // For each document it checks the round trip Parse → Marshal (same profile)
 // → Parse, the XSD conformance of the output, and the lossless EXTENDED round
-// trip of the model. It also measures which leaves of the original document
-// are missing from the rewritten one.
+// trip of the model. When the same-profile output reports no loss, it must
+// hold the whole tree of the original (see canonTree for the forms that are
+// normalized). It also measures which leaves of the original document are
+// missing from the rewritten ones: none may be missing silently.
 
 // corpusFile is a document of the corpus. Documents of FX_CORPUS and
 // testdata must be well-formed (strict); extracted ones may be broken.
@@ -62,98 +64,6 @@ func corpusFiles() []corpusFile {
 		walk(root, ".", isXML)
 	}
 	return files
-}
-
-// knownLoss reports whether a leaf missing from the rewritten document is
-// expected: an element the model does not carry, a value written in another
-// form, or information dropped on purpose.
-func knownLoss(path string) bool {
-	for _, s := range knownLosses {
-		if strings.HasSuffix(path, s) || strings.Contains(path, s+"/") {
-			return true
-		}
-	}
-	return false
-}
-
-// knownLosses lists path suffixes (or path elements followed by "/") of
-// leaves that the round trip does not keep.
-var knownLosses = []string{
-	// Attributes not part of the profiles, or written differently.
-	"/@schemaLocation",
-	"/@currencyID", // only TaxTotalAmount carries one in Factur-X 1.0
-	"/@listID", "/@listVersionID", "/@listAgencyID", "/@schemeAgencyID",
-	"/@languageID",
-	// Elements outside the EN 16931 model (EXTENDED or national
-	// extensions), not carried by invoice.Invoice.
-	"/ExchangedDocument/Name",
-	"/ExchangedDocument/CopyIndicator",
-	"/ExchangedDocument/EffectiveSpecifiedPeriod",
-	"/IncludedNote/SubjectCode", // line notes: only the content is kept
-	"/ApplicableTradeTax/LineTotalBasisAmount",
-	"/ApplicableTradeTax/AllowanceChargeBasisAmount",
-	"/ApplicableTradeTax/CalculatedAmount", // line level, EXTENDED
-	"/SpecifiedLineTradeSettlement/ApplicableTradeTax/ExemptionReason",
-	"/SpecifiedLineTradeSettlement/ApplicableTradeTax/ExemptionReasonCode",
-	"/SpecifiedLogisticsServiceCharge",
-	"/TaxApplicableTradeCurrencyExchange",
-	"/ApplicableTradePaymentDiscountTerms",
-	"/ApplicableTradePaymentPenaltyTerms",
-	"/DeliveryNoteReferencedDocument",
-	"/BillingSpecifiedPeriod/Description",
-	"/ChargeFreeQuantity", "/PackageQuantity",
-	"/IncludedReferencedProduct",
-	"/ApplicableProductCharacteristic/ValueMeasure",
-	"/IndividualTradeProductInstance",
-	"/DesignatedProductClassification/ClassCode/@listID",
-	"/GermanBankleitzahlID",
-	"/EmailURIUniversalCommunication/URIID/@schemeID", // Contact.Email is a plain address
-	"/FaxUniversalCommunication",
-	"/DefinedTradeContact/TypeCode",
-	"/DefinedTradeContact/MobileTelephoneUniversalCommunication",
-	"/SpecifiedTradeSettlementLineMonetarySummation/ChargeTotalAmount",
-	"/SpecifiedTradeSettlementLineMonetarySummation/AllowanceTotalAmount",
-	"/SpecifiedTradeSettlementLineMonetarySummation/TaxTotalAmount",
-	"/SpecifiedTradeSettlementLineMonetarySummation/GrandTotalAmount",
-	"/SpecifiedTradeSettlementLineMonetarySummation/TotalAllowanceChargeAmount",
-	// Several price allowances are summed into BT-147; price charges are not
-	// modeled.
-	"/GrossPriceProductTradePrice/AppliedTradeAllowanceCharge/ActualAmount",
-	"/AppliedTradeAllowanceCharge/ChargeIndicator/Indicator",
-	"/AppliedTradeAllowanceCharge/Reason",
-	"/AppliedTradeAllowanceCharge/ReasonCode",
-	"/AppliedTradeAllowanceCharge/CalculationPercent",
-	"/AppliedTradeAllowanceCharge/BasisAmount",
-	"/IncludedTradeTax",
-	"/ApplicableHeaderTradeDelivery/RelatedSupplyChainConsignment",
-	"/UltimateShipToTradeParty",
-	"/ShipFromTradeParty",
-	"/ProductEndUserTradeParty",
-	"/ApplicableTradeDeliveryTerms",
-	"/UltimateCustomerOrderReferencedDocument",
-	"/BuyerOrderReferencedDocument/FormattedIssueDateTime",
-	"/SellerOrderReferencedDocument/FormattedIssueDateTime",
-	"/ContractReferencedDocument/FormattedIssueDateTime",
-	"/DespatchAdviceReferencedDocument/FormattedIssueDateTime",
-	"/ReceivingAdviceReferencedDocument/FormattedIssueDateTime",
-	"/ProcuringProjectReferencedDocument",
-	"/SpecifiedProcuringProject/Name", // see below: Name is kept, other parts not
-	"/SpecifiedTradeSettlementPaymentMeans/ApplicableTradeSettlementFinancialCard/CardholderName",
-	"/SpecifiedTradeAllowanceCharge/SequenceNumeric",
-	"/SpecifiedTradeAllowanceCharge/CategoryTradeTax/ExemptionReason",
-	"/SubordinateLineTradeAgreement",
-	"/IncludedSupplyChainTradeLineItem/SpecifiedLineTradeAgreement/BuyerOrderReferencedDocument/IssuerAssignedID",
-	"/SpecifiedLineTradeAgreement/ContractReferencedDocument",
-	"/SpecifiedLineTradeAgreement/AdditionalReferencedDocument",
-	"/SpecifiedLineTradeAgreement/CatalogueReferencedDocument",
-	"/SpecifiedLineTradeAgreement/BlanketOrderReferencedDocument",
-	"/SpecifiedLineTradeAgreement/DespatchAdviceReferencedDocument",
-	"/SpecifiedLineTradeDelivery/DeliveryNoteReferencedDocument",
-	"/SpecifiedLineTradeDelivery/DespatchAdviceReferencedDocument",
-	"/SpecifiedLineTradeDelivery/ReceivingAdviceReferencedDocument",
-	"/SpecifiedLineTradeDelivery/UltimateShipToTradeParty",
-	"/ReceivableSpecifiedTradeAccountingAccount/TypeCode",
-	"/ApplicableHeaderTradeSettlement/SpecifiedAdvancePayment",
 }
 
 // lossStats aggregates the leaves lost by the round trip, per path.
@@ -211,8 +121,9 @@ func TestCorpusRoundTrip(t *testing.T) {
 	}
 	var (
 		read, notXML, zugferd1, otherRoot, withIssues, withLosses int
+		trees, extTrees                                           int
 		invalid                                                   int
-		known, unexpected, profile, notFacturX                    lossStats
+		unexpected, profile, notFacturX                           lossStats
 		added                                                     lossStats
 		perProfile                                                = map[invoice.Profile]int{}
 	)
@@ -304,6 +215,25 @@ func TestCorpusRoundTrip(t *testing.T) {
 		orig, _ := xmltree.Parse(data)
 		same, _ := xmltree.Parse(out)
 		full, _ := xmltree.Parse(ext)
+		norm := treeNorm{cur: inv.Currency, taxCur: inv.TaxCurrency, spec: true}
+		// Marshal may only add what the target schema requires (an empty
+		// mandatory element, a missing indicator…): the leaves added are
+		// listed below.
+		if !lossy {
+			trees++
+			if d := diffTrees(orig, same, norm); len(d.missing) > 0 || d.order != "" {
+				t.Errorf("%s: the %v output does not hold the tree of the original:\n%v", f.name, target, d)
+			}
+		}
+		// The model carries the whole tree of any document that follows a
+		// Factur-X profile: the EXTENDED output holds it, BT-24 aside.
+		if !outsideFacturX {
+			extTrees++
+			norm.spec = false
+			if d := diffTrees(orig, full, norm); len(d.missing) > 0 || d.order != "" {
+				t.Errorf("%s: the EXTENDED output does not hold the tree of the original:\n%v", f.name, d)
+			}
+		}
 		lo, ls, lf := leaves(orig), leaves(same), leaves(full)
 		for l, n := range lo {
 			if l.text == "" && !strings.Contains(l.path, "/@") {
@@ -314,8 +244,9 @@ func TestCorpusRoundTrip(t *testing.T) {
 				switch {
 				case strings.HasPrefix(p, "/ExchangedDocumentContext/GuidelineSpecifiedDocumentContextParameter/"):
 					// BT-24 changes with the profile.
-				case knownLoss(p):
-					known.add(p, f.name)
+				case strings.HasSuffix(p, "/@schemaLocation"),
+					strings.HasSuffix(p, "/@currencyID") && (l.text == inv.Currency || l.text == inv.TaxCurrency):
+					// Normalized forms, see canonTree.
 				case outsideFacturX:
 					// Reported by Marshal: the source breaks the Factur-X
 					// rules (e.g. a reference type on a non-130 document).
@@ -341,8 +272,8 @@ func TestCorpusRoundTrip(t *testing.T) {
 	t.Logf("%d documents read (%v), %d with unreadable values, %d not fitting their profile, %d not fitting any profile; skipped: %d not XML, %d ZUGFeRD 1 (refused), %d other roots",
 		read, perProfile, withIssues, withLosses, invalid, notXML, zugferd1, otherRoot)
 	t.Logf("leaves outside the profile of their document (reported as losses):\n%s", profile.report())
+	t.Logf("%d documents rewritten with their whole tree in their profile, %d in EXTENDED", trees, extTrees)
 	t.Logf("leaves no Factur-X profile allows (reported as losses):\n%s", notFacturX.report())
-	t.Logf("known losses (elements outside the model):\n%s", known.report())
 	t.Logf("leaves added or rewritten by Marshal:\n%s", added.report())
 	if len(unexpected.count) > 0 {
 		t.Errorf("unexpected losses:\n%s", unexpected.report())

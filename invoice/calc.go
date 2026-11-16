@@ -26,9 +26,11 @@ func (l *Line) CountsInTotals() bool {
 // It then recomputes, overwriting previous values: the totals BT-106 to
 // BT-110, BT-112 and BT-115 (which adds the charges collected on behalf of
 // a third party, BG-34, as BR-FXEXT-CO-16 of EXTENDED requires), and the VAT
-// breakdown, one entry per VAT category and rate found on lines and document
-// level allowances and charges. Tax amounts are rounded half away from zero
-// to two decimals. Exemption reasons already present in the breakdown are
+// breakdown, one entry per VAT category and rate found on lines, document
+// level allowances and charges and logistics charges. Logistics charges
+// (EXT) count as document level charges in BT-108, as BR-FXEXT-CO-12
+// requires. Tax amounts are rounded half away from zero to two decimals.
+// Exemption reasons and extensions already present in the breakdown are
 // kept.
 //
 // Invoices without lines (MINIMUM, BASIC WL) keep the VAT breakdown given by
@@ -56,6 +58,10 @@ func (inv *Invoice) Calculate() {
 			allowances = allowances.Add(ac.Amount)
 			nAllowances++
 		}
+	}
+	for _, lc := range inv.LogisticsCharges {
+		charges = charges.Add(lc.Amount)
+		nCharges++
 	}
 	t.AllowanceTotal, t.ChargeTotal = Decimal{}, Decimal{}
 	if nAllowances > 0 {
@@ -136,8 +142,8 @@ func (ac *AllowanceCharge) calculate() {
 	ac.Amount = ac.BaseAmount.Mul(ac.Percentage).Div(hundred, amountScale)
 }
 
-// computeBreakdown groups line net amounts and document level allowances and
-// charges by VAT category and rate.
+// computeBreakdown groups line net amounts, document level allowances and
+// charges and logistics charges by VAT category and rate.
 func (inv *Invoice) computeBreakdown() []VATBreakdown {
 	var out []VATBreakdown
 	group := func(cat string, rate Decimal) *VATBreakdown {
@@ -151,6 +157,7 @@ func (inv *Invoice) computeBreakdown() []VATBreakdown {
 			if old.CategoryCode == cat && old.Rate.IsSet() == rate.IsSet() && old.Rate.Equal(rate) {
 				b.ExemptionReason = old.ExemptionReason
 				b.ExemptionReasonCode = old.ExemptionReasonCode
+				b.Extensions = old.Extensions
 				break
 			}
 		}
@@ -175,6 +182,13 @@ func (inv *Invoice) computeBreakdown() []VATBreakdown {
 		} else {
 			g.TaxableAmount = g.TaxableAmount.Sub(ac.Amount)
 		}
+	}
+	for _, lc := range inv.LogisticsCharges {
+		if lc.VATCategoryCode == "" {
+			continue
+		}
+		g := group(lc.VATCategoryCode, lc.VATRate)
+		g.TaxableAmount = g.TaxableAmount.Add(lc.Amount)
 	}
 	for i := range out {
 		out[i].TaxableAmount = out[i].TaxableAmount.Round(amountScale)

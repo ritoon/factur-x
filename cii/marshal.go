@@ -8,6 +8,9 @@ import (
 	"github.com/ritoon/factur-x/invoice"
 )
 
+// rootName is the local name of the root element.
+const rootName = "rsm:CrossIndustryInvoice"
+
 // Namespaces of the CII D16B syntax.
 const (
 	NamespaceRSM = "urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100"
@@ -32,7 +35,8 @@ type MarshalOptions struct {
 	Indent bool
 	// Strict makes Marshal fail with a *LossError when the invoice holds data
 	// that the target profile cannot carry (invoice lines in BASIC WL,
-	// EXTENDED fields in EN 16931…). Without Strict such data is omitted.
+	// EXTENDED fields or extensions in EN 16931…). Without Strict such data
+	// is omitted.
 	Strict bool
 }
 
@@ -42,7 +46,10 @@ type LossError struct {
 	Profile invoice.Profile
 	// Terms lists the business terms that would be lost, in document order:
 	// "BT-33", "BG-25"…, or "EXT <Field>" for data that only the EXTENDED
-	// profile carries and "EXT <Role>.<Field>" for party data.
+	// profile carries and "EXT <Role>.<Field>" for party data. An extension
+	// (see invoice.Extension) is reported as "EXT " followed by its location
+	// from the root element:
+	// "EXT SupplyChainTradeTransaction/ApplicableHeaderTradeAgreement/QuotationReferencedDocument".
 	Terms []string
 }
 
@@ -62,6 +69,14 @@ func (e *LossError) Error() string {
 // Mandatory elements of the target schema are always written, empty when the
 // invoice has no value for them, so that a validator reports the missing
 // value. Amounts are written with the number of decimals they hold.
+//
+// The extensions of the invoice (see invoice.Extension) are put back at the
+// position that the target schema gives them, the containers they need being
+// created. They are written only when the target profile is EXTENDED or
+// carries at least the data set of inv.Profile (an EXTENDED invoice written as
+// EN 16931 loses them), and only where the target schema allows them, without
+// repeating an element beyond its maximum number of occurrences; the others are
+// reported as lost.
 func Marshal(inv *invoice.Invoice, opts *MarshalOptions) ([]byte, error) {
 	if inv == nil {
 		return nil, errors.New("cii: nil invoice")
@@ -81,6 +96,15 @@ func Marshal(inv *invoice.Invoice, opts *MarshalOptions) ([]byte, error) {
 		b:      make([]byte, 0, sizeHint(inv, o.Indent)),
 		indent: o.Indent,
 		lvl:    levelOf(target),
+		target: target,
+	}
+	if inv.HasExtensions() {
+		src := lvlExtended
+		if inv.Profile != invoice.ProfileUnknown {
+			src = levelOf(inv.Profile)
+		}
+		w.track = true
+		w.extOK = w.lvl >= lvlExtended || w.lvl >= src
 	}
 	w.b = append(w.b, xmlDeclaration...)
 	w.document(inv, target)
@@ -120,7 +144,13 @@ func sizeHint(inv *invoice.Invoice, indent bool) int {
 		n += len(inv.AdditionalDocuments[i].Attachment)*4/3 + 350
 	}
 	n += 450*len(inv.AllowancesCharges) + 400*len(inv.VATBreakdown) +
-		350*len(inv.PaymentMeans) + 300*len(inv.PaymentTerms) + 300*len(inv.PrecedingInvoices)
+		350*len(inv.PaymentMeans) + 300*len(inv.PaymentTerms) + 300*len(inv.PrecedingInvoices) +
+		450*len(inv.LogisticsCharges)
+	for _, p := range []*invoice.Party{inv.ProductEndUser, inv.UltimateShipTo, inv.ShipFrom} {
+		if p != nil {
+			n += 1100
+		}
+	}
 	if indent {
 		n += n / 3
 	}
@@ -128,8 +158,16 @@ func sizeHint(inv *invoice.Invoice, indent bool) int {
 }
 
 func (w *writer) document(inv *invoice.Invoice, target invoice.Profile) {
+	at := len(w.b)
 	w.newline()
+	if w.track {
+		w.trackStart(rootName, at, len(w.b)+1+len(rootName), true)
+	}
 	w.b = append(w.b, rootStart...)
+	if w.track {
+		w.frames[0].body = len(w.b)
+		w.hold(inv.Extensions)
+	}
 	w.depth++
 	w.context(inv, target)
 	w.exchangedDocument(inv)
@@ -147,7 +185,7 @@ func (w *writer) document(inv *invoice.Invoice, target invoice.Profile) {
 	w.delivery(inv)
 	w.settlement(inv)
 	w.end("rsm:SupplyChainTradeTransaction")
-	w.end("rsm:CrossIndustryInvoice")
+	w.end(rootName)
 }
 
 func (w *writer) context(inv *invoice.Invoice, target invoice.Profile) {
@@ -180,6 +218,13 @@ func (w *writer) exchangedDocument(inv *invoice.Invoice) {
 	w.leafReq("ram:ID", inv.Number)
 	w.leafReq("ram:TypeCode", inv.TypeCode)
 	w.dateIn("ram:IssueDateTime", "udt:DateTimeString", inv.IssueDate)
+	if inv.CopyIndicator {
+		if ext {
+			w.indicator("ram:CopyIndicator", true)
+		} else {
+			w.lose("EXT CopyIndicator")
+		}
+	}
 	w.text(ext, "ram:LanguageID", inv.Language, "EXT Language")
 	for i := range inv.Notes {
 		n := &inv.Notes[i]
@@ -188,6 +233,7 @@ func (w *writer) exchangedDocument(inv *invoice.Invoice) {
 			break
 		}
 		w.start("ram:IncludedNote")
+		w.hold(n.Extensions)
 		w.text(ext, "ram:ContentCode", n.ContentCode, "EXT Note.ContentCode")
 		if ext {
 			w.leaf("ram:Content", n.Content)
@@ -204,6 +250,7 @@ func (w *writer) line(l *invoice.Line) {
 	ext := w.lvl >= lvlExtended
 	en := w.lvl >= lvlEN16931
 	w.start("ram:IncludedSupplyChainTradeLineItem")
+	w.hold(l.Extensions)
 
 	w.start("ram:AssociatedDocumentLineDocument")
 	w.leafReq("ram:LineID", l.ID)
@@ -221,6 +268,7 @@ func (w *writer) line(l *invoice.Line) {
 
 	// Trade agreement: order reference and prices.
 	m := w.start("ram:SpecifiedLineTradeAgreement")
+	w.deliveryTerms(l.DeliveryTerms, "EXT Line.DeliveryTerms")
 	if l.OrderReference != "" || l.OrderLineReference != "" {
 		ref, lineRef := l.OrderReference, l.OrderLineReference
 		if ref != "" && !ext {
@@ -238,11 +286,21 @@ func (w *writer) line(l *invoice.Line) {
 			w.end("ram:BuyerOrderReferencedDocument")
 		}
 	}
-	if l.GrossPrice.IsSet() || l.PriceDiscount.IsSet() {
+	detailed := len(l.PriceAllowancesCharges) > 0
+	if detailed && !ext {
+		w.lose("EXT Line.PriceAllowancesCharges")
+		detailed = false
+	}
+	if l.GrossPrice.IsSet() || l.PriceDiscount.IsSet() || detailed {
 		w.start("ram:GrossPriceProductTradePrice")
 		w.decReq("ram:ChargeAmount", l.GrossPrice)
 		w.decAttr("ram:BasisQuantity", "unitCode", l.PriceBaseQuantityUnit, l.PriceBaseQuantity)
-		if l.PriceDiscount.IsSet() {
+		switch {
+		case detailed:
+			for i := range l.PriceAllowancesCharges {
+				w.priceAllowanceCharge(&l.PriceAllowancesCharges[i])
+			}
+		case l.PriceDiscount.IsSet():
 			w.start("ram:AppliedTradeAllowanceCharge")
 			w.indicator("ram:ChargeIndicator", false)
 			w.decReq("ram:ActualAmount", l.PriceDiscount)
@@ -255,6 +313,13 @@ func (w *writer) line(l *invoice.Line) {
 		w.decReq("ram:ChargeAmount", l.NetPrice)
 		w.decAttr("ram:BasisQuantity", "unitCode", l.PriceBaseQuantityUnit, l.PriceBaseQuantity)
 		w.end("ram:NetPriceProductTradePrice")
+	}
+	for i := range l.UltimateCustomerOrders {
+		if !ext {
+			w.lose("EXT Line.UltimateCustomerOrders")
+			break
+		}
+		w.reference("ram:UltimateCustomerOrderReferencedDocument", &l.UltimateCustomerOrders[i])
 	}
 	if ext {
 		w.endOpt("ram:SpecifiedLineTradeAgreement", m)
@@ -280,6 +345,7 @@ func (w *writer) line(l *invoice.Line) {
 			w.lose(partyTerms[roleLineShipTo][fGroup])
 		}
 	}
+	w.optParty("ram:UltimateShipToTradeParty", l.UltimateShipTo, roleLineUltimateShipTo, ext)
 	if !l.DeliveryDate.IsZero() {
 		if ext {
 			w.start("ram:ActualDeliverySupplyChainEvent")
@@ -287,6 +353,13 @@ func (w *writer) line(l *invoice.Line) {
 			w.end("ram:ActualDeliverySupplyChainEvent")
 		} else {
 			w.lose("EXT Line.DeliveryDate")
+		}
+	}
+	if !l.DeliveryNote.IsZero() {
+		if ext {
+			w.reference("ram:DeliveryNoteReferencedDocument", l.DeliveryNote)
+		} else {
+			w.lose("EXT Line.DeliveryNote")
 		}
 	}
 	if ext {
@@ -311,16 +384,9 @@ func (w *writer) line(l *invoice.Line) {
 	w.start("ram:SpecifiedTradeSettlementLineMonetarySummation")
 	w.decReq("ram:LineTotalAmount", l.NetAmount)
 	w.end("ram:SpecifiedTradeSettlementLineMonetarySummation")
-	if r := l.InvoiceReference; r != nil && (r.ID != "" || r.LineID != "" || r.TypeCode != "" || !r.IssueDate.IsZero()) {
+	if r := l.InvoiceReference; !r.IsZero() {
 		if ext {
-			w.start("ram:InvoiceReferencedDocument")
-			w.leaf("ram:IssuerAssignedID", r.ID)
-			w.leaf("ram:LineID", r.LineID)
-			w.leaf("ram:TypeCode", r.TypeCode)
-			if !r.IssueDate.IsZero() {
-				w.dateIn("ram:FormattedIssueDateTime", "qdt:DateTimeString", r.IssueDate)
-			}
-			w.end("ram:InvoiceReferencedDocument")
+			w.reference("ram:InvoiceReferencedDocument", r)
 		} else {
 			w.lose("EXT Line.InvoiceReference")
 		}
@@ -365,6 +431,7 @@ func (w *writer) item(it *invoice.Item) {
 			break
 		}
 		w.start("ram:ApplicableProductCharacteristic")
+		w.hold(a.Extensions)
 		w.text(ext, "ram:TypeCode", a.TypeCode, "EXT ItemAttribute.TypeCode")
 		w.leafReq("ram:Description", a.Name)
 		w.leafReq("ram:Value", a.Value)
@@ -377,6 +444,7 @@ func (w *writer) item(it *invoice.Item) {
 			break
 		}
 		m := w.start("ram:DesignatedProductClassification")
+		w.hold(c.Extensions)
 		if c.Code != "" || c.ListID != "" || c.ListVersionID != "" {
 			w.openLeaf("ram:ClassCode")
 			if c.ListID != "" {
@@ -399,7 +467,79 @@ func (w *writer) item(it *invoice.Item) {
 			w.lose("BT-159")
 		}
 	}
+	for i := range it.ReferencedProducts {
+		if !ext {
+			w.lose("EXT Item.ReferencedProducts")
+			break
+		}
+		w.referencedProduct(&it.ReferencedProducts[i])
+	}
 	w.end("ram:SpecifiedTradeProduct")
+}
+
+// referencedProduct writes a product included in the item of a line (EXT).
+func (w *writer) referencedProduct(p *invoice.ReferencedProduct) {
+	w.start("ram:IncludedReferencedProduct")
+	w.hold(p.Extensions)
+	w.leaf("ram:ID", p.ID)
+	for _, id := range p.GlobalIDs {
+		w.leafAttr("ram:GlobalID", "schemeID", id.Scheme, id.ID)
+	}
+	w.leaf("ram:SellerAssignedID", p.SellerID)
+	w.leaf("ram:BuyerAssignedID", p.BuyerID)
+	w.leaf("ram:IndustryAssignedID", p.IndustryID)
+	w.leafReq("ram:Name", p.Name)
+	w.leaf("ram:Description", p.Description)
+	w.decAttr("ram:UnitQuantity", "unitCode", p.UnitQuantityUnit, p.UnitQuantity)
+	w.end("ram:IncludedReferencedProduct")
+}
+
+// priceAllowanceCharge writes an allowance or a charge applied to the gross
+// price of a line (EXT).
+func (w *writer) priceAllowanceCharge(ac *invoice.AllowanceCharge) {
+	w.start("ram:AppliedTradeAllowanceCharge")
+	w.hold(ac.Extensions)
+	w.indicator("ram:ChargeIndicator", ac.Charge)
+	w.dec("ram:CalculationPercent", ac.Percentage)
+	w.dec("ram:BasisAmount", ac.BaseAmount)
+	w.decReq("ram:ActualAmount", ac.Amount)
+	w.leaf("ram:ReasonCode", ac.ReasonCode)
+	w.leaf("ram:Reason", ac.Reason)
+	w.end("ram:AppliedTradeAllowanceCharge")
+}
+
+// reference writes a ram:ReferencedDocumentType from a document reference
+// (EXT, or BG-3 for a preceding invoice).
+func (w *writer) reference(name string, d *invoice.DocumentReference) {
+	w.start(name)
+	w.hold(d.Extensions)
+	w.leaf("ram:IssuerAssignedID", d.ID)
+	w.leaf("ram:LineID", d.LineID)
+	w.leaf("ram:TypeCode", d.TypeCode)
+	if !d.IssueDate.IsZero() {
+		w.dateIn("ram:FormattedIssueDateTime", "qdt:DateTimeString", d.IssueDate)
+	}
+	w.end(name)
+}
+
+// deliveryTerms writes delivery terms (EXT), or records term as lost.
+func (w *writer) deliveryTerms(t *invoice.DeliveryTerms, term string) {
+	if t == nil || *t == (invoice.DeliveryTerms{}) {
+		return
+	}
+	if w.lvl < lvlExtended {
+		w.lose(term)
+		return
+	}
+	w.start("ram:ApplicableTradeDeliveryTerms")
+	w.leafReq("ram:DeliveryTypeCode", t.Code)
+	if t.LocationCountryCode != "" || t.LocationName != "" {
+		w.start("ram:RelevantTradeLocation")
+		w.leaf("ram:CountryID", t.LocationCountryCode)
+		w.leaf("ram:Name", t.LocationName)
+		w.end("ram:RelevantTradeLocation")
+	}
+	w.end("ram:ApplicableTradeDeliveryTerms")
 }
 
 // allowanceCharge writes a document level (BG-20, BG-21) or line level
@@ -418,6 +558,7 @@ func (w *writer) allowanceCharge(ac *invoice.AllowanceCharge, line bool) {
 		}
 	}
 	w.start("ram:SpecifiedTradeAllowanceCharge")
+	w.hold(ac.Extensions)
 	w.indicator("ram:ChargeIndicator", ac.Charge)
 	w.amount(full, "ram:CalculationPercent", ac.Percentage, pct)
 	w.amount(full, "ram:BasisAmount", ac.BaseAmount, base)
@@ -482,6 +623,8 @@ func (w *writer) agreement(inv *invoice.Invoice) {
 	w.party("ram:BuyerTradeParty", &inv.Buyer, roleBuyer, true)
 	w.optParty("ram:SalesAgentTradeParty", inv.SalesAgent, roleSalesAgent, l >= lvlExtended)
 	w.optParty("ram:SellerTaxRepresentativeTradeParty", inv.SellerTaxRepresentative, roleSellerTaxRep, l >= lvlBasicWL)
+	w.optParty("ram:ProductEndUserTradeParty", inv.ProductEndUser, roleProductEndUser, l >= lvlExtended)
+	w.deliveryTerms(inv.DeliveryTerms, "EXT DeliveryTerms")
 	w.docRef(l >= lvlEN16931, "ram:SellerOrderReferencedDocument", inv.SalesOrderReference, "BT-14")
 	w.docRef(true, "ram:BuyerOrderReferencedDocument", inv.PurchaseOrderReference, "BT-13")
 	w.docRef(l >= lvlBasicWL, "ram:ContractReferencedDocument", inv.ContractReference, "BT-12")
@@ -498,6 +641,13 @@ func (w *writer) agreement(inv *invoice.Invoice) {
 		} else {
 			w.lose("BT-11")
 		}
+	}
+	for i := range inv.UltimateCustomerOrders {
+		if l < lvlExtended {
+			w.lose("EXT UltimateCustomerOrders")
+			break
+		}
+		w.reference("ram:UltimateCustomerOrderReferencedDocument", &inv.UltimateCustomerOrders[i])
 	}
 	w.end("ram:ApplicableHeaderTradeAgreement")
 }
@@ -522,6 +672,7 @@ func (w *writer) additionalDocument(d *invoice.AdditionalDocument) {
 	}
 	doc := code != "50" && code != "130"
 	w.start("ram:AdditionalReferencedDocument")
+	w.hold(d.Extensions)
 	w.leafReq("ram:IssuerAssignedID", d.ID)
 	w.text(doc, "ram:URIID", d.URI, "BT-124")
 	w.leafReq("ram:TypeCode", code)
@@ -553,6 +704,8 @@ func (w *writer) delivery(inv *invoice.Invoice) {
 	l := w.lvl
 	w.start("ram:ApplicableHeaderTradeDelivery")
 	w.optParty("ram:ShipToTradeParty", inv.ShipTo, roleShipTo, l >= lvlBasicWL)
+	w.optParty("ram:UltimateShipToTradeParty", inv.UltimateShipTo, roleUltimateShipTo, l >= lvlExtended)
+	w.optParty("ram:ShipFromTradeParty", inv.ShipFrom, roleShipFrom, l >= lvlExtended)
 	if !inv.DeliveryDate.IsZero() {
 		if l >= lvlBasicWL {
 			w.start("ram:ActualDeliverySupplyChainEvent")
@@ -564,6 +717,13 @@ func (w *writer) delivery(inv *invoice.Invoice) {
 	}
 	w.docRef(l >= lvlBasicWL, "ram:DespatchAdviceReferencedDocument", inv.DespatchAdviceReference, "BT-16")
 	w.docRef(l >= lvlEN16931, "ram:ReceivingAdviceReferencedDocument", inv.ReceivingAdviceReference, "BT-15")
+	if !inv.DeliveryNote.IsZero() {
+		if l >= lvlExtended {
+			w.reference("ram:DeliveryNoteReferencedDocument", inv.DeliveryNote)
+		} else {
+			w.lose("EXT DeliveryNote")
+		}
+	}
 	w.end("ram:ApplicableHeaderTradeDelivery")
 }
 
@@ -580,6 +740,18 @@ func (w *writer) settlement(inv *invoice.Invoice) {
 	w.optParty("ram:InvoiceeTradeParty", inv.Invoicee, roleInvoicee, ext)
 	w.optParty("ram:PayeeTradeParty", inv.Payee, rolePayee, wl)
 	w.optParty("ram:PayerTradeParty", inv.Payer, rolePayer, ext)
+	if x := inv.CurrencyExchange; x != nil && (x.SourceCurrency != "" || x.TargetCurrency != "" || x.Rate.IsSet() || !x.Date.IsZero()) {
+		if ext {
+			w.start("ram:TaxApplicableTradeCurrencyExchange")
+			w.leafReq("ram:SourceCurrencyCode", x.SourceCurrency)
+			w.leafReq("ram:TargetCurrencyCode", x.TargetCurrency)
+			w.decReq("ram:ConversionRate", x.Rate)
+			w.dateTime("ram:ConversionRateDateTime", x.Date)
+			w.end("ram:TaxApplicableTradeCurrencyExchange")
+		} else {
+			w.lose("EXT CurrencyExchange")
+		}
+	}
 	for i := range inv.PaymentMeans {
 		w.paymentMeans(&inv.PaymentMeans[i])
 	}
@@ -597,6 +769,13 @@ func (w *writer) settlement(inv *invoice.Invoice) {
 		}
 		w.allowanceCharge(ac, false)
 	}
+	for i := range inv.LogisticsCharges {
+		if !ext {
+			w.lose("EXT LogisticsCharges")
+			break
+		}
+		w.logisticsCharge(&inv.LogisticsCharges[i])
+	}
 	w.paymentTerms(inv)
 	w.totals(inv)
 	for i := range inv.ThirdPartyCharges {
@@ -606,6 +785,7 @@ func (w *writer) settlement(inv *invoice.Invoice) {
 			break
 		}
 		w.start("ram:SpecifiedFinancialAdjustment")
+		w.hold(c.Extensions)
 		w.leafReq("ram:Reason", c.Reason)
 		w.decReq("ram:ActualAmount", c.Amount)
 		w.end("ram:SpecifiedFinancialAdjustment")
@@ -617,13 +797,12 @@ func (w *writer) settlement(inv *invoice.Invoice) {
 			break
 		}
 		w.start("ram:InvoiceReferencedDocument")
+		w.hold(r.Extensions)
 		w.leafReq("ram:IssuerAssignedID", r.ID)
+		w.text(ext, "ram:LineID", r.LineID, "EXT PrecedingInvoice.LineID")
 		w.text(ext, "ram:TypeCode", r.TypeCode, "EXT PrecedingInvoice.TypeCode")
 		if !r.IssueDate.IsZero() {
 			w.dateIn("ram:FormattedIssueDateTime", "qdt:DateTimeString", r.IssueDate)
-		}
-		if r.LineID != "" {
-			w.lose("EXT PrecedingInvoice.LineID")
 		}
 		w.end("ram:InvoiceReferencedDocument")
 	}
@@ -639,6 +818,22 @@ func (w *writer) settlement(inv *invoice.Invoice) {
 	w.end("ram:ApplicableHeaderTradeSettlement")
 }
 
+// logisticsCharge writes a logistics service charge (EXT).
+func (w *writer) logisticsCharge(c *invoice.LogisticsCharge) {
+	w.start("ram:SpecifiedLogisticsServiceCharge")
+	w.hold(c.Extensions)
+	w.leafReq("ram:Description", c.Description)
+	w.decReq("ram:AppliedAmount", c.Amount)
+	if c.VATCategoryCode != "" || c.VATRate.IsSet() {
+		w.start("ram:AppliedTradeTax")
+		w.leafReq("ram:TypeCode", "VAT")
+		w.leafReq("ram:CategoryCode", c.VATCategoryCode)
+		w.dec("ram:RateApplicablePercent", c.VATRate)
+		w.end("ram:AppliedTradeTax")
+	}
+	w.end("ram:SpecifiedLogisticsServiceCharge")
+}
+
 func (w *writer) paymentMeans(pm *invoice.PaymentMeans) {
 	if w.lvl < lvlBasicWL {
 		w.lose("BG-16")
@@ -646,6 +841,7 @@ func (w *writer) paymentMeans(pm *invoice.PaymentMeans) {
 	}
 	en := w.lvl >= lvlEN16931
 	w.start("ram:SpecifiedTradeSettlementPaymentMeans")
+	w.hold(pm.Extensions)
 	w.leafReq("ram:TypeCode", pm.TypeCode)
 	w.text(en, "ram:Information", pm.Information, "BT-82")
 	if pm.CardID != "" || pm.CardholderName != "" {
@@ -717,6 +913,7 @@ func (w *writer) vatBreakdown(inv *invoice.Invoice) {
 	for i := range inv.VATBreakdown {
 		v := &inv.VATBreakdown[i]
 		w.start("ram:ApplicableTradeTax")
+		w.hold(v.Extensions)
 		w.dec("ram:CalculatedAmount", v.TaxAmount)
 		w.leafReq("ram:TypeCode", "VAT")
 		w.leaf("ram:ExemptionReason", v.ExemptionReason)
@@ -748,6 +945,7 @@ func (w *writer) paymentTerms(inv *invoice.Invoice) {
 			break
 		}
 		m := w.start("ram:SpecifiedTradePaymentTerms")
+		w.hold(t.Extensions)
 		w.leaf("ram:Description", t.Description)
 		w.dateTime("ram:DueDateDateTime", t.DueDate)
 		w.leaf("ram:DirectDebitMandateID", t.DirectDebitMandateID)
@@ -803,6 +1001,7 @@ func (w *writer) party(name string, p *invoice.Party, r role, required bool) {
 	pr := rulesFor(r, w.lvl)
 	terms := &partyTerms[r]
 	w.start(name)
+	w.hold(p.Extensions)
 	if len(p.IDs) > 0 {
 		if pr.ids {
 			for _, id := range p.IDs {

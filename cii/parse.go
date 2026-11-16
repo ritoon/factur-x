@@ -56,6 +56,15 @@ func (e *IssuesError) Error() string {
 // checked), values are trimmed, elements are recognized in any order, and the
 // ZUGFeRD 2.0/2.1 variants are accepted. The profile is derived from the
 // specification identifier BT-24, which is kept in SpecificationID.
+//
+// Nothing is dropped: the elements and attributes that the model does not
+// carry (EXTENDED elements without a field of their own, a listID, an
+// element that no schema knows…) are kept as extensions, in the Extensions
+// field of the value that encloses them; Invoice.Unmodeled lists them.
+// Marshal writes them back at their place when the target profile allows
+// them, and reports them as lost otherwise. A currencyID equal to the invoice
+// or VAT accounting currency is implied by BT-5 and BT-6, and attributes in
+// other namespaces (xsi:schemaLocation) are not kept.
 func Parse(data []byte) (*invoice.Invoice, error) {
 	root, err := xmltree.Parse(data)
 	if err != nil {
@@ -103,35 +112,154 @@ func checkRoot(root *xmltree.Node) error {
 	return nil
 }
 
+// reader maps a CII tree to the model.
+//
+// Every element and attribute of the document is either read into a field of
+// the model or kept as an extension: each container function handles the
+// children it knows and passes the others to unread. Extensions go to the
+// value being read whose Extensions field is ext, with a path relative to the
+// element of that value (path holds its names).
 type reader struct {
 	inv    *invoice.Invoice
 	issues []Issue
+
+	ext  *[]invoice.Extension
+	path []string
+
+	// cur and taxCur are the invoice and VAT accounting currencies: a
+	// currencyID equal to one of them is implied by BT-5 and BT-6.
+	cur, taxCur string
+
+	// unreadPaths, when not nil, receives the location of each extension
+	// (tests use it to list the elements outside the model).
+	unreadPaths *[]string
+	buf         []byte
 }
 
 func (r *reader) issue(n *xmltree.Node, msg string) {
 	r.issues = append(r.issues, Issue{Path: n.Path(), Line: n.Line, Message: msg})
 }
 
-// text returns the trimmed text of n ("" for nil).
-func text(n *xmltree.Node) string {
+// holder is the state saved by hold.
+type holder struct {
+	ext  *[]invoice.Extension
+	path []string
+}
+
+// hold makes the value whose Extensions field is ext the receiver of the
+// extensions found until release, with paths relative to n, its element.
+// The attributes of n itself are kept with an empty path.
+func (r *reader) hold(n *xmltree.Node, ext *[]invoice.Extension) holder {
+	h := holder{r.ext, r.path}
+	r.ext, r.path = ext, r.path[len(r.path):]
+	if len(n.Attrs) > 0 {
+		r.keepAttrs(n, "", "", "", "")
+	}
+	return h
+}
+
+func (r *reader) release(h holder) { r.ext, r.path = h.ext, h.path }
+
+// enter starts reading the children of the container n: its attributes are
+// kept as extensions and its name extends the path.
+func (r *reader) enter(n *xmltree.Node) {
+	if len(n.Attrs) > 0 {
+		r.keepAttrs(n, r.attrPath(n), "", "", "")
+	}
+	r.path = append(r.path, n.Name)
+}
+
+func (r *reader) leave() { r.path = r.path[:len(r.path)-1] }
+
+func (r *reader) pathString() string { return strings.Join(r.path, "/") }
+
+// unread keeps n, a child of the current container, as an extension.
+func (r *reader) unread(n *xmltree.Node) {
+	r.buf = appendElement(r.buf[:0], n, false, 0)
+	e := invoice.Extension{Path: r.pathString(), XML: string(r.buf)}
+	*r.ext = append(*r.ext, e)
+	if r.unreadPaths != nil {
+		*r.unreadPaths = append(*r.unreadPaths, n.Path())
+	}
+}
+
+// keepAttrs keeps the attributes of n, whose location is path (see
+// attrPath), except those named a, b and c, which the caller reads.
+// Attributes in another namespace (xsi:schemaLocation…) are not part of the
+// data.
+func (r *reader) keepAttrs(n *xmltree.Node, path, a, b, c string) {
+	for _, at := range n.Attrs {
+		if at.Prefix != "" || at.Name == a || at.Name == b || at.Name == c {
+			continue
+		}
+		*r.ext = append(*r.ext, invoice.Extension{Path: path, Attr: at.Name, Value: at.Value})
+		if r.unreadPaths != nil {
+			*r.unreadPaths = append(*r.unreadPaths, n.Path()+"/@"+at.Name)
+		}
+	}
+}
+
+// attrPath returns the location of n, a child of the current container:
+// the current path followed by the name of n, with its occurrence number
+// when it is not the first child of that name.
+func (r *reader) attrPath(n *xmltree.Node) string {
+	name := n.Name
+	if p := n.Parent; p != nil {
+		k := 0
+		for _, s := range p.Children {
+			if s == n {
+				break
+			}
+			if s.Name == n.Name {
+				k++
+			}
+		}
+		if k > 0 {
+			name += "[" + strconv.Itoa(k+1) + "]"
+		}
+	}
+	if len(r.path) == 0 {
+		return name
+	}
+	return r.pathString() + "/" + name
+}
+
+// leafChildren keeps the children of a leaf element (a document error) as
+// extensions.
+func (r *reader) leafChildren(n *xmltree.Node) {
+	r.path = append(r.path, n.Name)
+	for _, c := range n.Children {
+		r.unread(c)
+	}
+	r.leave()
+}
+
+// text returns the trimmed text of the leaf n ("" for nil) and keeps its
+// attributes.
+func (r *reader) text(n *xmltree.Node) string {
 	if n == nil {
 		return ""
+	}
+	if len(n.Attrs) > 0 {
+		r.keepAttrs(n, r.attrPath(n), "", "", "")
+	}
+	if len(n.Children) > 0 {
+		r.leafChildren(n)
 	}
 	return strings.TrimSpace(n.Text)
 }
 
-// child returns the first child element of n with the given local name.
-func child(n *xmltree.Node, name string) *xmltree.Node {
-	for _, c := range n.Children {
-		if c.Name == name {
-			return c
-		}
+// textAttrs is text for a leaf whose attributes a, b and c are read by the
+// caller.
+func (r *reader) textAttrs(n *xmltree.Node, a, b, c string) string {
+	if len(n.Attrs) > 0 {
+		r.keepAttrs(n, r.attrPath(n), a, b, c)
 	}
-	return nil
+	if len(n.Children) > 0 {
+		r.leafChildren(n)
+	}
+	return strings.TrimSpace(n.Text)
 }
-
-// childText returns the trimmed text of the first child named name.
-func childText(n *xmltree.Node, name string) string { return text(child(n, name)) }
 
 // attr returns the trimmed value of an attribute of n.
 func attr(n *xmltree.Node, name string) string {
@@ -144,12 +272,28 @@ func attr(n *xmltree.Node, name string) string {
 }
 
 // ident reads an identifier element with its schemeID.
-func ident(n *xmltree.Node) invoice.Identifier {
-	return invoice.Identifier{ID: text(n), Scheme: attr(n, "schemeID")}
+func (r *reader) ident(n *xmltree.Node) invoice.Identifier {
+	return invoice.Identifier{ID: r.textAttrs(n, "schemeID", "", ""), Scheme: attr(n, "schemeID")}
 }
 
+// decimal reads an amount, a rate or a percentage. A currencyID equal to
+// the invoice or VAT accounting currency is implied; another one is kept.
 func (r *reader) decimal(n *xmltree.Node) invoice.Decimal {
-	s := text(n)
+	var s string
+	if c := attr(n, "currencyID"); c != "" && (c == r.cur || c == r.taxCur) {
+		s = r.textAttrs(n, "currencyID", "", "")
+	} else {
+		s = r.text(n)
+	}
+	return r.parseDecimal(n, s)
+}
+
+// quantity reads a quantity and its unit code.
+func (r *reader) quantity(n *xmltree.Node) (invoice.Decimal, string) {
+	return r.parseDecimal(n, r.textAttrs(n, "unitCode", "", "")), attr(n, "unitCode")
+}
+
+func (r *reader) parseDecimal(n *xmltree.Node, s string) invoice.Decimal {
 	if s == "" {
 		return invoice.Decimal{}
 	}
@@ -165,13 +309,21 @@ func (r *reader) decimal(n *xmltree.Node) invoice.Decimal {
 // element; the text of n itself is used when it has no DateTimeString child.
 func (r *reader) date(n *xmltree.Node) invoice.Date {
 	v := n
+	r.enter(n)
 	for _, c := range n.Children {
-		if c.Name == "DateTimeString" || c.Name == "DateString" {
+		if (c.Name == "DateTimeString" || c.Name == "DateString") && v == n {
 			v = c
-			break
+			continue
 		}
+		r.unread(c)
 	}
-	s := text(v)
+	var s string
+	if v == n {
+		s = strings.TrimSpace(n.Text)
+	} else {
+		s = r.textAttrs(v, "format", "", "")
+	}
+	r.leave()
 	if s == "" {
 		return invoice.Date{}
 	}
@@ -186,10 +338,20 @@ func (r *reader) date(n *xmltree.Node) invoice.Date {
 // indicator reads a udt:IndicatorType element.
 func (r *reader) indicator(n *xmltree.Node) bool {
 	v := n
-	if c := child(n, "Indicator"); c != nil {
-		v = c
+	r.enter(n)
+	for _, c := range n.Children {
+		if c.Name == "Indicator" && v == n {
+			v = c
+			continue
+		}
+		r.unread(c)
 	}
-	switch s := text(v); s {
+	s := strings.TrimSpace(n.Text)
+	if v != n {
+		s = r.text(v)
+	}
+	r.leave()
+	switch s {
 	case "true", "1":
 		return true
 	case "false", "0", "":
@@ -202,6 +364,7 @@ func (r *reader) indicator(n *xmltree.Node) bool {
 
 // binary decodes a base64 binary object, ignoring white space.
 func (r *reader) binary(n *xmltree.Node) []byte {
+	r.textAttrs(n, "mimeCode", "filename", "")
 	s := unspace(n.Text)
 	if len(s) == 0 {
 		return nil
@@ -237,7 +400,34 @@ func unspace(s string) []byte {
 
 func isXMLSpace(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' }
 
+// child returns the first child element of n with the given local name
+// (nil when n is nil).
+func child(n *xmltree.Node, name string) *xmltree.Node {
+	if n == nil {
+		return nil
+	}
+	for _, c := range n.Children {
+		if c.Name == name {
+			return c
+		}
+	}
+	return nil
+}
+
+// textOf returns the trimmed text of n without keeping anything ("" for
+// nil); it is used to look ahead.
+func textOf(n *xmltree.Node) string {
+	if n == nil {
+		return ""
+	}
+	return strings.TrimSpace(n.Text)
+}
+
 func (r *reader) document(root *xmltree.Node) {
+	inv := r.inv
+	st := child(child(root, "SupplyChainTradeTransaction"), "ApplicableHeaderTradeSettlement")
+	r.cur, r.taxCur = textOf(child(st, "InvoiceCurrencyCode")), textOf(child(st, "TaxCurrencyCode"))
+	h := r.hold(root, &inv.Extensions)
 	for _, c := range root.Children {
 		switch c.Name {
 		case "ExchangedDocumentContext":
@@ -246,59 +436,96 @@ func (r *reader) document(root *xmltree.Node) {
 			r.exchangedDocument(c)
 		case "SupplyChainTradeTransaction":
 			r.transaction(c)
+		default:
+			r.unread(c)
 		}
 	}
-	r.inv.Profile = detectProfile(r.inv.SpecificationID)
+	r.release(h)
+	inv.Profile = detectProfile(inv.SpecificationID)
 }
 
 func (r *reader) context(n *xmltree.Node) {
 	inv := r.inv
+	r.enter(n)
 	for _, c := range n.Children {
-		switch c.Name {
-		case "TestIndicator":
+		switch {
+		case c.Name == "TestIndicator":
 			inv.TestIndicator = r.indicator(c)
-		case "BusinessProcessSpecifiedDocumentContextParameter":
-			if inv.BusinessProcess == "" {
-				inv.BusinessProcess = childText(c, "ID")
-			}
-		case "GuidelineSpecifiedDocumentContextParameter":
-			if inv.SpecificationID == "" {
-				inv.SpecificationID = childText(c, "ID")
-			}
+		case c.Name == "BusinessProcessSpecifiedDocumentContextParameter" && inv.BusinessProcess == "":
+			inv.BusinessProcess = r.idOf(c)
+		case c.Name == "GuidelineSpecifiedDocumentContextParameter" && inv.SpecificationID == "":
+			inv.SpecificationID = r.idOf(c)
+		default:
+			r.unread(c)
 		}
 	}
+	r.leave()
+}
+
+// idOf reads a container whose only child is an ID (document context
+// parameter, procuring project, accounting account…) and returns the ID.
+func (r *reader) idOf(n *xmltree.Node) string {
+	return r.childText(n, "ID")
+}
+
+// childText reads a container holding a single known leaf, name, and
+// returns its text. The other children are kept as extensions.
+func (r *reader) childText(n *xmltree.Node, name string) string {
+	var v string
+	seen := false
+	r.enter(n)
+	for _, c := range n.Children {
+		if c.Name == name && !seen {
+			seen = true
+			v = r.text(c)
+			continue
+		}
+		r.unread(c)
+	}
+	r.leave()
+	return v
 }
 
 func (r *reader) exchangedDocument(n *xmltree.Node) {
 	inv := r.inv
+	r.enter(n)
 	for _, c := range n.Children {
 		switch c.Name {
 		case "ID":
-			inv.Number = text(c)
+			inv.Number = r.text(c)
 		case "TypeCode":
-			inv.TypeCode = text(c)
+			inv.TypeCode = r.text(c)
 		case "IssueDateTime":
 			inv.IssueDate = r.date(c)
+		case "CopyIndicator":
+			inv.CopyIndicator = r.indicator(c)
 		case "LanguageID":
-			inv.Language = text(c)
+			inv.Language = r.text(c)
 		case "IncludedNote":
-			inv.Notes = append(inv.Notes, readNote(c))
+			inv.Notes = append(inv.Notes, r.note(c))
+		default:
+			r.unread(c)
 		}
 	}
+	r.leave()
 }
 
-func readNote(n *xmltree.Node) invoice.Note {
+func (r *reader) note(n *xmltree.Node) invoice.Note {
 	var note invoice.Note
+	h := r.hold(n, &note.Extensions)
 	for _, c := range n.Children {
 		switch c.Name {
 		case "ContentCode":
-			note.ContentCode = text(c)
+			note.ContentCode = r.text(c)
 		case "Content":
-			note.Content = joinText(note.Content, text(c))
+			note.Content = joinText(note.Content, r.text(c))
 		case "SubjectCode":
-			note.SubjectCode = text(c)
+			note.SubjectCode = r.text(c)
+		default:
+			r.unread(c)
 		}
 	}
+	r.release(h)
 	return note
 }
 
@@ -324,6 +551,7 @@ func (r *reader) transaction(n *xmltree.Node) {
 	if lines > 0 {
 		inv.Lines = make([]invoice.Line, 0, lines)
 	}
+	r.enter(n)
 	for _, c := range n.Children {
 		switch c.Name {
 		case "IncludedSupplyChainTradeLineItem":
@@ -335,16 +563,20 @@ func (r *reader) transaction(n *xmltree.Node) {
 			r.delivery(c)
 		case "ApplicableHeaderTradeSettlement":
 			r.settlement(c)
+		default:
+			r.unread(c)
 		}
 	}
+	r.leave()
 }
 
 func (r *reader) agreement(n *xmltree.Node) {
 	inv := r.inv
+	r.enter(n)
 	for _, c := range n.Children {
 		switch c.Name {
 		case "BuyerReference":
-			inv.BuyerReference = text(c)
+			inv.BuyerReference = r.text(c)
 		case "SellerTradeParty":
 			r.party(c, &inv.Seller)
 		case "BuyerTradeParty":
@@ -353,79 +585,160 @@ func (r *reader) agreement(n *xmltree.Node) {
 			inv.SalesAgent = r.newParty(c)
 		case "SellerTaxRepresentativeTradeParty":
 			inv.SellerTaxRepresentative = r.newParty(c)
+		case "ProductEndUserTradeParty":
+			inv.ProductEndUser = r.newParty(c)
+		case "ApplicableTradeDeliveryTerms":
+			inv.DeliveryTerms = r.deliveryTerms(c)
 		case "BuyerAgentTradeParty":
 			inv.BuyerAgent = r.newParty(c)
 		case "SellerOrderReferencedDocument":
-			inv.SalesOrderReference = childText(c, "IssuerAssignedID")
+			inv.SalesOrderReference = r.childText(c, "IssuerAssignedID")
 		case "BuyerOrderReferencedDocument":
-			inv.PurchaseOrderReference = childText(c, "IssuerAssignedID")
+			inv.PurchaseOrderReference = r.childText(c, "IssuerAssignedID")
 		case "ContractReferencedDocument":
-			inv.ContractReference = childText(c, "IssuerAssignedID")
+			inv.ContractReference = r.childText(c, "IssuerAssignedID")
 		case "AdditionalReferencedDocument":
 			inv.AdditionalDocuments = append(inv.AdditionalDocuments, r.additionalDocument(c))
 		case "SpecifiedProcuringProject":
-			inv.ProjectReference = childText(c, "ID")
-			inv.ProjectName = childText(c, "Name")
+			r.enter(c)
+			for _, cc := range c.Children {
+				switch cc.Name {
+				case "ID":
+					inv.ProjectReference = r.text(cc)
+				case "Name":
+					inv.ProjectName = r.text(cc)
+				default:
+					r.unread(cc)
+				}
+			}
+			r.leave()
+		case "UltimateCustomerOrderReferencedDocument":
+			inv.UltimateCustomerOrders = append(inv.UltimateCustomerOrders, r.docRef(c))
+		default:
+			r.unread(c)
 		}
 	}
+	r.leave()
+}
+
+func (r *reader) deliveryTerms(n *xmltree.Node) *invoice.DeliveryTerms {
+	t := new(invoice.DeliveryTerms)
+	r.enter(n)
+	for _, c := range n.Children {
+		switch c.Name {
+		case "DeliveryTypeCode":
+			t.Code = r.text(c)
+		case "RelevantTradeLocation":
+			r.enter(c)
+			for _, cc := range c.Children {
+				switch cc.Name {
+				case "CountryID":
+					t.LocationCountryCode = r.text(cc)
+				case "Name":
+					t.LocationName = r.text(cc)
+				default:
+					r.unread(cc)
+				}
+			}
+			r.leave()
+		default:
+			r.unread(c)
+		}
+	}
+	r.leave()
+	if *t == (invoice.DeliveryTerms{}) {
+		return nil
+	}
+	return t
 }
 
 func (r *reader) additionalDocument(n *xmltree.Node) invoice.AdditionalDocument {
 	var d invoice.AdditionalDocument
+	h := r.hold(n, &d.Extensions)
 	for _, c := range n.Children {
 		switch c.Name {
 		case "IssuerAssignedID":
-			d.ID = text(c)
+			d.ID = r.text(c)
 		case "URIID":
-			d.URI = text(c)
+			d.URI = r.text(c)
 		case "TypeCode":
-			d.TypeCode = text(c)
+			d.TypeCode = r.text(c)
 		case "Name":
-			d.Description = text(c)
+			d.Description = r.text(c)
 		case "AttachmentBinaryObject":
 			d.AttachmentMimeCode = attr(c, "mimeCode")
 			d.AttachmentFilename = attr(c, "filename")
 			d.Attachment = r.binary(c)
 		case "ReferenceTypeCode":
-			d.ReferenceTypeCode = text(c)
+			d.ReferenceTypeCode = r.text(c)
 		case "FormattedIssueDateTime":
 			d.IssueDate = r.date(c)
+		default:
+			r.unread(c)
 		}
 	}
+	r.release(h)
 	return d
 }
 
 func (r *reader) delivery(n *xmltree.Node) {
 	inv := r.inv
+	r.enter(n)
 	for _, c := range n.Children {
 		switch c.Name {
 		case "ShipToTradeParty":
 			inv.ShipTo = r.newParty(c)
+		case "UltimateShipToTradeParty":
+			inv.UltimateShipTo = r.newParty(c)
+		case "ShipFromTradeParty":
+			inv.ShipFrom = r.newParty(c)
 		case "ActualDeliverySupplyChainEvent":
-			if oc := child(c, "OccurrenceDateTime"); oc != nil {
-				inv.DeliveryDate = r.date(oc)
-			}
+			inv.DeliveryDate = r.event(c)
 		case "DespatchAdviceReferencedDocument":
-			inv.DespatchAdviceReference = childText(c, "IssuerAssignedID")
+			inv.DespatchAdviceReference = r.childText(c, "IssuerAssignedID")
 		case "ReceivingAdviceReferencedDocument":
-			inv.ReceivingAdviceReference = childText(c, "IssuerAssignedID")
+			inv.ReceivingAdviceReference = r.childText(c, "IssuerAssignedID")
+		case "DeliveryNoteReferencedDocument":
+			inv.DeliveryNote = r.newDocRef(c)
+		default:
+			r.unread(c)
 		}
 	}
+	r.leave()
+}
+
+// event reads a ram:SupplyChainEventType and returns its date.
+func (r *reader) event(n *xmltree.Node) invoice.Date {
+	var d invoice.Date
+	seen := false
+	r.enter(n)
+	for _, c := range n.Children {
+		if c.Name == "OccurrenceDateTime" && !seen {
+			seen = true
+			d = r.date(c)
+			continue
+		}
+		r.unread(c)
+	}
+	r.leave()
+	return d
 }
 
 func (r *reader) settlement(n *xmltree.Node) {
 	inv := r.inv
 	var summation *xmltree.Node
+	accounting := false
+	r.enter(n)
 	for _, c := range n.Children {
 		switch c.Name {
 		case "CreditorReferenceID":
-			inv.CreditorReferenceID = text(c)
+			inv.CreditorReferenceID = r.text(c)
 		case "PaymentReference":
-			inv.RemittanceInformation = text(c)
+			inv.RemittanceInformation = r.text(c)
 		case "TaxCurrencyCode":
-			inv.TaxCurrency = text(c)
+			inv.TaxCurrency = r.text(c)
 		case "InvoiceCurrencyCode":
-			inv.Currency = text(c)
+			inv.Currency = r.text(c)
 		case "InvoicerTradeParty":
 			inv.Invoicer = r.newParty(c)
 		case "InvoiceeTradeParty":
@@ -434,6 +747,8 @@ func (r *reader) settlement(n *xmltree.Node) {
 			inv.Payee = r.newParty(c)
 		case "PayerTradeParty":
 			inv.Payer = r.newParty(c)
+		case "TaxApplicableTradeCurrencyExchange":
+			inv.CurrencyExchange = r.currencyExchange(c)
 		case "SpecifiedTradeSettlementPaymentMeans":
 			inv.PaymentMeans = append(inv.PaymentMeans, r.paymentMeans(c))
 		case "ApplicableTradeTax":
@@ -441,163 +756,319 @@ func (r *reader) settlement(n *xmltree.Node) {
 		case "BillingSpecifiedPeriod":
 			inv.InvoicingPeriod = r.period(c)
 		case "SpecifiedTradeAllowanceCharge":
-			inv.AllowancesCharges = append(inv.AllowancesCharges, r.allowanceCharge(c))
+			inv.AllowancesCharges = append(inv.AllowancesCharges, r.allowanceCharge(c, true))
+		case "SpecifiedLogisticsServiceCharge":
+			inv.LogisticsCharges = append(inv.LogisticsCharges, r.logisticsCharge(c))
 		case "SpecifiedTradePaymentTerms":
-			if t := r.paymentTerms(c); t != (invoice.PaymentTerms{}) {
+			if t := r.paymentTerms(c); !t.IsZero() {
 				inv.PaymentTerms = append(inv.PaymentTerms, t)
 			}
 		case "SpecifiedTradeSettlementHeaderMonetarySummation":
-			summation = c
+			if summation == nil {
+				summation = c
+			} else {
+				r.unread(c)
+			}
 		case "SpecifiedFinancialAdjustment":
-			inv.ThirdPartyCharges = append(inv.ThirdPartyCharges, invoice.ThirdPartyCharge{
-				Reason: childText(c, "Reason"),
-				Amount: r.decimal(child(c, "ActualAmount")),
-			})
+			inv.ThirdPartyCharges = append(inv.ThirdPartyCharges, r.thirdPartyCharge(c))
 		case "InvoiceReferencedDocument":
 			inv.PrecedingInvoices = append(inv.PrecedingInvoices, r.docRef(c))
 		case "ReceivableSpecifiedTradeAccountingAccount":
-			if inv.BuyerAccountingReference == "" {
-				inv.BuyerAccountingReference = childText(c, "ID")
+			if accounting {
+				r.unread(c)
+				continue
 			}
+			accounting = true
+			inv.BuyerAccountingReference = r.idOf(c)
+		default:
+			r.unread(c)
 		}
 	}
 	// The totals are read last: BT-111 is recognized by its currency.
 	if summation != nil {
 		r.totals(summation)
 	}
+	r.leave()
+}
+
+func (r *reader) currencyExchange(n *xmltree.Node) *invoice.CurrencyExchange {
+	x := new(invoice.CurrencyExchange)
+	r.enter(n)
+	for _, c := range n.Children {
+		switch c.Name {
+		case "SourceCurrencyCode":
+			x.SourceCurrency = r.text(c)
+		case "TargetCurrencyCode":
+			x.TargetCurrency = r.text(c)
+		case "ConversionRate":
+			x.Rate = r.decimal(c)
+		case "ConversionRateDateTime":
+			x.Date = r.date(c)
+		default:
+			r.unread(c)
+		}
+	}
+	r.leave()
+	if x.SourceCurrency == "" && x.TargetCurrency == "" && !x.Rate.IsSet() && x.Date.IsZero() {
+		return nil
+	}
+	return x
+}
+
+func (r *reader) thirdPartyCharge(n *xmltree.Node) invoice.ThirdPartyCharge {
+	var tc invoice.ThirdPartyCharge
+	h := r.hold(n, &tc.Extensions)
+	for _, c := range n.Children {
+		switch c.Name {
+		case "Reason":
+			tc.Reason = r.text(c)
+		case "ActualAmount":
+			tc.Amount = r.decimal(c)
+		default:
+			r.unread(c)
+		}
+	}
+	r.release(h)
+	return tc
+}
+
+func (r *reader) logisticsCharge(n *xmltree.Node) invoice.LogisticsCharge {
+	var lc invoice.LogisticsCharge
+	h := r.hold(n, &lc.Extensions)
+	tax := false
+	for _, c := range n.Children {
+		switch {
+		case c.Name == "Description":
+			lc.Description = r.text(c)
+		case c.Name == "AppliedAmount":
+			lc.Amount = r.decimal(c)
+		case c.Name == "AppliedTradeTax" && !tax:
+			tax = true
+			lc.VATCategoryCode, lc.VATRate = r.tradeTax(c)
+		default:
+			r.unread(c)
+		}
+	}
+	r.release(h)
+	return lc
+}
+
+// tradeTax reads a ram:TradeTaxType that carries a VAT category and rate
+// (line VAT, VAT of an allowance or of a logistics charge). The type code is
+// implied when it is VAT; the other children are kept as extensions.
+func (r *reader) tradeTax(n *xmltree.Node) (category string, rate invoice.Decimal) {
+	r.enter(n)
+	for _, c := range n.Children {
+		switch {
+		case c.Name == "TypeCode" && textOf(c) == "VAT":
+			r.text(c)
+		case c.Name == "CategoryCode":
+			category = r.text(c)
+		case c.Name == "RateApplicablePercent":
+			rate = r.decimal(c)
+		default:
+			r.unread(c)
+		}
+	}
+	r.leave()
+	return category, rate
 }
 
 func (r *reader) paymentMeans(n *xmltree.Node) invoice.PaymentMeans {
 	var pm invoice.PaymentMeans
+	h := r.hold(n, &pm.Extensions)
 	for _, c := range n.Children {
 		switch c.Name {
 		case "TypeCode":
-			pm.TypeCode = text(c)
+			pm.TypeCode = r.text(c)
 		case "Information":
-			pm.Information = text(c)
+			pm.Information = r.text(c)
 		case "ApplicableTradeSettlementFinancialCard":
-			pm.CardID = childText(c, "ID")
-			pm.CardholderName = childText(c, "CardholderName")
+			r.enter(c)
+			for _, cc := range c.Children {
+				switch cc.Name {
+				case "ID":
+					pm.CardID = r.text(cc)
+				case "CardholderName":
+					pm.CardholderName = r.text(cc)
+				default:
+					r.unread(cc)
+				}
+			}
+			r.leave()
 		case "PayerPartyDebtorFinancialAccount":
-			pm.PayerIBAN = childText(c, "IBANID")
-			pm.PayerAccountName = childText(c, "AccountName")
-		case "PayerSpecifiedDebtorFinancialInstitution":
-			pm.PayerBIC = childText(c, "BICID")
-		case "PayeePartyCreditorFinancialAccount":
+			r.enter(c)
 			for _, cc := range c.Children {
 				switch cc.Name {
 				case "IBANID":
-					pm.PayeeIBAN = text(cc)
+					pm.PayerIBAN = r.text(cc)
 				case "AccountName":
-					pm.PayeeAccountName = text(cc)
-				case "ProprietaryID":
-					pm.PayeeProprietaryID = text(cc)
+					pm.PayerAccountName = r.text(cc)
+				default:
+					r.unread(cc)
 				}
 			}
+			r.leave()
+		case "PayerSpecifiedDebtorFinancialInstitution":
+			pm.PayerBIC = r.childText(c, "BICID")
+		case "PayeePartyCreditorFinancialAccount":
+			r.enter(c)
+			for _, cc := range c.Children {
+				switch cc.Name {
+				case "IBANID":
+					pm.PayeeIBAN = r.text(cc)
+				case "AccountName":
+					pm.PayeeAccountName = r.text(cc)
+				case "ProprietaryID":
+					pm.PayeeProprietaryID = r.text(cc)
+				default:
+					r.unread(cc)
+				}
+			}
+			r.leave()
 		case "PayeeSpecifiedCreditorFinancialInstitution":
-			pm.PayeeBIC = childText(c, "BICID")
+			pm.PayeeBIC = r.childText(c, "BICID")
+		default:
+			r.unread(c)
 		}
 	}
+	r.release(h)
 	return pm
 }
 
 // vat reads a header ram:ApplicableTradeTax (BG-23) and the BT-7/BT-8 it
-// carries.
+// carries. Writers repeat BT-7 and BT-8 in every entry: a value that differs
+// from the first one is kept as an extension.
 func (r *reader) vat(n *xmltree.Node) invoice.VATBreakdown {
 	var v invoice.VATBreakdown
 	inv := r.inv
+	h := r.hold(n, &v.Extensions)
 	for _, c := range n.Children {
-		switch c.Name {
-		case "CalculatedAmount":
+		switch {
+		case c.Name == "CalculatedAmount":
 			v.TaxAmount = r.decimal(c)
-		case "BasisAmount":
+		case c.Name == "TypeCode" && textOf(c) == "VAT":
+			r.text(c)
+		case c.Name == "BasisAmount":
 			v.TaxableAmount = r.decimal(c)
-		case "CategoryCode":
-			v.CategoryCode = text(c)
-		case "RateApplicablePercent":
+		case c.Name == "CategoryCode":
+			v.CategoryCode = r.text(c)
+		case c.Name == "RateApplicablePercent":
 			v.Rate = r.decimal(c)
-		case "ExemptionReason":
-			v.ExemptionReason = text(c)
-		case "ExemptionReasonCode":
-			v.ExemptionReasonCode = text(c)
-		case "TaxPointDate":
-			if inv.TaxPointDate.IsZero() {
+		case c.Name == "ExemptionReason":
+			v.ExemptionReason = r.text(c)
+		case c.Name == "ExemptionReasonCode":
+			v.ExemptionReasonCode = r.text(c)
+		case c.Name == "TaxPointDate":
+			if d := r.peekDate(c); inv.TaxPointDate.IsZero() || d == inv.TaxPointDate {
 				inv.TaxPointDate = r.date(c)
+			} else {
+				r.unread(c)
 			}
-		case "DueDateTypeCode":
-			if inv.TaxPointDateCode == "" {
-				inv.TaxPointDateCode = text(c)
+		case c.Name == "DueDateTypeCode":
+			if code := textOf(c); inv.TaxPointDateCode == "" || code == inv.TaxPointDateCode {
+				inv.TaxPointDateCode = r.text(c)
+			} else {
+				r.unread(c)
 			}
+		default:
+			r.unread(c)
 		}
 	}
+	r.release(h)
 	return v
+}
+
+// peekDate returns the date of a date element without reporting anything.
+func (r *reader) peekDate(n *xmltree.Node) invoice.Date {
+	v := child(n, "DateString")
+	if v == nil {
+		v = child(n, "DateTimeString")
+	}
+	if v == nil {
+		v = n
+	}
+	d, err := invoice.ParseDate(textOf(v), attr(v, "format"))
+	if err != nil {
+		return invoice.Date{}
+	}
+	return d
 }
 
 func (r *reader) period(n *xmltree.Node) invoice.Period {
 	var p invoice.Period
+	r.enter(n)
 	for _, c := range n.Children {
 		switch c.Name {
 		case "Description":
-			p.Description = text(c)
+			p.Description = r.text(c)
 		case "StartDateTime":
 			p.Start = r.date(c)
 		case "EndDateTime":
 			p.End = r.date(c)
+		default:
+			r.unread(c)
 		}
 	}
+	r.leave()
 	return p
 }
 
-func (r *reader) allowanceCharge(n *xmltree.Node) invoice.AllowanceCharge {
+// allowanceCharge reads a ram:TradeAllowanceChargeType; vat tells whether
+// its CategoryTradeTax is read (it is not for the allowances and charges of
+// a price).
+func (r *reader) allowanceCharge(n *xmltree.Node, vat bool) invoice.AllowanceCharge {
 	var ac invoice.AllowanceCharge
+	h := r.hold(n, &ac.Extensions)
 	for _, c := range n.Children {
-		switch c.Name {
-		case "ChargeIndicator":
+		switch {
+		case c.Name == "ChargeIndicator":
 			ac.Charge = r.indicator(c)
-		case "CalculationPercent":
+		case c.Name == "CalculationPercent":
 			ac.Percentage = r.decimal(c)
-		case "BasisAmount":
+		case c.Name == "BasisAmount":
 			ac.BaseAmount = r.decimal(c)
-		case "ActualAmount":
+		case c.Name == "ActualAmount":
 			ac.Amount = r.decimal(c)
-		case "ReasonCode":
-			ac.ReasonCode = text(c)
-		case "Reason":
-			ac.Reason = text(c)
-		case "CategoryTradeTax":
-			for _, cc := range c.Children {
-				switch cc.Name {
-				case "CategoryCode":
-					ac.VATCategoryCode = text(cc)
-				case "RateApplicablePercent":
-					ac.VATRate = r.decimal(cc)
-				}
-			}
+		case c.Name == "ReasonCode":
+			ac.ReasonCode = r.text(c)
+		case c.Name == "Reason":
+			ac.Reason = r.text(c)
+		case c.Name == "CategoryTradeTax" && vat:
+			ac.VATCategoryCode, ac.VATRate = r.tradeTax(c)
+		default:
+			r.unread(c)
 		}
 	}
+	r.release(h)
 	return ac
 }
 
 func (r *reader) paymentTerms(n *xmltree.Node) invoice.PaymentTerms {
 	var t invoice.PaymentTerms
+	h := r.hold(n, &t.Extensions)
 	for _, c := range n.Children {
 		switch c.Name {
 		case "Description":
-			t.Description = joinText(t.Description, text(c))
+			t.Description = joinText(t.Description, r.text(c))
 		case "DueDateDateTime":
 			t.DueDate = r.date(c)
 		case "DirectDebitMandateID":
-			t.DirectDebitMandateID = text(c)
+			t.DirectDebitMandateID = r.text(c)
 		case "PartialPaymentAmount":
 			t.PartialAmount = r.decimal(c)
+		default:
+			r.unread(c)
 		}
 	}
+	r.release(h)
 	return t
 }
 
 func (r *reader) totals(n *xmltree.Node) {
 	inv := r.inv
 	t := &inv.Totals
+	r.enter(n)
 	for _, c := range n.Children {
 		switch c.Name {
 		case "LineTotalAmount":
@@ -609,8 +1080,8 @@ func (r *reader) totals(n *xmltree.Node) {
 		case "TaxBasisTotalAmount":
 			t.TaxBasisTotal = r.decimal(c)
 		case "TaxTotalAmount":
-			d := r.decimal(c)
 			cur := attr(c, "currencyID")
+			d := r.parseDecimal(c, r.textAttrs(c, "currencyID", "", ""))
 			switch {
 			case inv.TaxCurrency != "" && inv.TaxCurrency != inv.Currency && cur == inv.TaxCurrency:
 				t.TaxTotalInTaxCurrency = d
@@ -627,26 +1098,43 @@ func (r *reader) totals(n *xmltree.Node) {
 			t.PaidAmount = r.decimal(c)
 		case "DuePayableAmount":
 			t.DuePayable = r.decimal(c)
+		default:
+			r.unread(c)
 		}
 	}
+	r.leave()
 }
 
 // docRef reads a ram:ReferencedDocumentType as a document reference.
 func (r *reader) docRef(n *xmltree.Node) invoice.DocumentReference {
 	var d invoice.DocumentReference
+	h := r.hold(n, &d.Extensions)
 	for _, c := range n.Children {
 		switch c.Name {
 		case "IssuerAssignedID":
-			d.ID = text(c)
+			d.ID = r.text(c)
 		case "LineID":
-			d.LineID = text(c)
+			d.LineID = r.text(c)
 		case "TypeCode":
-			d.TypeCode = text(c)
+			d.TypeCode = r.text(c)
 		case "FormattedIssueDateTime":
 			d.IssueDate = r.date(c)
+		default:
+			r.unread(c)
 		}
 	}
+	r.release(h)
 	return d
+}
+
+// newDocRef reads an optional document reference; it returns nil when the
+// reference is empty.
+func (r *reader) newDocRef(n *xmltree.Node) *invoice.DocumentReference {
+	d := r.docRef(n)
+	if d.IsZero() {
+		return nil
+	}
+	return &d
 }
 
 // newParty reads an optional party; it returns nil when the party is empty.
@@ -660,115 +1148,145 @@ func (r *reader) newParty(n *xmltree.Node) *invoice.Party {
 }
 
 func (r *reader) party(n *xmltree.Node, p *invoice.Party) {
+	h := r.hold(n, &p.Extensions)
+	contact := false
 	for _, c := range n.Children {
 		switch c.Name {
 		case "ID", "GlobalID":
-			p.IDs = append(p.IDs, ident(c))
+			p.IDs = append(p.IDs, r.ident(c))
 		case "Name":
-			p.Name = text(c)
+			p.Name = r.text(c)
 		case "Description":
-			p.Description = text(c)
+			p.Description = r.text(c)
 		case "SpecifiedLegalOrganization":
+			r.enter(c)
 			for _, cc := range c.Children {
 				switch cc.Name {
 				case "ID":
-					p.LegalRegistration = ident(cc)
+					p.LegalRegistration = r.ident(cc)
 				case "TradingBusinessName":
-					p.TradingName = text(cc)
+					p.TradingName = r.text(cc)
+				default:
+					r.unread(cc)
 				}
 			}
+			r.leave()
 		case "DefinedTradeContact":
-			if p.Contact == nil {
-				p.Contact = readContact(c)
-			}
-		case "PostalTradeAddress":
-			p.Address = readAddress(c)
-		case "URIUniversalCommunication":
-			if u := child(c, "URIID"); u != nil {
-				p.ElectronicAddress = ident(u)
-			}
-		case "SpecifiedTaxRegistration":
-			id := child(c, "ID")
-			if id == nil {
+			if contact {
+				r.unread(c)
 				continue
 			}
-			switch s := attr(id, "schemeID"); {
-			case strings.EqualFold(s, "VA"):
-				p.VATID = text(id)
-			case strings.EqualFold(s, "FC"):
-				p.TaxRegistrationID = text(id)
+			contact = true
+			p.Contact = r.contact(c)
+		case "PostalTradeAddress":
+			p.Address = r.address(c)
+		case "URIUniversalCommunication":
+			r.enter(c)
+			for _, cc := range c.Children {
+				if cc.Name == "URIID" && p.ElectronicAddress.IsZero() {
+					p.ElectronicAddress = r.ident(cc)
+					continue
+				}
+				r.unread(cc)
 			}
+			r.leave()
+		case "SpecifiedTaxRegistration":
+			id := child(c, "ID")
+			s := ""
+			if id != nil {
+				s = attr(id, "schemeID")
+			}
+			switch {
+			case strings.EqualFold(s, "VA") && p.VATID == "":
+				p.VATID = r.taxRegistration(c)
+			case strings.EqualFold(s, "FC") && p.TaxRegistrationID == "":
+				p.TaxRegistrationID = r.taxRegistration(c)
+			default:
+				r.unread(c)
+			}
+		default:
+			r.unread(c)
 		}
 	}
+	r.release(h)
 }
 
-// readContact reads a ram:DefinedTradeContact; it returns nil when empty.
-func readContact(n *xmltree.Node) *invoice.Contact {
+// taxRegistration reads a ram:SpecifiedTaxRegistration whose scheme is
+// known (VA or FC, written back by the writer).
+func (r *reader) taxRegistration(n *xmltree.Node) string {
+	var v string
+	seen := false
+	r.enter(n)
+	for _, c := range n.Children {
+		if c.Name == "ID" && !seen {
+			seen = true
+			v = r.textAttrs(c, "schemeID", "", "")
+			continue
+		}
+		r.unread(c)
+	}
+	r.leave()
+	return v
+}
+
+// contact reads a ram:DefinedTradeContact; it returns nil when empty.
+func (r *reader) contact(n *xmltree.Node) *invoice.Contact {
 	var c invoice.Contact
+	r.enter(n)
 	for _, e := range n.Children {
 		switch e.Name {
 		case "PersonName":
-			c.PersonName = text(e)
+			c.PersonName = r.text(e)
 		case "DepartmentName":
-			c.DepartmentName = text(e)
+			c.DepartmentName = r.text(e)
 		case "TelephoneUniversalCommunication":
-			c.Phone = childText(e, "CompleteNumber")
+			c.Phone = r.childText(e, "CompleteNumber")
 		case "EmailURIUniversalCommunication":
-			c.Email = childText(e, "URIID")
+			c.Email = r.childText(e, "URIID")
+		default:
+			r.unread(e)
 		}
 	}
+	r.leave()
 	if c == (invoice.Contact{}) {
 		return nil
 	}
 	return &c
 }
 
-func readAddress(n *xmltree.Node) invoice.Address {
+func (r *reader) address(n *xmltree.Node) invoice.Address {
 	var a invoice.Address
+	r.enter(n)
 	for _, c := range n.Children {
 		switch c.Name {
 		case "PostcodeCode":
-			a.PostCode = text(c)
+			a.PostCode = r.text(c)
 		case "LineOne":
-			a.Line1 = text(c)
+			a.Line1 = r.text(c)
 		case "LineTwo":
-			a.Line2 = text(c)
+			a.Line2 = r.text(c)
 		case "LineThree":
-			a.Line3 = text(c)
+			a.Line3 = r.text(c)
 		case "CityName":
-			a.City = text(c)
+			a.City = r.text(c)
 		case "CountryID":
-			a.CountryCode = text(c)
+			a.CountryCode = r.text(c)
 		case "CountrySubDivisionName":
-			a.CountrySubdivision = text(c)
+			a.CountrySubdivision = r.text(c)
+		default:
+			r.unread(c)
 		}
 	}
+	r.leave()
 	return a
 }
 
 func (r *reader) line(n *xmltree.Node, l *invoice.Line) {
+	h := r.hold(n, &l.Extensions)
 	for _, c := range n.Children {
 		switch c.Name {
 		case "AssociatedDocumentLineDocument":
-			for _, cc := range c.Children {
-				switch cc.Name {
-				case "LineID":
-					l.ID = text(cc)
-				case "ParentLineID":
-					l.ParentID = text(cc)
-				case "LineStatusCode":
-					l.StatusCode = text(cc)
-				case "LineStatusReasonCode":
-					l.StatusReasonCode = text(cc)
-				case "IncludedNote":
-					// EXTENDED allows several line notes: they are joined.
-					for _, nc := range cc.Children {
-						if nc.Name == "Content" {
-							l.Note = joinText(l.Note, text(nc))
-						}
-					}
-				}
-			}
+			r.lineDocument(c, l)
 		case "SpecifiedTradeProduct":
 			r.item(c, &l.Item)
 		case "SpecifiedLineTradeAgreement":
@@ -777,160 +1295,377 @@ func (r *reader) line(n *xmltree.Node, l *invoice.Line) {
 			r.lineDelivery(c, l)
 		case "SpecifiedLineTradeSettlement":
 			r.lineSettlement(c, l)
+		default:
+			r.unread(c)
 		}
 	}
+	r.release(h)
+}
+
+func (r *reader) lineDocument(n *xmltree.Node, l *invoice.Line) {
+	note := false
+	r.enter(n)
+	for _, c := range n.Children {
+		switch c.Name {
+		case "LineID":
+			l.ID = r.text(c)
+		case "ParentLineID":
+			l.ParentID = r.text(c)
+		case "LineStatusCode":
+			l.StatusCode = r.text(c)
+		case "LineStatusReasonCode":
+			l.StatusReasonCode = r.text(c)
+		case "IncludedNote":
+			// BT-127 is the content of the first note; the codes and the
+			// other notes that EXTENDED allows are kept as extensions.
+			if note {
+				r.unread(c)
+				continue
+			}
+			note = true
+			l.Note = r.childText(c, "Content")
+		default:
+			r.unread(c)
+		}
+	}
+	r.leave()
 }
 
 func (r *reader) item(n *xmltree.Node, it *invoice.Item) {
+	r.enter(n)
 	for _, c := range n.Children {
-		switch c.Name {
-		case "GlobalID":
-			if it.GlobalID.IsZero() {
-				it.GlobalID = ident(c)
-			}
-		case "SellerAssignedID":
-			it.SellerID = text(c)
-		case "BuyerAssignedID":
-			it.BuyerID = text(c)
-		case "Name":
-			it.Name = text(c)
-		case "Description":
-			it.Description = text(c)
-		case "ApplicableProductCharacteristic":
-			var a invoice.ItemAttribute
-			for _, cc := range c.Children {
-				switch cc.Name {
-				case "TypeCode":
-					a.TypeCode = text(cc)
-				case "Description":
-					a.Name = text(cc)
-				case "Value":
-					a.Value = text(cc)
-				}
-			}
-			it.Attributes = append(it.Attributes, a)
-		case "DesignatedProductClassification":
-			var cl invoice.Classification
-			for _, cc := range c.Children {
-				switch cc.Name {
-				case "ClassCode":
-					cl.Code = text(cc)
-					cl.ListID = attr(cc, "listID")
-					cl.ListVersionID = attr(cc, "listVersionID")
-				case "ClassName":
-					cl.Name = text(cc)
-				}
-			}
-			if cl != (invoice.Classification{}) {
+		switch {
+		case c.Name == "GlobalID" && it.GlobalID.IsZero():
+			it.GlobalID = r.ident(c)
+		case c.Name == "SellerAssignedID":
+			it.SellerID = r.text(c)
+		case c.Name == "BuyerAssignedID":
+			it.BuyerID = r.text(c)
+		case c.Name == "Name":
+			it.Name = r.text(c)
+		case c.Name == "Description":
+			it.Description = r.text(c)
+		case c.Name == "ApplicableProductCharacteristic":
+			it.Attributes = append(it.Attributes, r.itemAttribute(c))
+		case c.Name == "DesignatedProductClassification":
+			if cl := r.classification(c); !cl.IsZero() {
 				it.Classifications = append(it.Classifications, cl)
 			}
-		case "OriginTradeCountry":
-			it.OriginCountry = childText(c, "ID")
+		case c.Name == "OriginTradeCountry":
+			it.OriginCountry = r.idOf(c)
+		case c.Name == "IncludedReferencedProduct":
+			it.ReferencedProducts = append(it.ReferencedProducts, r.referencedProduct(c))
+		default:
+			r.unread(c)
 		}
 	}
+	r.leave()
+}
+
+func (r *reader) itemAttribute(n *xmltree.Node) invoice.ItemAttribute {
+	var a invoice.ItemAttribute
+	h := r.hold(n, &a.Extensions)
+	for _, c := range n.Children {
+		switch c.Name {
+		case "TypeCode":
+			a.TypeCode = r.text(c)
+		case "Description":
+			a.Name = r.text(c)
+		case "Value":
+			a.Value = r.text(c)
+		default:
+			r.unread(c)
+		}
+	}
+	r.release(h)
+	return a
+}
+
+func (r *reader) classification(n *xmltree.Node) invoice.Classification {
+	var cl invoice.Classification
+	h := r.hold(n, &cl.Extensions)
+	for _, c := range n.Children {
+		switch c.Name {
+		case "ClassCode":
+			cl.Code = r.textAttrs(c, "listID", "listVersionID", "")
+			cl.ListID = attr(c, "listID")
+			cl.ListVersionID = attr(c, "listVersionID")
+		case "ClassName":
+			cl.Name = r.text(c)
+		default:
+			r.unread(c)
+		}
+	}
+	r.release(h)
+	return cl
+}
+
+func (r *reader) referencedProduct(n *xmltree.Node) invoice.ReferencedProduct {
+	var p invoice.ReferencedProduct
+	h := r.hold(n, &p.Extensions)
+	for _, c := range n.Children {
+		switch c.Name {
+		case "ID":
+			p.ID = r.text(c)
+		case "GlobalID":
+			p.GlobalIDs = append(p.GlobalIDs, r.ident(c))
+		case "SellerAssignedID":
+			p.SellerID = r.text(c)
+		case "BuyerAssignedID":
+			p.BuyerID = r.text(c)
+		case "IndustryAssignedID":
+			p.IndustryID = r.text(c)
+		case "Name":
+			p.Name = r.text(c)
+		case "Description":
+			p.Description = r.text(c)
+		case "UnitQuantity":
+			p.UnitQuantity, p.UnitQuantityUnit = r.quantity(c)
+		default:
+			r.unread(c)
+		}
+	}
+	r.release(h)
+	return p
 }
 
 func (r *reader) lineAgreement(n *xmltree.Node, l *invoice.Line) {
-	var grossBasis *xmltree.Node
+	var gross, net *xmltree.Node
+	r.enter(n)
 	for _, c := range n.Children {
-		switch c.Name {
-		case "BuyerOrderReferencedDocument":
-			l.OrderReference = childText(c, "IssuerAssignedID")
-			l.OrderLineReference = childText(c, "LineID")
-		case "GrossPriceProductTradePrice":
+		switch {
+		case c.Name == "ApplicableTradeDeliveryTerms":
+			l.DeliveryTerms = r.deliveryTerms(c)
+		case c.Name == "BuyerOrderReferencedDocument":
+			r.enter(c)
 			for _, cc := range c.Children {
 				switch cc.Name {
-				case "ChargeAmount":
-					l.GrossPrice = r.decimal(cc)
-				case "BasisQuantity":
-					grossBasis = cc
-				case "AppliedTradeAllowanceCharge":
-					// BT-147 is the total of the price allowances (EXTENDED
-					// allows several); charges on the price are not modeled.
-					if ci := child(cc, "ChargeIndicator"); ci != nil && r.indicator(ci) {
-						continue
-					}
-					if a := child(cc, "ActualAmount"); a != nil {
-						if v := r.decimal(a); v.IsSet() {
-							if l.PriceDiscount.IsSet() {
-								v = l.PriceDiscount.Add(v)
-							}
-							l.PriceDiscount = v
-						}
-					}
+				case "IssuerAssignedID":
+					l.OrderReference = r.text(cc)
+				case "LineID":
+					l.OrderLineReference = r.text(cc)
+				default:
+					r.unread(cc)
 				}
 			}
-		case "NetPriceProductTradePrice":
-			for _, cc := range c.Children {
-				switch cc.Name {
-				case "ChargeAmount":
-					l.NetPrice = r.decimal(cc)
-				case "BasisQuantity":
-					l.PriceBaseQuantity = r.decimal(cc)
-					l.PriceBaseQuantityUnit = attr(cc, "unitCode")
+			r.leave()
+		case c.Name == "GrossPriceProductTradePrice" && gross == nil:
+			gross = c
+		case c.Name == "NetPriceProductTradePrice" && net == nil:
+			net = c
+		case c.Name == "UltimateCustomerOrderReferencedDocument":
+			l.UltimateCustomerOrders = append(l.UltimateCustomerOrders, r.docRef(c))
+		default:
+			r.unread(c)
+		}
+	}
+	// The net price is read first: the base quantity of the gross price is
+	// only needed when the net price has none.
+	if net != nil {
+		r.enter(net)
+		for _, c := range net.Children {
+			switch c.Name {
+			case "ChargeAmount":
+				l.NetPrice = r.decimal(c)
+			case "BasisQuantity":
+				l.PriceBaseQuantity, l.PriceBaseQuantityUnit = r.quantity(c)
+			default:
+				r.unread(c)
+			}
+		}
+		r.leave()
+	}
+	if gross != nil {
+		r.grossPrice(gross, l)
+	}
+	r.leave()
+}
+
+// grossPrice reads the gross price (BT-148) and its allowances and charges.
+func (r *reader) grossPrice(n *xmltree.Node, l *invoice.Line) {
+	var acs []*xmltree.Node
+	r.enter(n)
+	for _, c := range n.Children {
+		switch c.Name {
+		case "ChargeAmount":
+			l.GrossPrice = r.decimal(c)
+		case "BasisQuantity":
+			// Writers give the gross price the base quantity of the net
+			// price; a different one is kept as an extension.
+			q, unit := attrQuantity(c)
+			if !l.PriceBaseQuantity.IsSet() && l.PriceBaseQuantityUnit == "" {
+				l.PriceBaseQuantity, l.PriceBaseQuantityUnit = r.quantity(c)
+			} else if q.IsSet() && q.Equal(l.PriceBaseQuantity) && unit == l.PriceBaseQuantityUnit {
+				r.quantity(c)
+			} else {
+				r.unread(c)
+			}
+		case "AppliedTradeAllowanceCharge":
+			acs = append(acs, c)
+		default:
+			r.unread(c)
+		}
+	}
+	// A single allowance amount is BT-147. Anything richer is detailed in
+	// PriceAllowancesCharges, BT-147 being the sum of the allowances.
+	if len(acs) == 1 && plainAllowance(acs[0]) {
+		r.enter(acs[0])
+		for _, c := range acs[0].Children {
+			switch c.Name {
+			case "ChargeIndicator":
+				r.indicator(c)
+			case "ActualAmount":
+				l.PriceDiscount = r.decimal(c)
+			}
+		}
+		r.leave()
+	} else {
+		for _, c := range acs {
+			ac := r.allowanceCharge(c, false)
+			l.PriceAllowancesCharges = append(l.PriceAllowancesCharges, ac)
+			if !ac.Charge && ac.Amount.IsSet() {
+				if l.PriceDiscount.IsSet() {
+					l.PriceDiscount = l.PriceDiscount.Add(ac.Amount)
+				} else {
+					l.PriceDiscount = ac.Amount
 				}
 			}
 		}
 	}
-	if grossBasis != nil && !l.PriceBaseQuantity.IsSet() {
-		l.PriceBaseQuantity = r.decimal(grossBasis)
-		l.PriceBaseQuantityUnit = attr(grossBasis, "unitCode")
+	r.leave()
+}
+
+// attrQuantity returns the value and unit of a quantity without reporting
+// anything.
+func attrQuantity(n *xmltree.Node) (invoice.Decimal, string) {
+	d, _ := invoice.ParseDecimal(textOf(n))
+	return d, attr(n, "unitCode")
+}
+
+// plainAllowance reports whether an AppliedTradeAllowanceCharge is an
+// allowance that carries only its amount.
+func plainAllowance(n *xmltree.Node) bool {
+	if len(n.Attrs) > 0 {
+		return false
 	}
+	var indicator, amount bool
+	for _, c := range n.Children {
+		switch c.Name {
+		case "ChargeIndicator":
+			v := child(c, "Indicator")
+			if indicator || len(c.Attrs) > 0 || v == nil || len(c.Children) != 1 || len(v.Attrs) > 0 {
+				return false
+			}
+			if s := textOf(v); s != "false" && s != "0" {
+				return false
+			}
+			indicator = true
+		case "ActualAmount":
+			if amount {
+				return false
+			}
+			for _, a := range c.Attrs {
+				if a.Name != "currencyID" {
+					return false
+				}
+			}
+			amount = true
+		default:
+			return false
+		}
+	}
+	return indicator && amount
 }
 
 func (r *reader) lineDelivery(n *xmltree.Node, l *invoice.Line) {
+	r.enter(n)
 	for _, c := range n.Children {
 		switch c.Name {
 		case "BilledQuantity":
-			l.Quantity = r.decimal(c)
-			l.UnitCode = attr(c, "unitCode")
+			l.Quantity, l.UnitCode = r.quantity(c)
 		case "ShipToTradeParty":
 			l.ShipTo = r.newParty(c)
+		case "UltimateShipToTradeParty":
+			l.UltimateShipTo = r.newParty(c)
 		case "ActualDeliverySupplyChainEvent":
-			if oc := child(c, "OccurrenceDateTime"); oc != nil {
-				l.DeliveryDate = r.date(oc)
-			}
+			l.DeliveryDate = r.event(c)
+		case "DeliveryNoteReferencedDocument":
+			l.DeliveryNote = r.newDocRef(c)
+		default:
+			r.unread(c)
 		}
 	}
+	r.leave()
 }
 
 func (r *reader) lineSettlement(n *xmltree.Node, l *invoice.Line) {
+	var tax, object, accounting bool
+	r.enter(n)
 	for _, c := range n.Children {
 		switch c.Name {
 		case "ApplicableTradeTax":
-			if l.VATCategoryCode == "" && !l.VATRate.IsSet() {
-				for _, cc := range c.Children {
-					switch cc.Name {
-					case "CategoryCode":
-						l.VATCategoryCode = text(cc)
-					case "RateApplicablePercent":
-						l.VATRate = r.decimal(cc)
-					}
-				}
+			if tax {
+				r.unread(c)
+				continue
 			}
+			tax = true
+			l.VATCategoryCode, l.VATRate = r.tradeTax(c)
 		case "BillingSpecifiedPeriod":
 			l.Period = r.period(c)
 		case "SpecifiedTradeAllowanceCharge":
-			l.AllowancesCharges = append(l.AllowancesCharges, r.allowanceCharge(c))
+			l.AllowancesCharges = append(l.AllowancesCharges, r.allowanceCharge(c, true))
 		case "SpecifiedTradeSettlementLineMonetarySummation":
-			if a := child(c, "LineTotalAmount"); a != nil {
-				l.NetAmount = r.decimal(a)
+			r.enter(c)
+			for _, cc := range c.Children {
+				if cc.Name == "LineTotalAmount" && !l.NetAmount.IsSet() {
+					l.NetAmount = r.decimal(cc)
+					continue
+				}
+				r.unread(cc)
 			}
+			r.leave()
 		case "InvoiceReferencedDocument":
-			if d := r.docRef(c); d != (invoice.DocumentReference{}) {
+			if l.InvoiceReference != nil {
+				r.unread(c)
+			} else if d := r.docRef(c); !d.IsZero() {
 				l.InvoiceReference = &d
 			}
 		case "AdditionalReferencedDocument":
-			if tc := childText(c, "TypeCode"); (tc == "130" || tc == "") && l.ObjectIdentifier.IsZero() {
-				l.ObjectIdentifier = invoice.Identifier{
-					ID:     childText(c, "IssuerAssignedID"),
-					Scheme: childText(c, "ReferenceTypeCode"),
-				}
+			if tc := textOf(child(c, "TypeCode")); (tc == "130" || tc == "") && !object {
+				object = true
+				r.objectIdentifier(c, l)
+				continue
 			}
+			r.unread(c)
 		case "ReceivableSpecifiedTradeAccountingAccount":
-			if l.AccountingReference == "" {
-				l.AccountingReference = childText(c, "ID")
+			if accounting {
+				r.unread(c)
+				continue
 			}
+			accounting = true
+			l.AccountingReference = r.idOf(c)
+		default:
+			r.unread(c)
 		}
 	}
+	r.leave()
+}
+
+// objectIdentifier reads the line object identifier (BT-128): an
+// AdditionalReferencedDocument of type 130.
+func (r *reader) objectIdentifier(n *xmltree.Node, l *invoice.Line) {
+	r.enter(n)
+	for _, c := range n.Children {
+		switch c.Name {
+		case "IssuerAssignedID":
+			l.ObjectIdentifier.ID = r.text(c)
+		case "TypeCode":
+			r.text(c)
+		case "ReferenceTypeCode":
+			l.ObjectIdentifier.Scheme = r.text(c)
+		default:
+			r.unread(c)
+		}
+	}
+	r.leave()
 }
