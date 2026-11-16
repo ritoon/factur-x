@@ -47,12 +47,13 @@ func (s Severity) MarshalText() ([]byte, error) { return []byte(s.String()), nil
 
 // Sources of findings.
 const (
-	SourceSyntax  = "syntax"   // XML well-formedness and CII structure
-	SourceEN16931 = "EN 16931" // CEN business rules, code lists and CII syntax rules
-	SourceFacturX = "Factur-X" // profile rules of Factur-X / ZUGFeRD
-	SourceFR      = "BR-FR"    // French rules (FNFE-MPE schematrons)
-	SourceDE      = "BR-DE"    // German rules (XRechnung)
-	SourcePDF     = "PDF"      // PDF container (PDF/A-3, attachment, XMP)
+	SourceSyntax    = "syntax"     // XML well-formedness and CII structure
+	SourceEN16931   = "EN 16931"   // CEN business rules, code lists and CII syntax rules
+	SourceFacturX   = "Factur-X"   // profile rules of Factur-X / ZUGFeRD
+	SourceFR        = "BR-FR"      // French rules (FNFE-MPE schematrons)
+	SourceDE        = "BR-DE"      // German rules (XRechnung)
+	SourcePDF       = "PDF"        // PDF container (PDF/A-3, attachment, XMP)
+	SourceChorusPro = "Chorus Pro" // French B2G checks for Chorus Pro
 )
 
 // Finding is a rule violation.

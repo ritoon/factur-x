@@ -101,8 +101,9 @@ if !report.Valid() { /* au moins une erreur */ }
 |---|---|
 | `nil` ou `&validate.Options{}` | Schéma du profil, règles EN 16931, règles de profil Factur-X ; règles BR-DE en plus pour une facture XRECHNUNG |
 | `Auto: true` | Ajoute les règles du pays du vendeur (BT-40) : BR-FR et profils admis en France pour un vendeur en France, profils acceptés par le BMF pour un vendeur en Allemagne |
-| `Rules: validate.Default \| validate.France` | Choix explicite des jeux de règles (`France`, `Germany`, `GermanyProfile`) |
+| `Rules: validate.Default \| validate.France` | Choix explicite des jeux de règles (`France`, `Germany`, `GermanyProfile`, `ChorusPro`) |
 | `RejectBasicWL: true` | Avec les règles françaises, signale BASIC WL en erreur (FR-PROFILE-03) |
+| `Rules: … \| validate.ChorusPro` | Ajoute les contrôles B2G de Chorus Pro (voir ci-dessous) |
 | `Profile: invoice.ProfileBasic` | Valide contre un profil plutôt que celui que déclare BT-24 |
 
 `validate.Catalog(set)` liste les règles implémentées.
@@ -120,6 +121,30 @@ Les schematrons officiels ne contrôlent pas le profil ; ces contrôles ont des 
 
 En France, EN 16931 et EXTENDED-CTC-FR forment le socle et EXTENDED est admis ; en Allemagne, BASIC, EN 16931, EXTENDED et XRECHNUNG sont acceptés. `Auto` n'applique pas les règles BR-DE à une facture ZUGFeRD : elles ne concernent que XRECHNUNG.
 
+#### Factures B2G (Chorus Pro)
+
+Le jeu `ChorusPro` contrôle une facture adressée à une structure publique, pour anticiper les rejets de Chorus Pro. Il n'est jamais appliqué d'office : rien dans le XML ne dit que l'acheteur est public. Les exigences qui dépendent du paramétrage de la structure dans l'annuaire Chorus Pro se donnent dans `PublicBuyer` :
+
+```go
+report := validate.XML(xml, &validate.Options{
+	Rules:       validate.Default | validate.France | validate.ChorusPro,
+	PublicBuyer: validate.PublicBuyer{ServiceCodeRequired: true, EngagementRequired: true},
+})
+```
+
+| Règle | Contrôle | Rejet Chorus Pro évité |
+|---|---|---|
+| CPRO-01 | La structure publique est identifiée par son SIRET : BT-46 avec le schéma 0009 (réforme), ou BT-47 de 14 caractères avec le schéma 0002 ou sans schéma (format historique de Chorus Pro) | COD-021 |
+| CPRO-02 | Ce SIRET a 14 chiffres et une clé de Luhn valide (pour La Poste, somme des chiffres multiple de 5) | — |
+| CPRO-03 | Le code service (BT-10) est présent, si `ServiceCodeRequired` | COD-022 |
+| CPRO-04 | Le code service a au plus 100 caractères : lettres, chiffres, espace, `_` et `-` | FOR-009, FOR-047 |
+| CPRO-05 | Le numéro d'engagement (BT-13), ou à défaut la référence du marché (BT-12), est présent, si `EngagementRequired` | COH-053 |
+| CPRO-06 | BT-13 et BT-12 ont au plus 50 caractères | FOR-013 |
+| CPRO-07 | Le type de document (BT-3) n'est pas 751 | COD-001 |
+| CPRO-08 | Le numéro de facture (BT-1) et celui de la facture d'origine (BT-25) ont au plus 20 caractères : lettres et chiffres ASCII, espace, `-`, `+`, `_` et `/` | FOR-049 |
+
+Sources : annexe EDI des spécifications externes Chorus Pro V4.23 (règles G1.05, G2.06, G2.07, G2.16 à G2.19, G2.29, G3.01, G3.03, G3.04, S2.04, S2.13), annexe des messages d'erreur V3.02, dossier Chorus Pro des spécifications externes DGFiP v3.1 (numéro de facture limité à 20 caractères en B2G après la réforme). Ces identifiants sont propres au package : aucun schematron officiel ne couvre ces contrôles. Ce que Chorus Pro vérifie dans son annuaire (existence du SIRET et du code service, structure active) ne peut pas l'être hors ligne.
+
 ### En ligne de commande
 
 ```bash
@@ -129,10 +154,10 @@ go install github.com/ritoon/factur-x/cmd/facturx@latest
 ```text
 facturx extract [-o out.xml] facture.pdf
 facturx info facture.pdf
-facturx validate [-fr] [-de] [-auto] [-reject-basicwl] [-profile p] [-json] facture.pdf|facture.xml
+facturx validate [-fr] [-de] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-json] facture.pdf|facture.xml
 facturx embed -xml facture.xml [-profile p] [-o out.pdf] entree.pdf
 facturx json facture.pdf|facture.xml
-facturx rules [-fr] [-de]
+facturx rules [-fr] [-de] [-choruspro]
 ```
 
 `validate` sort avec le code 1 quand la facture a des erreurs, ce qui permet de l'utiliser en intégration continue.
@@ -167,6 +192,7 @@ warning [PDF] PDF-06: the catalog has no PDF/A output intent (/S /GTS_PDFA1) (ca
 | Factur-X | 162 assertions : identification du profil (BT-24), assertions des schematrons MINIMUM et BASIC WL, éléments non utilisés par profil | Schematrons Factur-X 1.08 |
 | France (BR-FR) | 59 règles, 170 assertions : SIREN/SIRET, adresses électroniques, mentions obligatoires, cadres de facturation, multi-vendeurs ; 3 contrôles des profils admis (FR-PROFILE) | Schematron FNFE-MPE v1.4.0.04 |
 | Allemagne (BR-DE) | 52 assertions (BR-DE, BR-DE-CVD, BR-DEX, BR-TMP) ; contrôle des profils acceptés par le BMF (DE-PROFILE-01) | Schematron KoSIT XRechnung 3.0.2 ; BMF |
+| Chorus Pro (B2G) | 8 contrôles (CPRO-01 à CPRO-08) : SIRET de la structure publique, code service, numéro d'engagement, type de document, numéro de facture | Spécifications externes Chorus Pro (annexe EDI V4.23) |
 | Conteneur PDF | 30 contrôles (PDF-01 à PDF-30) : PDF/A-3 ou PDF/A-4f déclaré, cohérent avec la version PDF, XMP `fx` cohérent avec le XML, pièce jointe, `/AF`, `/AFRelationship`, type MIME, chiffrement | Spécification Factur-X 1.08, ISO 19005-3 et 19005-4 |
 
 Les messages sont ceux des artefacts officiels. Les listes de codes (pays, devises, unités, schémas d'identifiants, motifs d'exonération…) sont embarquées.
