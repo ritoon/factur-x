@@ -574,7 +574,10 @@ func (k *checker) uriScheme(party string) (*xmltree.Node, bool) {
 // are the first ones of all the header settlements.
 func (k *checker) totalWithVAT() {
 	var grandN, basisN, first *xmltree.Node
-	var taxes []*xmltree.Node
+	// The buffer keeps the common case off the heap with Go 1.24, whose
+	// compiler does not place small appended slices on the stack.
+	var buf [4]*xmltree.Node
+	taxes := buf[:0]
 	for _, s := range children(k.d.Transaction) {
 		if s.Name != "ApplicableHeaderTradeSettlement" {
 			continue
