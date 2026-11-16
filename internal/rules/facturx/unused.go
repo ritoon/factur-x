@@ -14,11 +14,12 @@ type unusedItem struct {
 	mask uint8
 }
 
-// unusedItems lists the "not used" reports of Factur-X_1.08_MINIMUM.sch and
-// Factur-X_1.08_BASICWL.sch, except the variants selected by a value, which
+// unusedItems lists the "not used" reports of Factur-X_1.09_MINIMUM.sch and
+// Factur-X_1.09_BASICWL.sch, except the variants selected by a value, which
 // unused handles: seller tax registrations with a scheme other than VA and
-// FC, total VAT amounts in another currency and allowances whose charge
-// indicator is neither "true" nor "false". Below a
+// FC, total VAT amounts in another currency, allowances whose charge
+// indicator is neither "true" nor "false" and, in BASIC WL, charge reason
+// codes whose list identifier is not 5153. Below a
 // ram:SpecifiedTradeAllowanceCharge, the items only apply when the charge
 // indicator is "true" or "false".
 var unusedItems = func() []unusedItem {
@@ -120,9 +121,19 @@ func (k *checker) unused() {
 		}
 	}
 	for _, ac := range kids(k.d.Settlement) {
-		if ac.Name == "SpecifiedTradeAllowanceCharge" {
-			if ind := text(ac.Elem("ChargeIndicator").Elem("Indicator")); ind != "true" && ind != "false" {
-				k.fail("FX-NOT-USED", ac, "a document level allowance or charge whose charge indicator is %q is not used in profile %s (expected true or false): receivers ignore it", ind, k.profileName())
+		if ac.Name != "SpecifiedTradeAllowanceCharge" {
+			continue
+		}
+		ind := text(ac.Elem("ChargeIndicator").Elem("Indicator"))
+		if ind != "true" && ind != "false" {
+			k.fail("FX-NOT-USED", ac, "a document level allowance or charge whose charge indicator is %q is not used in profile %s (expected true or false): receivers ignore it", ind, k.profileName())
+		}
+		if ind != "true" || k.p != mBWL {
+			continue
+		}
+		for _, rc := range ac.Children {
+			if list, ok := rc.LookupAttr("listID"); rc.Name == "ReasonCode" && ok && list != "5153" {
+				k.fail("FX-NOT-USED", rc, "a charge reason code (BT-105) with list identifier %q is not used in profile %s (only none or 5153): receivers ignore it", list, k.profileName())
 			}
 		}
 	}

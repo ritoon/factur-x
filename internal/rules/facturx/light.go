@@ -4,6 +4,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/ritoon/factur-x/internal/codes"
 	"github.com/ritoon/factur-x/internal/rules"
 	"github.com/ritoon/factur-x/internal/xmltree"
 	"github.com/ritoon/factur-x/invoice"
@@ -49,10 +50,8 @@ func codeSet(s string) map[string]bool {
 
 // walkState collects what the rules need from the whole document.
 type walkState struct {
-	nonOTax    bool          // an ram:ApplicableTradeTax has a category other than O
-	nonOCatTax bool          // an ram:CategoryTradeTax has a category other than O
-	dueTerms   bool          // payment terms with a due date or a description exist
-	duePayable *xmltree.Node // first ram:DuePayableAmount
+	nonOTax    bool // an ram:ApplicableTradeTax has a category other than O
+	nonOCatTax bool // an ram:CategoryTradeTax has a category other than O
 }
 
 // light runs the MINIMUM and BASIC WL rules.
@@ -68,7 +67,7 @@ func (k *checker) light() {
 
 	var w walkState
 	k.walk(d.Root, &w)
-	k.document(&w)
+	k.document()
 	k.parties()
 	k.totals()
 	k.breakdown(&w)
@@ -84,8 +83,8 @@ func (k *checker) light() {
 }
 
 // walk visits the whole document once: BR-CO-09 (every VAT identifier) and
-// FX-DATE (every date), and the facts needed by BR-O-11 to BR-O-14 and
-// BR-CO-25, whose contexts use the descendant axis.
+// FX-DATE (every date), and the facts needed by BR-O-11 to BR-O-14, whose
+// contexts use the descendant axis.
 func (k *checker) walk(n *xmltree.Node, w *walkState) {
 	switch n.Name {
 	case "ApplicableTradeTax", "CategoryTradeTax":
@@ -97,14 +96,6 @@ func (k *checker) walk(n *xmltree.Node, w *walkState) {
 					w.nonOCatTax = true
 				}
 			}
-		}
-	case "SpecifiedTradePaymentTerms":
-		if n.Elem("DueDateDateTime") != nil || n.Elem("Description") != nil {
-			w.dueTerms = true
-		}
-	case "DuePayableAmount":
-		if w.duePayable == nil {
-			w.duePayable = n
 		}
 	case "DateTimeString":
 		if n.Attr("format") == "102" && !validDate102(n.Text) {
@@ -150,8 +141,8 @@ func firstRunes(s string, n int) string {
 }
 
 // document implements the rules of context /rsm:CrossIndustryInvoice (BR-01
-// to BR-11, BR-62, BR-63, BR-CO-25) and //ram:SellerTradeParty (BR-CO-26).
-func (k *checker) document(w *walkState) {
+// to BR-11, BR-62, BR-63) and //ram:SellerTradeParty (BR-CO-26).
+func (k *checker) document() {
 	d := k.d
 	if !filled(d.Context.Elem("GuidelineSpecifiedDocumentContextParameter").Elem("ID")) {
 		k.fail("BR-01", or(d.Context, d.Root), "the specification identifier (BT-24) is missing")
@@ -200,9 +191,6 @@ func (k *checker) document(w *walkState) {
 	if uc := k.buyer.Elem("URIUniversalCommunication"); uc != nil && strings.TrimSpace(uc.Elem("URIID").Attr("schemeID")) == "" {
 		k.fail("BR-63", uc, "the buyer electronic address (BT-49) has no scheme identifier")
 	}
-	if v, ok := rules.Dec(w.duePayable); ok && v.Sign() > 0 && !w.dueTerms && k.applies("BR-CO-25") {
-		k.fail("BR-CO-25", w.duePayable, "the amount due for payment (BT-115) is %s, but neither a payment due date (BT-9) nor payment terms (BT-20) are given", strings.TrimSpace(w.duePayable.Text))
-	}
 	if s := k.seller; s != nil && s.Elem("ID") == nil && s.Elem("GlobalID") == nil &&
 		s.Elem("SpecifiedLegalOrganization").Elem("ID") == nil && !hasTaxID(s, "VA", "") {
 		k.fail("BR-CO-26", s, "the seller has no identifier (BT-29), legal registration identifier (BT-30) nor VAT identifier (BT-31)")
@@ -220,14 +208,15 @@ func (k *checker) parties() {
 		k.fail("BR-17", k.payee, "the payee name (BT-59) is missing")
 	}
 	if t := k.taxRep; t != nil {
-		if t.Elem("Name") == nil {
-			k.fail("BR-18", t, "the seller tax representative name (BT-62) is missing")
+		if blank(t.Elem("Name")) {
+			k.fail("BR-18", t, "the seller tax representative name (BT-62) is missing or blank")
 		}
 		addr := t.Elem("PostalTradeAddress")
 		if addr == nil {
 			k.fail("BR-19", t, "the seller tax representative postal address (BG-12) is missing")
-		} else if addr.Elem("CountryID") == nil {
-			k.fail("BR-20", addr, "the seller tax representative country code (BT-69) is missing")
+		}
+		if blank(addr.Elem("CountryID")) {
+			k.fail("BR-20", or(addr, t), "the seller tax representative country code (BT-69) is missing or blank")
 		}
 		vat := false
 		for _, r := range t.Children {
@@ -446,17 +435,13 @@ func (k *checker) grandTotal(id string, sum, tb, gt *xmltree.Node) {
 }
 
 // breakdown implements the rules of the contexts
-// ram:ApplicableHeaderTradeSettlement (BR-CO-18), its ram:ApplicableTradeTax
-// (BR-45 to BR-48, BR-CO-03, BR-CO-17, BR-DEC-19, BR-DEC-20, the category L,
+// ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax (BR-45 to BR-48, BR-CO-03, BR-CO-17, BR-DEC-19, BR-DEC-20, the category L,
 // M and O rules) and their ram:CategoryCode (the category S, Z, E, AE, G
 // and K rules).
 func (k *checker) breakdown(w *walkState) {
 	st := k.d.Settlement
 	if st == nil {
 		return
-	}
-	if st.Elem("ApplicableTradeTax") == nil {
-		k.fail("BR-CO-18", st, "the invoice has no VAT breakdown (BG-23)")
 	}
 	for _, tt := range st.Children {
 		if tt.Name != "ApplicableTradeTax" {
@@ -510,6 +495,9 @@ func (k *checker) breakdown(w *walkState) {
 				k.zeroTax("BR-AE-09", tt, calc, "AE")
 				k.exemption("BR-AE-10", tt, "AE")
 			case "G":
+				if k.p == mMin {
+					k.categoryBasis("BR-G-08", tt, basis, "G", true)
+				}
 				k.zeroTax("BR-G-09", tt, calc, "G")
 				k.exemption("BR-G-10", tt, "G")
 			case "K":
@@ -597,9 +585,11 @@ func (k *checker) brS09(tt, basis, calc, rate *xmltree.Node) {
 	k.fail("BR-S-09", or(calc, tt), "standard rated VAT breakdown: the tax amount (BT-117) %s is not the taxable amount (BT-116) %s × rate (BT-119) %s%%", valueOf(calc), valueOf(basis), valueOf(rate))
 }
 
-// categoryBasis implements BR-IC-08 (tolerance 1) and BR-O-08 (exact): the
-// taxable amount of the category is the sum of its line net amounts plus
-// charges minus allowances, each sum rounded to 2 decimals.
+// categoryBasis implements BR-G-08, BR-IC-08 (tolerance: BT-116 - 1 <= sum
+// < BT-116 + 1) and BR-O-08 (exact): the taxable amount of the category is
+// the sum of its line net amounts plus charges minus allowances, each sum
+// rounded to 2 decimals. Only the first amount of an allowance or charge
+// counts (ram:ActualAmount[1]).
 func (k *checker) categoryBasis(id string, tt, basis *xmltree.Node, cat string, tolerance bool) {
 	var lines invoice.Decimal
 	for _, l := range k.d.Lines {
@@ -617,16 +607,18 @@ func (k *checker) categoryBasis(id string, tt, basis *xmltree.Node, cat string, 
 			continue
 		}
 		charge, ok := xsBoolean(text(ac.Elem("ChargeIndicator").Elem("Indicator")))
+		amount, okA := rules.Dec(ac.Elem("ActualAmount"))
 		switch {
-		case ok && charge:
-			charges = charges.Add(sumDec(ac, "ActualAmount"))
-		case ok:
-			allowances = allowances.Add(sumDec(ac, "ActualAmount"))
+		case !ok || !okA:
+		case charge:
+			charges = charges.Add(amount)
+		default:
+			allowances = allowances.Add(amount)
 		}
 	}
 	want := lines.RoundHalfCeil(2).Add(charges.RoundHalfCeil(2)).Sub(allowances.RoundHalfCeil(2))
 	b, ok := rules.Dec(basis)
-	if ok && (tolerance && b.Sub(one).Cmp(want) < 0 && b.Add(one).Cmp(want) > 0 || !tolerance && b.Equal(want)) {
+	if ok && (tolerance && b.Sub(one).Cmp(want) <= 0 && b.Add(one).Cmp(want) > 0 || !tolerance && b.Equal(want)) {
 		return
 	}
 	k.fail(id, or(basis, tt), "the taxable amount (BT-116) of category %s is %s, expected %s (lines plus charges minus allowances of the category)", cat, valueOf(basis), want)
@@ -826,8 +818,16 @@ func (k *checker) allowances() {
 		}
 		k.decimals(ids[4], ac.Elem("ActualAmount"))
 		k.decimals(ids[5], ac.Elem("BasisAmount"))
-		if rc := ac.Elem("ReasonCode"); kind == 0 && rc != nil && rc.Text != "" && !allowanceReasonCodes[rc.Text] {
-			k.fail("FX-SCH-A-000186", rc, "the allowance reason code (BT-98) %q is not in the UNTDID 5189 subset of EN 16931", rc.Text)
+		for _, rc := range ac.Children {
+			if rc.Name != "ReasonCode" || rc.Text == "" {
+				continue
+			}
+			if kind == 0 && !allowanceReasonCodes[rc.Text] {
+				k.fail("FX-SCH-A-000186", rc, "the allowance reason code (BT-98) %q is not in the UNTDID 5189 subset of EN 16931", rc.Text)
+			}
+			if _, list := rc.LookupAttr("listID"); kind == 1 && !list && !codes.ChargeReason(rc.Text) {
+				k.fail("FX-SCH-A-000376", rc, "the charge reason code (BT-105) %q is not in UNTDID 7161", rc.Text)
+			}
 		}
 		for _, t := range ac.Children {
 			if t.Name != "CategoryTradeTax" {
@@ -852,20 +852,38 @@ func (k *checker) allowances() {
 	}
 }
 
-// lines implements the line rules of the MINIMUM schematron (BR-IC-02,
-// BR-IC-05), whose context cannot occur in a MINIMUM invoice that matches
-// its schema.
+// lineCategories lists the VAT categories of the line rules of the MINIMUM
+// schematron: the identifiers required (…-02) and a rate of 0 (…-05).
+var lineCategories = [...]struct {
+	code, ids, rate string
+	vatIDs          idsRule
+	need            string
+}{
+	{"E", "BR-E-02", "BR-E-05", idsSellerTax, sellerTaxIDs},
+	{"G", "BR-G-02", "BR-G-05", idsSellerVAT, "the seller VAT identifier (BT-31) or tax representative VAT identifier (BT-63)"},
+	{"K", "BR-IC-02", "BR-IC-05", idsIntraCommunity, "the seller (or tax representative) and the buyer VAT identifiers"},
+}
+
+// lines implements the line rules of the MINIMUM schematron (BR-E-02,
+// BR-E-05, BR-G-02, BR-G-05, BR-IC-02, BR-IC-05), whose context cannot occur
+// in a MINIMUM invoice that matches its schema.
 func (k *checker) lines() {
 	for _, l := range k.d.Lines {
 		for _, t := range kids(l.Elem("SpecifiedLineTradeSettlement")) {
-			if t.Name != "ApplicableTradeTax" || !hasCategory(t, "K") {
+			if t.Name != "ApplicableTradeTax" {
 				continue
 			}
-			if !k.intraCommunityIDs() {
-				k.fail("BR-IC-02", t, "an invoice line with VAT category K requires the seller (or tax representative) and the buyer VAT identifiers")
-			}
-			if r, ok := rules.Dec(t.Elem("RateApplicablePercent")); !ok || !r.IsZero() {
-				k.fail("BR-IC-05", t, "the VAT rate of an invoice line with VAT category K must be 0")
+			for i := range lineCategories {
+				c := &lineCategories[i]
+				if !hasCategory(t, c.code) {
+					continue
+				}
+				if !k.hasIDs(c.vatIDs) {
+					k.fail(c.ids, t, "an invoice line with VAT category %s requires %s", c.code, c.need)
+				}
+				if r, ok := rules.Dec(t.Elem("RateApplicablePercent")); !ok || !r.IsZero() {
+					k.fail(c.rate, t, "the VAT rate of an invoice line with VAT category %s must be 0", c.code)
+				}
 			}
 		}
 	}
@@ -873,7 +891,8 @@ func (k *checker) lines() {
 
 // payment implements the rules of the contexts
 // //ram:SpecifiedTradeSettlementPaymentMeans (BR-49, BR-50, BR-61,
-// BR-CO-27) and ram:InvoiceReferencedDocument (BR-55).
+// BR-CO-27), //ram:ApplicableTradeSettlementFinancialCard (BR-51) and
+// ram:InvoiceReferencedDocument (BR-55).
 func (k *checker) payment() {
 	for _, pm := range kids(k.d.Settlement) {
 		switch pm.Name {
@@ -892,13 +911,25 @@ func (k *checker) payment() {
 		}
 		iban, prop := false, false
 		for _, acc := range pm.Children {
-			if acc.Name != "PayeePartyCreditorFinancialAccount" {
+			switch acc.Name {
+			case "ApplicableTradeSettlementFinancialCard":
+				if id := acc.Elem("ID"); normalizedLen(text(id)) > 10 {
+					k.fail("BR-51", id, "the payment card primary account number (BT-87) has %d characters: at most 10 may be shown (the first 6 and the last 4 digits)", normalizedLen(text(id)))
+				}
+				continue
+			case "PayeePartyCreditorFinancialAccount":
+			default:
 				continue
 			}
 			i, p := acc.Elem("IBANID") != nil, acc.Elem("ProprietaryID") != nil
 			iban, prop = iban || i, prop || p
-			if (text(tc) == "30" || text(tc) == "58") && !i && !p {
-				k.fail("BR-50", acc, "a credit transfer (payment means %s) requires the payment account identifier (BT-84)", text(tc))
+			if text(tc) != "30" && text(tc) != "58" {
+				continue
+			}
+			if blank(acc.Elem("IBANID")) && blank(acc.Elem("ProprietaryID")) {
+				k.fail("BR-50", acc, "a credit transfer (payment means %s) requires a payment account identifier (BT-84) that is not blank", text(tc))
+			}
+			if !i && !p {
 				k.fail("BR-61", acc, "a credit transfer (payment means %s) requires the payment account identifier (BT-84)", text(tc))
 			}
 		}
@@ -1195,6 +1226,29 @@ func or(a, b *xmltree.Node) *xmltree.Node {
 // xmlSpace holds the white space characters of XML, which normalize-space
 // removes.
 const xmlSpace = " \t\r\n"
+
+// blank reports whether normalize-space(n) is the empty string: n is absent
+// or holds only XML white space.
+func blank(n *xmltree.Node) bool { return strings.Trim(text(n), xmlSpace) == "" }
+
+// normalizedLen returns string-length(normalize-space(s)): the number of
+// characters of s once XML white space is trimmed and each inner run of it
+// is collapsed to one space.
+func normalizedLen(s string) int {
+	n, space := 0, false
+	for _, r := range strings.Trim(s, xmlSpace) {
+		if strings.ContainsRune(xmlSpace, r) {
+			space = true
+			continue
+		}
+		if space {
+			n++
+			space = false
+		}
+		n++
+	}
+	return n
+}
 
 // sumDec returns the sum of the decimal values of the children of n named
 // name, as sum() in XPath, skipping the values that are not decimals.
