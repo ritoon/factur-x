@@ -24,10 +24,12 @@ func (l *Line) CountsInTotals() bool {
 // their percentage in the same way.
 //
 // It then recomputes, overwriting previous values: the totals BT-106 to
-// BT-110, BT-112 and BT-115, and the VAT breakdown, one entry per VAT
-// category and rate found on lines and document level allowances and charges.
-// Tax amounts are rounded half away from zero to two decimals. Exemption
-// reasons already present in the breakdown are kept.
+// BT-110, BT-112 and BT-115 (which adds the charges collected on behalf of
+// a third party, BG-34, as BR-FXEXT-CO-16 of EXTENDED requires), and the VAT
+// breakdown, one entry per VAT category and rate found on lines and document
+// level allowances and charges. Tax amounts are rounded half away from zero
+// to two decimals. Exemption reasons already present in the breakdown are
+// kept.
 //
 // Invoices without lines (MINIMUM, BASIC WL) keep the VAT breakdown given by
 // the caller: only missing tax amounts are computed, and BT-109 is the sum of
@@ -96,7 +98,11 @@ func (inv *Invoice) Calculate() {
 	}
 	t.TaxTotal = tax.Round(amountScale)
 	t.GrandTotal = t.TaxBasisTotal.Add(t.TaxTotal).Round(amountScale)
-	t.DuePayable = t.GrandTotal.Sub(t.PaidAmount).Add(t.RoundingAmount).Round(amountScale)
+	t.DuePayable = t.GrandTotal.Sub(t.PaidAmount).Add(t.RoundingAmount)
+	for _, c := range inv.ThirdPartyCharges {
+		t.DuePayable = t.DuePayable.Add(c.Amount)
+	}
+	t.DuePayable = t.DuePayable.Round(amountScale)
 }
 
 func (l *Line) calculate() {

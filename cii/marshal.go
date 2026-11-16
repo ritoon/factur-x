@@ -54,7 +54,7 @@ func (e *LossError) Error() string {
 // Marshal writes inv as a CII document for the profile chosen in opts.
 //
 // Only the elements that the target profile allows are written, in the order
-// of the profile's XML schema (Factur-X 1.08; XRECHNUNG uses the EN 16931
+// of the profile's XML schema (Factur-X 1.09.2; XRECHNUNG uses the EN 16931
 // schema and EXTENDED-CTC-FR the EXTENDED one). The specification identifier
 // BT-24 is inv.SpecificationID when it identifies the target profile (this
 // keeps, for example, the XRechnung version), the target's URN otherwise.
@@ -599,6 +599,17 @@ func (w *writer) settlement(inv *invoice.Invoice) {
 	}
 	w.paymentTerms(inv)
 	w.totals(inv)
+	for i := range inv.ThirdPartyCharges {
+		c := &inv.ThirdPartyCharges[i]
+		if !ext {
+			w.lose("BG-34")
+			break
+		}
+		w.start("ram:SpecifiedFinancialAdjustment")
+		w.leafReq("ram:Reason", c.Reason)
+		w.decReq("ram:ActualAmount", c.Amount)
+		w.end("ram:SpecifiedFinancialAdjustment")
+	}
 	for i := range inv.PrecedingInvoices {
 		r := &inv.PrecedingInvoices[i]
 		if !wl {
@@ -647,10 +658,14 @@ func (w *writer) paymentMeans(pm *invoice.PaymentMeans) {
 			w.lose("BG-18")
 		}
 	}
-	if pm.PayerIBAN != "" {
+	ext := w.lvl >= lvlExtended
+	if pm.PayerIBAN != "" || pm.PayerAccountName != "" && ext {
 		w.start("ram:PayerPartyDebtorFinancialAccount")
 		w.leafReq("ram:IBANID", pm.PayerIBAN)
+		w.text(ext, "ram:AccountName", pm.PayerAccountName, "BT-216")
 		w.end("ram:PayerPartyDebtorFinancialAccount")
+	} else if pm.PayerAccountName != "" {
+		w.lose("BT-216")
 	}
 	if pm.PayeeIBAN != "" || pm.PayeeAccountName != "" || pm.PayeeProprietaryID != "" {
 		m := w.start("ram:PayeePartyCreditorFinancialAccount")
@@ -658,6 +673,15 @@ func (w *writer) paymentMeans(pm *invoice.PaymentMeans) {
 		w.text(en, "ram:AccountName", pm.PayeeAccountName, "BT-85")
 		w.leaf("ram:ProprietaryID", pm.PayeeProprietaryID)
 		w.endOpt("ram:PayeePartyCreditorFinancialAccount", m)
+	}
+	if pm.PayerBIC != "" {
+		if ext {
+			w.start("ram:PayerSpecifiedDebtorFinancialInstitution")
+			w.leafReq("ram:BICID", pm.PayerBIC)
+			w.end("ram:PayerSpecifiedDebtorFinancialInstitution")
+		} else {
+			w.lose("BT-215")
+		}
 	}
 	if pm.PayeeBIC != "" {
 		if en {
