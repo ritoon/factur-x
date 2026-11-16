@@ -1,6 +1,7 @@
 // Package validate checks CII invoices against the XML schema of their
 // Factur-X profile, the EN 16931 business rules, the Factur-X profile rules,
-// and optionally the French (BR-FR) and German (BR-DE) rules.
+// and optionally the French (BR-FR) and German (BR-DE) rules and the
+// profiles that France and Germany admit.
 //
 // Validation never stops at the first problem: every finding is collected in
 // a Report. A document that is not well-formed XML, or not a CII invoice,
@@ -52,11 +53,12 @@ type RuleSet uint
 
 // Rule sets.
 const (
-	Schema  RuleSet = 1 << iota // structure against the XML schema of the profile
-	EN16931                     // CEN business rules and code lists
-	FacturX                     // Factur-X / ZUGFeRD profile rules
-	France                      // French rules BR-FR (2026 reform)
-	Germany                     // German rules BR-DE (XRechnung)
+	Schema         RuleSet = 1 << iota // structure against the XML schema of the profile
+	EN16931                            // CEN business rules and code lists
+	FacturX                            // Factur-X / ZUGFeRD profile rules
+	France                             // French rules BR-FR (2026 reform) and the profiles the reform admits (FR-PROFILE-*)
+	Germany                            // German rules BR-DE (XRechnung)
+	GermanyProfile                     // profiles the BMF accepts as e-invoices (DE-PROFILE-01: not MINIMUM nor BASIC WL)
 
 	// Default is the set used when Options.Rules is zero: schema, EN 16931
 	// and profile rules, plus the German rules for XRECHNUNG invoices.
@@ -69,10 +71,17 @@ type Options struct {
 	Profile invoice.Profile
 	// Rules selects the rule sets; zero means Default.
 	Rules RuleSet
-	// Auto adds the French rules when the seller is in France (BT-40 = FR).
-	// The German rules need no option: they apply to XRECHNUNG invoices,
-	// which declare themselves in BT-24.
+	// Auto adds the national rules of the seller's country (BT-40): the
+	// French rules (France) for a seller in France, the BMF profile check
+	// (GermanyProfile) for a seller in Germany. The German rules BR-DE need
+	// no option: they apply to XRECHNUNG invoices, which declare themselves
+	// in BT-24.
 	Auto bool
+	// RejectBasicWL makes the French rules report the profile BASIC WL as an
+	// error (FR-PROFILE-03). The reform admits BASIC WL for now, and no end
+	// date has been published: set it to refuse BASIC WL already, or once
+	// the profile is no longer admitted.
+	RejectBasicWL bool
 }
 
 // XML validates a CII invoice.
@@ -111,8 +120,12 @@ func Tree(root *xmltree.Node, opts *Options) *Report {
 	run(Schema, SourceSyntax, schema.Check)
 	run(EN16931, SourceEN16931, en16931.Check)
 	run(FacturX, SourceFacturX, facturx.Check)
-	run(France, SourceFR, fr.Check)
+	run(France, SourceFR, func(c *rules.Checker) {
+		fr.Check(c)
+		fr.CheckProfile(c, opts.RejectBasicWL)
+	})
 	run(Germany, SourceDE, de.Check)
+	run(GermanyProfile, SourceDE, de.CheckProfile)
 	return r
 }
 
@@ -126,8 +139,11 @@ func RulesFor(doc *rules.Doc, opts *Options) RuleSet {
 		}
 	}
 	if opts.Auto {
-		if doc.Agreement.Value("SellerTradeParty/PostalTradeAddress/CountryID") == "FR" {
+		switch doc.Agreement.Value("SellerTradeParty/PostalTradeAddress/CountryID") {
+		case "FR":
 			set |= France
+		case "DE":
+			set |= GermanyProfile
 		}
 	}
 	return set
@@ -145,6 +161,8 @@ func Catalog(set RuleSet) []RuleInfo {
 	add(EN16931, en16931.Catalog)
 	add(FacturX, facturx.Catalog)
 	add(France, fr.Catalog)
+	add(France, fr.ProfileCatalog)
 	add(Germany, de.Catalog)
+	add(GermanyProfile, de.ProfileCatalog)
 	return out
 }
