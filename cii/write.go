@@ -16,6 +16,15 @@ type writer struct {
 	lvl    level
 
 	losses []string
+
+	// When the invoice holds extensions, track is set and the writer keeps
+	// the frames of the open elements to put them back (see place.go).
+	// extOK tells whether the target profile may receive them.
+	track  bool
+	extOK  bool
+	target invoice.Profile
+	frames []frame
+	tmp    []byte // scratch buffer of moveTail
 }
 
 // mark records the position of a start tag so that an element left empty can
@@ -46,13 +55,27 @@ func (w *writer) start(name string) mark {
 	w.newline()
 	w.b = append(w.b, '<')
 	w.b = append(w.b, name...)
+	if w.track {
+		w.trackStart(name, at, len(w.b), true)
+	}
 	w.b = append(w.b, '>')
+	if w.track {
+		w.frames[len(w.frames)-1].body = len(w.b)
+	}
 	w.depth++
 	return mark{at: at, body: len(w.b)}
 }
 
 // end writes the end tag of an element that has child elements.
 func (w *writer) end(name string) {
+	if w.track {
+		w.closeFrame()
+		w.popFrame()
+	}
+	w.endTag(name)
+}
+
+func (w *writer) endTag(name string) {
 	w.depth--
 	w.newline()
 	w.b = append(w.b, '<', '/')
@@ -62,19 +85,35 @@ func (w *writer) end(name string) {
 
 // endOpt closes an element, or removes it when nothing was written inside.
 func (w *writer) endOpt(name string, m mark) {
-	if len(w.b) == m.body {
+	empty := len(w.b) == m.body
+	if w.track {
+		w.closeFrame()
+		f := &w.frames[len(w.frames)-1]
+		// Attributes may have been added to the start tag.
+		empty = len(w.b) == f.body && f.body == f.nameEnd+1
+		if empty {
+			w.dropFrame()
+		} else {
+			w.popFrame()
+		}
+	}
+	if empty {
 		w.depth--
 		w.b = w.b[:m.at]
 		return
 	}
-	w.end(name)
+	w.endTag(name)
 }
 
 // openLeaf writes "<name" so that attributes can follow.
 func (w *writer) openLeaf(name string) {
+	at := len(w.b)
 	w.newline()
 	w.b = append(w.b, '<')
 	w.b = append(w.b, name...)
+	if w.track {
+		w.trackStart(name, at, len(w.b), false)
+	}
 }
 
 // closeLeaf writes ">value</name>".

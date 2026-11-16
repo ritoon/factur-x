@@ -85,6 +85,21 @@ inv, att, err := facturx.Read(pdf)
 
 `facturx.Extract` renvoie seulement le XML. `cii.Parse` lit un XML CII seul. La lecture est tolérante : ZUGFeRD 2.0 et 2.1, préfixes quelconques, identifiants de profil mal orthographiés trouvés dans la nature ; une valeur illisible est signalée sans arrêter la lecture du reste.
 
+#### Rien n'est perdu en silence
+
+Le modèle porte les données métier d'EXTENDED : parties supplémentaires (utilisateur final, livraison finale, expédition), conditions de livraison, commandes du client final, bon de livraison, taux de change, frais logistiques, remises et charges détaillées sur le prix, produits inclus dans un article… Les champs EXT-FR-FE-* d'EXTENDED-CTC-FR correspondent à des éléments du XSD EXTENDED et sont couverts de la même façon.
+
+Ce que le modèle n'a pas de champ pour décrire (un numéro de fax, une marque de produit, des conditions d'escompte, un `listID`, un élément qu'aucun schéma ne connaît…) est conservé tel quel dans le champ `Extensions` de la valeur qui l'englobe : la facture, une ligne, une partie, un moyen de paiement… `inv.Unmodeled()` les liste :
+
+```go
+inv, _ := cii.Parse(xml)
+for _, u := range inv.Unmodeled() {
+	fmt.Println(u) // "Seller: DefinedTradeContact/FaxUniversalCommunication", "Lines[0]: SpecifiedTradeProduct/BrandName"…
+}
+```
+
+`cii.Marshal` remet chaque extension à sa place dans l'ordre du schéma, en recréant les éléments englobants s'il le faut, quand le profil visé l'admet ; sinon il la signale comme perdue (option `Strict`). Une facture EXTENDED relue puis réécrite en EXTENDED redonne donc tout son arbre, aux formes normalisées près : `currencyID` égal à BT-5 ou BT-6 sous-entendu, attributs d'autres espaces de noms (`xsi:schemaLocation`) non conservés, immatriculations fiscales d'une partie écrites VA puis FC, identifiant global d'une partie écrit en `ram:GlobalID`, BT-7 et BT-8 répétés dans chaque ventilation de TVA. La liste des éléments et attributs du XSD EXTENDED sans champ dans le modèle est tenue dans [cii/testdata/extended-unmodeled.txt](cii/testdata/extended-unmodeled.txt).
+
 ### Valider
 
 ```go
@@ -201,6 +216,8 @@ Les messages sont ceux des artefacts officiels. Les listes de codes (pays, devis
 
 Sur les 26 XML CII valides du corpus officiel `XML-Rechnung/CII`, le validateur signale exactement les 6 fichiers que signalent les schematrons officiels (exécutés par papierleicht) : BR-CL-25 deux fois, CII-SR-465 quatre fois sur les exemples XRECHNUNG. Les 104 PDF hybrides du corpus (`ZUGFeRDv2/correct`, `XML-Rechnung/FX`) sont tous extraits et leurs 26 XML tous lus.
 
+Sur les 147 XML CII lus du corpus ZUGFeRD et des XML extraits de ses PDF, 145 sont réécrits en EXTENDED avec tout leur arbre ; les 2 autres portent des données qu'aucun profil Factur-X n'admet (le code banque allemand de ZUGFeRD 2.0, retiré depuis du schéma, et un type de référence sur un document justificatif autre que 130), et `Marshal` les signale. Un document qui contient chaque élément du XSD EXTENDED avec tous ses attributs est relu et réécrit à l'identique, sauf ce même élément interdit par les règles.
+
 ### PDF
 
 Le lecteur PDF est écrit pour ce package : tables xref classiques et flux xref, flux d'objets, mises à jour incrémentales, reconstruction quand la table xref est endommagée, filtres Flate (avec prédicteurs), ASCIIHex et ASCII85. La décompression est bornée (256 Mio par flux) et la profondeur d'imbrication limitée, pour qu'un fichier hostile ne puisse ni saturer la mémoire ni faire déborder la pile. Le décompresseur est testé par fuzzing différentiel contre `compress/flate`.
@@ -254,7 +271,7 @@ Les tests de base n'ont besoin que du dépôt ; la CI ([.github/workflows/ci.yml
 | Variable | Contenu | Tests |
 |---|---|---|
 | `FX_CORPUS` | Clone de [ZUGFeRD/corpus](https://github.com/ZUGFeRD/corpus) | Extraction et contrôle des PDF du corpus |
-| `FX_CORPUS_XML` | XML extraits du corpus | Lecture, validation et aller-retour lecture → écriture |
+| `FX_CORPUS_XML` | XML extraits du corpus | Lecture, validation et aller-retour lecture → écriture : sans perte signalée, l'arbre complet du document d'origine doit se retrouver dans le XML réécrit, dans son profil et en EXTENDED |
 | `FX_XSD` | XSD Factur-X 1.09.2, un dossier par profil (`MINIMUM`, `BASICWL`, `BASIC`, `EN16931`, `EXTENDED`) | Le XML écrit par `cii.Marshal` est vérifié contre les XSD d'origine |
 | `FX_XSD_DIR` | XSD Factur-X 1.09.2 : paquet FeRD ZUGFeRD 2.5.2 (BASIC, EN 16931, EXTENDED) et paquet FNFE-MPE 1.09 (MINIMUM, BASIC WL, que le corrigendum 1.09.2 ne modifie pas) | Les tables de schéma régénérées sont identiques à celles du dépôt |
 | `FX_KOSIT` | Clone de [itplr-kosit/xrechnung-testsuite](https://github.com/itplr-kosit/xrechnung-testsuite) | Toutes les factures CII de la suite de tests KoSIT passent les règles BR-DE |

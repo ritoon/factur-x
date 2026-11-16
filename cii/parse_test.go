@@ -3,6 +3,8 @@ package cii
 import (
 	"errors"
 	"os"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -230,8 +232,18 @@ func TestParseTolerance(t *testing.T) {
 	if l.PriceBaseQuantity.String() != "10" || l.PriceBaseQuantityUnit != "KGM" {
 		t.Errorf("BT-149/150 from the gross price = %v %q", l.PriceBaseQuantity, l.PriceBaseQuantityUnit)
 	}
-	if l.Note != "first\nsecond" {
-		t.Errorf("line notes = %q", l.Note)
+	// BT-127 is the first note; EXTENDED allows several, the others are
+	// kept as extensions.
+	if l.Note != "first" {
+		t.Errorf("line note = %q", l.Note)
+	}
+	want := []invoice.Extension{{Path: "AssociatedDocumentLineDocument", XML: "<ram:IncludedNote><ram:Content>second</ram:Content></ram:IncludedNote>"}}
+	if !reflect.DeepEqual(l.Extensions, want) {
+		t.Errorf("line extensions = %+v", l.Extensions)
+	}
+	// The currencyID of the totals are implied by BT-5 and BT-6.
+	if len(inv.Extensions) > 0 {
+		t.Errorf("invoice extensions = %+v", inv.Extensions)
 	}
 }
 
@@ -258,7 +270,8 @@ func TestParseOddSpecificationID(t *testing.T) {
 }
 
 // TestParsePriceAllowances sums the EXTENDED price allowances into BT-147
-// and ignores price charges, which the model does not carry.
+// and details the allowances and charges of the price, which EXTENDED writes
+// back and EN 16931 reports as lost.
 func TestParsePriceAllowances(t *testing.T) {
 	doc := ciiHead + `<rsm:SupplyChainTradeTransaction><ram:IncludedSupplyChainTradeLineItem><ram:SpecifiedLineTradeAgreement>
 <ram:GrossPriceProductTradePrice><ram:ChargeAmount>1.5000</ram:ChargeAmount>
@@ -268,7 +281,65 @@ func TestParsePriceAllowances(t *testing.T) {
 </ram:GrossPriceProductTradePrice>
 </ram:SpecifiedLineTradeAgreement></ram:IncludedSupplyChainTradeLineItem></rsm:SupplyChainTradeTransaction></rsm:CrossIndustryInvoice>`
 	inv := mustParse(t, []byte(doc))
-	if got := inv.Lines[0].PriceDiscount.String(); got != "0.0500" {
+	l := &inv.Lines[0]
+	if got := l.PriceDiscount.String(); got != "0.0500" {
 		t.Errorf("BT-147 = %s, want 0.0500", got)
+	}
+	if len(l.PriceAllowancesCharges) != 3 || !l.PriceAllowancesCharges[1].Charge || l.PriceAllowancesCharges[1].Amount.String() != "9" {
+		t.Fatalf("price allowances and charges = %+v", l.PriceAllowancesCharges)
+	}
+	out := mustMarshal(t, inv, &MarshalOptions{Profile: invoice.ProfileExtended, Strict: true})
+	if n := strings.Count(string(out), "<ram:AppliedTradeAllowanceCharge>"); n != 3 {
+		t.Errorf("EXTENDED output has %d price allowances and charges:\n%s", n, out)
+	}
+	back := mustParse(t, out)
+	if !reflect.DeepEqual(back.Lines[0].PriceAllowancesCharges, l.PriceAllowancesCharges) || back.Lines[0].PriceDiscount != l.PriceDiscount {
+		t.Errorf("EXTENDED round trip = %+v", back.Lines[0])
+	}
+	_, err := Marshal(inv, &MarshalOptions{Profile: invoice.ProfileEN16931, Strict: true})
+	var le *LossError
+	if !errors.As(err, &le) || !slices.Contains(le.Terms, "EXT Line.PriceAllowancesCharges") {
+		t.Errorf("EN 16931: %v", err)
+	}
+	en := mustParse(t, mustMarshal(t, inv, &MarshalOptions{Profile: invoice.ProfileEN16931}))
+	if en.Lines[0].PriceDiscount.String() != "0.0500" || en.Lines[0].PriceAllowancesCharges != nil {
+		t.Errorf("EN 16931 line = %+v", en.Lines[0])
+	}
+}
+
+// TestParseUltimateShipTo is the case of ticket #5: an EXTENDED document
+// with an ultimate ship-to party, which used to be dropped silently.
+func TestParseUltimateShipTo(t *testing.T) {
+	doc := strings.Replace(string(readTestdata(t, "EN16931_Einfach.cii.xml")), "<ram:ID>urn:cen.eu:en16931:2017</ram:ID>", "<ram:ID>"+invoice.URNExtended+"</ram:ID>", 1)
+	doc = strings.Replace(doc, "<ram:ApplicableHeaderTradeDelivery>", `<ram:ApplicableHeaderTradeDelivery>
+      <ram:UltimateShipToTradeParty>
+        <ram:Name>Entrepôt final</ram:Name>
+        <ram:PostalTradeAddress><ram:CityName>Lyon</ram:CityName><ram:CountryID>FR</ram:CountryID></ram:PostalTradeAddress>
+      </ram:UltimateShipToTradeParty>`, 1)
+	inv := mustParse(t, []byte(doc))
+	if inv.Profile != invoice.ProfileExtended {
+		t.Fatalf("profile = %v", inv.Profile)
+	}
+	if p := inv.UltimateShipTo; p == nil || p.Name != "Entrepôt final" || p.Address.City != "Lyon" {
+		t.Fatalf("ultimate ship-to = %+v", p)
+	}
+	if u := inv.Unmodeled(); len(u) > 0 {
+		t.Errorf("unmodeled = %v", u)
+	}
+	out := mustMarshal(t, inv, &MarshalOptions{Strict: true})
+	checkXSD(t, invoice.ProfileExtended, out)
+	if !strings.Contains(string(out), "<ram:UltimateShipToTradeParty><ram:Name>Entrepôt final</ram:Name>") {
+		t.Errorf("the ultimate ship-to party is not written:\n%s", out)
+	}
+	orig, _ := xmltree.Parse([]byte(doc))
+	back, _ := xmltree.Parse(out)
+	if d := diffTrees(orig, back, treeNorm{cur: inv.Currency, taxCur: inv.TaxCurrency, spec: true}); len(d.missing) > 0 || d.order != "" {
+		t.Errorf("the output does not hold the tree of the original:\n%v", d)
+	}
+	// EN 16931 cannot carry it: Strict reports the loss.
+	_, err := Marshal(inv, &MarshalOptions{Profile: invoice.ProfileEN16931, Strict: true})
+	var le *LossError
+	if !errors.As(err, &le) || !slices.Equal(le.Terms, []string{"EXT UltimateShipTo"}) {
+		t.Errorf("EN 16931: %v", err)
 	}
 }

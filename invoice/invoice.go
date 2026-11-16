@@ -5,7 +5,9 @@
 // Field comments give the business term (BT) or group (BG) of EN 16931; terms
 // marked EXT exist only in EXTENDED profiles. The structure follows the CII
 // syntax closely enough that an invoice read from XML is written back without
-// loss for the EN 16931 data set.
+// loss: the elements of the EXTENDED data set that have no field of their own,
+// and the attributes that none carries, are kept in the Extensions field of
+// the value that encloses them (see Extension).
 //
 // Amounts, quantities and rates are Decimal values: they keep the number of
 // decimals they were given. Calculate fills in the derived amounts (line net
@@ -26,6 +28,9 @@ type Invoice struct {
 	BusinessProcess string
 	// TestIndicator marks a test document (CII TestIndicator, EXT).
 	TestIndicator bool
+	// CopyIndicator marks the document as a copy of the original (CII
+	// CopyIndicator, EXT).
+	CopyIndicator bool
 
 	Number    string // BT-1 Invoice number
 	TypeCode  string // BT-3 Invoice type code (UNTDID 1001: 380, 381, 384, 389…)
@@ -73,9 +78,20 @@ type Invoice struct {
 	Invoicer                *Party // Invoicer (EXT)
 	Invoicee                *Party // Invoicee (EXT)
 	Payer                   *Party // Payer (EXT)
+	ProductEndUser          *Party // Product end user (EXT)
 
-	ShipTo       *Party // BG-13 Delivery information: BT-70 name, BT-71 location identifier, BG-15 address
-	DeliveryDate Date   // BT-72 Actual delivery date
+	// DeliveryTerms are the delivery terms of the invoice, such as an
+	// Incoterms code (EXT).
+	DeliveryTerms *DeliveryTerms
+	// UltimateCustomerOrders are the orders of the ultimate customer that the
+	// invoice refers to (EXT).
+	UltimateCustomerOrders []DocumentReference
+
+	ShipTo         *Party             // BG-13 Delivery information: BT-70 name, BT-71 location identifier, BG-15 address
+	UltimateShipTo *Party             // Ultimate deliver-to party (EXT)
+	ShipFrom       *Party             // Ship-from party (EXT)
+	DeliveryDate   Date               // BT-72 Actual delivery date
+	DeliveryNote   *DocumentReference // Delivery note reference, with its date (EXT)
 
 	InvoicingPeriod Period // BG-14 Invoicing period
 
@@ -84,9 +100,17 @@ type Invoice struct {
 	PaymentMeans          []PaymentMeans // BG-16 Payment instructions (one entry per means of payment)
 	PaymentTerms          []PaymentTerms // BT-20, BT-9, BT-89 (one entry, several in EXTENDED)
 
+	// CurrencyExchange is the exchange rate from the invoice currency (BT-5)
+	// to the VAT accounting currency (BT-6), used for BT-111 (EXT).
+	CurrencyExchange *CurrencyExchange
+
 	AllowancesCharges []AllowanceCharge // BG-20 Document level allowances, BG-21 charges
-	VATBreakdown      []VATBreakdown    // BG-23 VAT breakdown
-	Totals            Totals            // BG-22 Document totals
+	// LogisticsCharges are the logistics service charges (EXT: freight,
+	// packing, insurance…). They count as document level charges in the
+	// charge total BT-108 and in the VAT breakdown.
+	LogisticsCharges []LogisticsCharge
+	VATBreakdown     []VATBreakdown // BG-23 VAT breakdown
+	Totals           Totals         // BG-22 Document totals
 
 	// ThirdPartyCharges are the charges collected on behalf of a third party
 	// (BG-34, EXTENDED from Factur-X 1.09): not part of the invoice total,
@@ -94,6 +118,11 @@ type Invoice struct {
 	ThirdPartyCharges []ThirdPartyCharge
 
 	Lines []Line // BG-25 Invoice lines
+
+	// Extensions are the elements and attributes of the document that the
+	// other fields do not carry, outside the values that have Extensions of
+	// their own (see Extension).
+	Extensions []Extension
 }
 
 // Note is an invoice note (BG-1) or a line note.
@@ -101,6 +130,8 @@ type Note struct {
 	SubjectCode string // BT-21 Invoice note subject code (UNTDID 4451: AAI, PMT, PMD, AAB, TXD…)
 	Content     string // BT-22 Invoice note
 	ContentCode string // Note content code (EXT)
+
+	Extensions []Extension // see Extension
 }
 
 // Identifier is an identifier with its optional scheme.
@@ -141,13 +172,18 @@ type Party struct {
 
 	VATID             string // BT-31, BT-48, BT-63 VAT identifier (CII scheme VA)
 	TaxRegistrationID string // BT-32 Seller tax registration identifier (CII scheme FC)
+
+	// Extensions hold, for instance, the role code, the contacts after the
+	// first one, or the fax number of the contact (EXT, see Extension).
+	Extensions []Extension
 }
 
 // IsZero reports whether the party holds no data.
 func (p *Party) IsZero() bool {
 	return p == nil || (len(p.IDs) == 0 && p.Name == "" && p.Description == "" &&
 		p.LegalRegistration.IsZero() && p.TradingName == "" && p.Contact == nil &&
-		p.Address.IsZero() && p.ElectronicAddress.IsZero() && p.VATID == "" && p.TaxRegistrationID == "")
+		p.Address.IsZero() && p.ElectronicAddress.IsZero() && p.VATID == "" && p.TaxRegistrationID == "" &&
+		len(p.Extensions) == 0)
 }
 
 // Contact is a contact point (BG-6, BG-9).
@@ -183,12 +219,20 @@ type Period struct {
 func (p Period) IsZero() bool { return p.Start.IsZero() && p.End.IsZero() && p.Description == "" }
 
 // DocumentReference is a reference to another document: a preceding invoice
-// (BG-3) or, at line level, an invoice referenced by a line (EXT).
+// (BG-3) or, in EXTENDED, an invoice referenced by a line, a delivery note or
+// an order of the ultimate customer.
 type DocumentReference struct {
 	ID        string // BT-25 Preceding invoice reference
 	IssueDate Date   // BT-26 Preceding invoice issue date
 	TypeCode  string // Type code of the referenced document (EXT)
-	LineID    string // Referenced line (EXT, line level only)
+	LineID    string // Referenced line (EXT)
+
+	Extensions []Extension // see Extension
+}
+
+// IsZero reports whether the reference holds no data.
+func (r *DocumentReference) IsZero() bool {
+	return r == nil || (r.ID == "" && r.IssueDate.IsZero() && r.TypeCode == "" && r.LineID == "" && len(r.Extensions) == 0)
 }
 
 // AdditionalDocument is an additional supporting document (BG-24), or in CII
@@ -206,6 +250,8 @@ type AdditionalDocument struct {
 
 	ReferenceTypeCode string // BT-18-1 Scheme identifier of the invoiced object (UNTDID 1153)
 	IssueDate         Date   // Document date (EXT)
+
+	Extensions []Extension // see Extension
 }
 
 // TenderReference returns the tender or lot reference (BT-17).
@@ -246,12 +292,47 @@ type PaymentMeans struct {
 	PayerIBAN        string // BT-91 Debited account identifier
 	PayerAccountName string // BT-216 Debited account name (EXTENDED)
 	PayerBIC         string // BT-215 Debited account payment service provider identifier (EXTENDED)
+
+	Extensions []Extension // see Extension
 }
 
 // ThirdPartyCharge is a charge collected on behalf of a third party (BG-34).
 type ThirdPartyCharge struct {
 	Reason string  // BT-180 Charges specification
 	Amount Decimal // BT-179 Charge amount collected on behalf of a third party
+
+	Extensions []Extension // see Extension
+}
+
+// DeliveryTerms are delivery terms (EXT).
+type DeliveryTerms struct {
+	Code string // Delivery terms code (Incoterms: EXW, FCA, DAP…)
+	// LocationCountryCode and LocationName give the place the terms refer
+	// to (EXT, CII RelevantTradeLocation).
+	LocationCountryCode string
+	LocationName        string
+}
+
+// CurrencyExchange is a currency exchange rate (EXT).
+type CurrencyExchange struct {
+	SourceCurrency string  // Source currency code: the invoice currency (BT-5)
+	TargetCurrency string  // Target currency code: the VAT accounting currency (BT-6)
+	Rate           Decimal // Conversion rate
+	Date           Date    // Date of the conversion rate
+}
+
+// LogisticsCharge is a logistics service charge (EXT).
+type LogisticsCharge struct {
+	Description string  // Description of the service (freight, packing…)
+	Amount      Decimal // Amount of the charge, without VAT
+
+	// VATCategoryCode and VATRate are the VAT of the charge. EXTENDED
+	// allows several taxes per charge: the first is read here, the others
+	// are kept as extensions.
+	VATCategoryCode string
+	VATRate         Decimal
+
+	Extensions []Extension // see Extension
 }
 
 // PaymentTerms are payment terms (BT-20) with the due date (BT-9) and the
@@ -261,6 +342,16 @@ type PaymentTerms struct {
 	DueDate              Date    // BT-9 Payment due date
 	DirectDebitMandateID string  // BT-89 Mandate reference identifier
 	PartialAmount        Decimal // Partial payment amount (EXT)
+
+	// Extensions hold, for instance, the payment discount and penalty
+	// terms (EXT, see Extension).
+	Extensions []Extension
+}
+
+// IsZero reports whether the payment terms hold no data.
+func (t *PaymentTerms) IsZero() bool {
+	return t.Description == "" && t.DueDate.IsZero() && t.DirectDebitMandateID == "" &&
+		!t.PartialAmount.IsSet() && len(t.Extensions) == 0
 }
 
 // AllowanceCharge is an allowance or a charge, at document level (BG-20,
@@ -278,6 +369,8 @@ type AllowanceCharge struct {
 
 	VATCategoryCode string  // BT-95, BT-102
 	VATRate         Decimal // BT-96, BT-103
+
+	Extensions []Extension // see Extension
 }
 
 // VATBreakdown is one VAT breakdown entry (BG-23).
@@ -288,6 +381,8 @@ type VATBreakdown struct {
 	TaxAmount           Decimal // BT-117 VAT category tax amount
 	ExemptionReason     string  // BT-120 VAT exemption reason text
 	ExemptionReasonCode string  // BT-121 VAT exemption reason code (VATEX)
+
+	Extensions []Extension // see Extension
 }
 
 // Totals are the document totals (BG-22).
@@ -310,7 +405,10 @@ type Line struct {
 	ParentID         string // Parent line identifier (EXT, sub-lines)
 	StatusCode       string // Line status code (EXT)
 	StatusReasonCode string // Line status reason code (EXT: DETAIL, GROUP, INFORMATION)
-	Note             string // BT-127 Invoice line note
+	// Note is the invoice line note (BT-127). EXTENDED allows several notes
+	// with codes: Note is the content of the first one, the codes and the
+	// other notes are kept as extensions.
+	Note string
 
 	Item Item // BG-31 Item information
 
@@ -320,14 +418,25 @@ type Line struct {
 	PriceBaseQuantity     Decimal // BT-149 Item price base quantity
 	PriceBaseQuantityUnit string  // BT-150 Item price base quantity unit of measure code
 
-	OrderReference     string // Purchase order referenced at line level (EXT)
-	OrderLineReference string // BT-132 Referenced purchase order line reference
+	// PriceAllowancesCharges detail the allowances and charges applied to
+	// the gross price (EXT), when the price carries more than a single
+	// allowance amount. PriceDiscount (BT-147) is then the sum of the
+	// allowances. When set, EXTENDED writers write these entries instead of
+	// PriceDiscount; the VAT fields are not used.
+	PriceAllowancesCharges []AllowanceCharge
+
+	DeliveryTerms          *DeliveryTerms      // Line delivery terms (EXT)
+	OrderReference         string              // Purchase order referenced at line level (EXT)
+	OrderLineReference     string              // BT-132 Referenced purchase order line reference
+	UltimateCustomerOrders []DocumentReference // Orders of the ultimate customer, with their line (EXT)
 
 	Quantity Decimal // BT-129 Invoiced quantity
 	UnitCode string  // BT-130 Invoiced quantity unit of measure code (UN/ECE Rec 20/21)
 
-	ShipTo       *Party // Line deliver-to party (EXT)
-	DeliveryDate Date   // Line actual delivery date (EXT)
+	ShipTo         *Party             // Line deliver-to party (EXT)
+	UltimateShipTo *Party             // Line ultimate deliver-to party (EXT)
+	DeliveryDate   Date               // Line actual delivery date (EXT)
+	DeliveryNote   *DocumentReference // Line delivery note reference, with its line and date (EXT)
 
 	VATCategoryCode string  // BT-151 Invoiced item VAT category code
 	VATRate         Decimal // BT-152 Invoiced item VAT rate
@@ -339,6 +448,11 @@ type Line struct {
 	InvoiceReference    *DocumentReference // Invoice referenced by the line (EXT)
 	ObjectIdentifier    Identifier         // BT-128 Invoice line object identifier, with its scheme (BT-128-1)
 	AccountingReference string             // BT-133 Invoice line Buyer accounting reference
+
+	// Extensions are the elements and attributes of the line that the
+	// other fields do not carry, such as the brand name of the item or the
+	// package quantity (EXT, see Extension).
+	Extensions []Extension
 }
 
 // Item is the item of an invoice line (BG-31).
@@ -352,6 +466,10 @@ type Item struct {
 	Attributes      []ItemAttribute  // BG-32 Item attributes
 	Classifications []Classification // BT-158 Item classification identifiers
 	OriginCountry   string           // BT-159 Item country of origin
+
+	// ReferencedProducts are the products included in the item, such as
+	// the components of a set (EXT).
+	ReferencedProducts []ReferencedProduct
 }
 
 // ItemAttribute is an item attribute (BG-32).
@@ -359,6 +477,8 @@ type ItemAttribute struct {
 	Name     string // BT-160 Item attribute name
 	Value    string // BT-161 Item attribute value
 	TypeCode string // Attribute type code (EXT)
+
+	Extensions []Extension // see Extension
 }
 
 // Classification is an item classification identifier (BT-158).
@@ -367,6 +487,30 @@ type Classification struct {
 	ListID        string // BT-158-1 Scheme identifier (UNTDID 7143)
 	ListVersionID string // BT-158-2 Scheme version identifier
 	Name          string // Class name (EXT)
+
+	Extensions []Extension // see Extension
+}
+
+// IsZero reports whether the classification holds no data.
+func (c *Classification) IsZero() bool {
+	return c.Code == "" && c.ListID == "" && c.ListVersionID == "" && c.Name == "" && len(c.Extensions) == 0
+}
+
+// ReferencedProduct is a product included in the item of a line (EXT).
+type ReferencedProduct struct {
+	ID         string       // Product identifier (CII ID)
+	GlobalIDs  []Identifier // Standard identifiers, with their scheme (0160 for a GTIN)
+	SellerID   string       // Seller's identifier
+	BuyerID    string       // Buyer's identifier
+	IndustryID string       // Identifier assigned by the industry
+	Name       string       // Product name
+	// Description is the product description.
+	Description string
+	// UnitQuantity is the quantity of the product in one unit of the item.
+	UnitQuantity     Decimal
+	UnitQuantityUnit string // Unit of measure code of UnitQuantity
+
+	Extensions []Extension // see Extension
 }
 
 // Common code values.
