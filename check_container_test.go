@@ -245,6 +245,16 @@ func TestCheckContainerPDFA(t *testing.T) {
 	notes := func(rel, subtype string) file {
 		return file{name: "notes.txt", data: []byte("notes"), rel: rel, subtype: subtype, modDate: "D:20261116120000+01'00'"}
 	}
+	// listed adds notes.txt, left out of the catalog /AF, and the objects
+	// written by fn, which gets the object number of its file specification.
+	listed := func(fn func(b *pdftest.Builder, spec int) (catalog, page string)) *fixture {
+		return mod(func(f *fixture) {
+			fl := notes("Supplement", "text#2Fplain")
+			fl.notInAF = true
+			f.files = append(f.files, fl)
+			f.extra = func(b *pdftest.Builder) (string, string) { return fn(b, f.specs[1]) }
+		})
+	}
 	js := "<< /S /JavaScript /JS (app.alert\\(1\\)) >>"
 
 	for _, tc := range []struct {
@@ -339,14 +349,47 @@ func TestCheckContainerPDFA(t *testing.T) {
 			f.xmp = xmpWith(func(p *xmp.Params) { p.PDFAPart = "4" })
 		}), ""},
 
-		// PDF-36, PDF-37: other embedded files.
+		// PDF-36, PDF-37, PDF-39: other embedded files.
 		{"other attachment", attachment(notes("Supplement", "text#2Fplain")), ""},
 		{"other attachment without AFRelationship", attachment(notes("", "text#2Fplain")), "PDF-36"},
 		{"other attachment without MIME type", attachment(notes("Supplement", "")), "PDF-37"},
+		{"other attachment not in AF", listed(func(*pdftest.Builder, int) (string, string) { return "", "" }), "PDF-39"},
+		{"other attachment in the page AF", listed(func(b *pdftest.Builder, spec int) (string, string) {
+			return "", fmt.Sprintf("/AF [%d 0 R]", spec)
+		}), ""},
+		{"other attachment in an annotation AF", listed(func(b *pdftest.Builder, spec int) (string, string) {
+			return "", fmt.Sprintf("/Annots [<< /Type /Annot /Subtype /Text /Rect [0 0 1 1] /AF [%d 0 R] >>]", spec)
+		}), ""},
+		{"other attachment in a form XObject AF", listed(func(b *pdftest.Builder, spec int) (string, string) {
+			x := b.AddStream(fmt.Sprintf("<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] /AF [%d 0 R] >>", spec), nil)
+			return "", fmt.Sprintf("/Resources << /XObject << /X1 %d 0 R >> >>", x)
+		}), ""},
+		{"other attachment in a property list AF", listed(func(b *pdftest.Builder, spec int) (string, string) {
+			return "", fmt.Sprintf("/Resources << /Properties << /MC0 << /AF [%d 0 R] >> >> >>", spec)
+		}), ""},
+		{"other attachment in a structure element AF", listed(func(b *pdftest.Builder, spec int) (string, string) {
+			table := b.Add(fmt.Sprintf("<< /Type /StructElem /S /Table /K [0] /AF %d 0 R >>", b.Add(fmt.Sprintf("[%d 0 R]", spec))))
+			sect := b.Add(fmt.Sprintf("<< /Type /StructElem /S /Sect /K [<< /Type /StructElem /S /P /K 1 >> %d 0 R] >>", table))
+			return fmt.Sprintf("/StructTreeRoot << /Type /StructTreeRoot /K << /Type /StructElem /S /Document /K %d 0 R >> >>", sect), ""
+		}), ""},
+		{"other attachment in an unrelated AF", listed(func(b *pdftest.Builder, spec int) (string, string) {
+			// An /AF array the scan does not look at (here in the page-piece
+			// dictionary of the page) does not count.
+			return "", fmt.Sprintf("/PieceInfo << /App << /AF [%d 0 R] >> >>", spec)
+		}), "PDF-39"},
+		{"direct file specification in the page AF", extra(func(b *pdftest.Builder) (string, string) {
+			ef := b.AddStream("<< /Type /EmbeddedFile /Subtype /text#2Fplain /Params << /ModDate (D:20261116120000+01'00') >> >>", []byte("notes"))
+			return "", fmt.Sprintf("/AF [<< /Type /Filespec /F (b.txt) /UF (b.txt) /AFRelationship /Supplement /EF << /F %d 0 R >> >>]", ef)
+		}), ""},
 		{"file attachment annotation", extra(func(b *pdftest.Builder) (string, string) {
 			ef := b.AddStream("<< /Type /EmbeddedFile >>", []byte("notes"))
 			return "", fmt.Sprintf("/Annots [<< /Type /Annot /Subtype /FileAttachment /Rect [0 0 1 1] /FS << /Type /Filespec /F (a.txt) /UF (a.txt) /EF << /F %d 0 R >> >> >>]", ef)
-		}), "PDF-36,PDF-37"},
+		}), "PDF-36,PDF-37,PDF-39"},
+		{"file attachment annotation with AF", extra(func(b *pdftest.Builder) (string, string) {
+			ef := b.AddStream("<< /Type /EmbeddedFile /Subtype /text#2Fplain >>", []byte("notes"))
+			fs := b.Add(fmt.Sprintf("<< /Type /Filespec /F (a.txt) /UF (a.txt) /AFRelationship /Supplement /EF << /F %d 0 R >> >>", ef))
+			return "", fmt.Sprintf("/Annots [<< /Type /Annot /Subtype /FileAttachment /Rect [0 0 1 1] /FS %d 0 R /AF [%d 0 R] >>]", fs, fs)
+		}), ""},
 
 		// PDF-38: LZWDecode.
 		{"LZW content stream", extra(func(b *pdftest.Builder) (string, string) {

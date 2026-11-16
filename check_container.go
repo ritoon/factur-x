@@ -60,6 +60,7 @@ var ContainerCatalog = []rules.RuleInfo{
 	{ID: "PDF-36", Severity: rules.Error, Description: "Every embedded file besides the invoice has an /AFRelationship entry (PDF/A-3 associated file)."},
 	{ID: "PDF-37", Severity: rules.Error, Description: "Every embedded file besides the invoice has a MIME type (/Subtype of the embedded file stream), as PDF/A-3 requires."},
 	{ID: "PDF-38", Severity: rules.Error, Description: "No stream of the pages, their resources, the annotation appearances, the font programs, the embedded files or the metadata uses the LZWDecode filter, which PDF/A forbids. Inline images of the page content are not checked."},
+	{ID: "PDF-39", Severity: rules.Error, Description: "Every embedded file besides the invoice is an associated file, listed in an /AF array (of the document catalog, a page, an annotation, a form or image XObject, a marked-content property list of the resources or a structure element), as PDF/A-3 requires. Files associated otherwise (property lists inside the page content, document parts) are not found."},
 }
 
 // containerSeverity returns the severity of a rule of ContainerCatalog.
