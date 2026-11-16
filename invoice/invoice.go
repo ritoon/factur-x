@@ -36,8 +36,12 @@ type Invoice struct {
 	Currency    string // BT-5 Invoice currency code (ISO 4217)
 	TaxCurrency string // BT-6 VAT accounting currency code
 
-	TaxPointDate     Date   // BT-7 Value added tax point date
-	TaxPointDateCode string // BT-8 VAT point date code, CII values: 5 (invoice date), 29 (delivery date), 72 (payment date)
+	TaxPointDate Date // BT-7 Value added tax point date
+	// TaxPointDateCode is the VAT point date code (BT-8): TaxPointInvoiceDate,
+	// TaxPointDeliveryDate or TaxPointPaymentDate. In France it carries the
+	// option for paying the VAT on debits (TaxPointDebits). BT-7 and BT-8
+	// are exclusive (BR-CO-03).
+	TaxPointDateCode string
 
 	BuyerReference string // BT-10 Buyer reference (Leitweg-ID in Germany)
 
@@ -361,6 +365,23 @@ const (
 	TypePrepaymentInvoice = "386"
 	TypeSelfBilledInvoice = "389"
 	TypePartialInvoice    = "326"
+
+	// VAT point date codes (BT-8), CII values. UBL writes 3, 35 and 432
+	// for the same dates. BT-8 and the VAT point date (BT-7) are exclusive
+	// (BR-CO-03).
+	TaxPointInvoiceDate  = "5"  // the VAT is due on the invoice issue date (UBL 3)
+	TaxPointDeliveryDate = "29" // the VAT is due on the delivery date (UBL 35)
+	TaxPointPaymentDate  = "72" // the VAT is due on the payment date (UBL 432)
+
+	// TaxPointDebits is the BT-8 code of a French supplier of services who
+	// has opted to pay the VAT on debits ("option pour le paiement de la
+	// taxe d'après les débits", a mention made mandatory by the e-invoicing
+	// reform, article 242 nonies A of annex II to the CGI): the code of the
+	// invoice date, 5 in CII (3 in UBL),
+	// as set by rule G1.43 of the DGFiP external specifications v3.2. BT-8 is
+	// mandatory only with the option, which the invoice cannot show: no rule
+	// checks it. The DGFiP specifications v2.3 used 29 (35 in UBL) instead.
+	TaxPointDebits = TaxPointInvoiceDate
 
 	// VAT category codes (BT-118, BT-151, UNTDID 5305).
 	VATStandard        = "S"

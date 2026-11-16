@@ -58,6 +58,21 @@ pdf, err := facturx.Create(host, inv, &facturx.CreateOptions{
 
 L'exemple complet, avec les mentions obligatoires de la réforme française, est dans [example_test.go](example_test.go).
 
+#### TVA sur les débits
+
+Un prestataire de services qui a opté pour le paiement de la TVA d'après les débits doit le mentionner sur ses factures (article 242 nonies A de l'annexe II au CGI). La DGFiP fait porter cette mention par BT-8, avec le code de la date de facture : 5 en CII, 3 en UBL (règle G1.43 des spécifications externes v3.2).
+
+```go
+inv.TaxPointDateCode = invoice.TaxPointDebits // "5", écrit dans chaque ventilation de TVA
+```
+
+- Sans option, BT-8 reste vide.
+- BT-8 exclut la date d'exigibilité BT-7 (BR-CO-03).
+- Aucune règle ne vérifie la mention : la facture ne dit pas si le fournisseur a opté, et la DGFiP indique que la règle ne peut pas être contrôlée par les applications. Les contrôles possibles sur le XML existent déjà : liste de codes (BR-CL-06), une seule valeur (CII-SR-462), exclusion de BT-7 (BR-CO-03).
+- Les codes 29 et 72 restent disponibles (`TaxPointDeliveryDate`, `TaxPointPaymentDate`). Les spécifications v2.3 exprimaient l'option par 29 ; la DGFiP est passée à 5 avec la v2.4.
+
+L'exemple `Example_vatOnDebits` de [example_test.go](example_test.go) écrit et valide une telle facture.
+
 Pour injecter un XML produit ailleurs : `facturx.Embed(pdf, xml, nil)`. Pour écrire le XML seul : `cii.Marshal(inv, &cii.MarshalOptions{Profile: invoice.ProfileBasic})` ; seuls les éléments que le profil autorise sont écrits, dans l'ordre de son schéma, et l'option `Strict` signale les données perdues.
 
 ### Lire une facture reçue

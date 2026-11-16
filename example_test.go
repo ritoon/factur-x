@@ -1,12 +1,14 @@
 package facturx_test
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"os"
 	"time"
 
 	facturx "github.com/ritoon/factur-x"
+	"github.com/ritoon/factur-x/cii"
 	"github.com/ritoon/factur-x/invoice"
 	"github.com/ritoon/factur-x/validate"
 )
@@ -94,5 +96,31 @@ func Example() {
 	// Output:
 	// factur-x.xml Alternative EN 16931
 	// FA-2026-00042 900.00 180.00 1080.00 EUR
+	// errors: 0
+}
+
+// Example_vatOnDebits declares the option for paying the VAT on debits
+// ("option pour le paiement de la taxe d'après les débits"), a mandatory
+// mention in France for a supplier of services who has opted for it. The
+// DGFiP carries it in BT-8 with the code of the invoice date (rule G1.43 of
+// its external specifications v3.2): 5 in CII, written in every VAT
+// breakdown. BT-8 excludes the VAT point date BT-7 (BR-CO-03). Without the
+// option, leave BT-8 empty: the VAT on services is then due on payment.
+func Example_vatOnDebits() {
+	inv := newInvoice() // services, billing frame S1
+	inv.TaxPointDateCode = invoice.TaxPointDebits
+	inv.Calculate()
+
+	xml, err := cii.Marshal(inv, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	const elem = "<ram:DueDateTypeCode>5</ram:DueDateTypeCode>"
+	fmt.Println(elem, bytes.Count(xml, []byte(elem)) == 1)
+
+	report := validate.XML(xml, &validate.Options{Rules: validate.Default | validate.France})
+	fmt.Println("errors:", len(report.Errors()))
+	// Output:
+	// <ram:DueDateTypeCode>5</ram:DueDateTypeCode> true
 	// errors: 0
 }
