@@ -680,26 +680,40 @@ func validInteger(s string) bool {
 // with at most two padding characters at the end.
 func validBase64(s string) bool {
 	n, pad := 0, 0
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		switch {
+	for i := 0; i < len(s); {
+		if pad == 0 {
+			j := i
+			for j < len(s) && base64Alphabet[s[j]] {
+				j++
+			}
+			n += j - i
+			if i = j; i == len(s) {
+				break
+			}
+		}
+		switch c := s[i]; {
 		case isSpace(c):
-			continue
 		case c == '=':
-			pad++
-			if pad > 2 {
+			if pad++; pad > 2 {
 				return false
 			}
-		case pad > 0:
-			return false // data after padding
-		case c >= 'A' && c <= 'Z', c >= 'a' && c <= 'z', isDigit(c), c == '+', c == '/':
+			n++
 		default:
-			return false
+			return false // data after padding, or not in the alphabet
 		}
-		n++
+		i++
 	}
 	return n%4 == 0
 }
+
+// base64Alphabet[c] reports whether c is in the base64 alphabet (padding
+// excluded).
+var base64Alphabet = func() (t [256]bool) {
+	for _, c := range []byte("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/") {
+		t[c] = true
+	}
+	return t
+}()
 
 // validDate reports whether s is an xs:date lexical value
 // (-?YYYY-MM-DD with an optional time zone).
