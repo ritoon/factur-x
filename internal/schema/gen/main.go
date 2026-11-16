@@ -8,7 +8,7 @@
 // dir is searched recursively for the main schema of each profile: a file
 // whose name ends in _MINIMUM.xsd, _BASICWL.xsd (or _BASIC-WL.xsd),
 // _BASIC.xsd, _EN16931.xsd or _EXTENDED.xsd, such as
-// "Factur-X_1.08_EN16931.xsd" in the official Factur-X package. The schemas
+// "Factur-X_1.09.2_EN16931.xsd" in the official Factur-X package. The schemas
 // it imports are read from the paths given by their schemaLocation.
 //
 // Only the subset of XML Schema used by the Factur-X schemas is supported:
@@ -123,7 +123,7 @@ func findMains(dir string) ([]string, string, error) {
 					return fmt.Errorf("two main schemas for %s: %s and %s", p.name, mains[i], path)
 				}
 				mains[i] = path
-				if v := verRE.FindString(base); v != "" && version == "" {
+				if v := verRE.FindString(base); v != "" && newerVersion(v, version) {
 					version = v
 				}
 			}
@@ -139,6 +139,31 @@ func findMains(dir string) ([]string, string, error) {
 		}
 	}
 	return mains, version, nil
+}
+
+// newerVersion reports whether the dotted version v is greater than cur
+// ("" being lower than any version). The tables take the highest version
+// of the main schemas: a corrigendum such as Factur-X 1.09.2 only changes
+// some profiles, and the schemas of the others may keep the file names of
+// the release they come from.
+func newerVersion(v, cur string) bool {
+	if cur == "" {
+		return true
+	}
+	a, b := strings.Split(v, "."), strings.Split(cur, ".")
+	for i := 0; i < len(a) || i < len(b); i++ {
+		var x, y int
+		if i < len(a) {
+			x, _ = strconv.Atoi(a[i])
+		}
+		if i < len(b) {
+			y, _ = strconv.Atoi(b[i])
+		}
+		if x != y {
+			return x > y
+		}
+	}
+	return false
 }
 
 // xnode is a generic XML element of a schema document.
