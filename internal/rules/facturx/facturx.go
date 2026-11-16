@@ -33,6 +33,15 @@
 // Two rules are additions: FX-DATE checks that dates in format 102 are real
 // calendar days, and FX-MIN-CO-15 (a warning) applies BR-CO-15 to MINIMUM
 // invoices, which the official MINIMUM schematron does not.
+//
+// For EXTENDED and EXTENDED-CTC-FR it implements the 61 BR-FXEXT-*
+// assertions of the EXTENDED validation XSLT of Factur-X 1.09.2 (FeRD,
+// ZUGFeRD 2.5.2), with the severities of the XSLT: line subtypes and groups
+// (BT-X-8, BT-X-304), totals with tolerances, logistics service charges
+// (BG-X-42) and charges on behalf of a third party (BG-34), VAT breakdown
+// per category, rate and exemption reason, item attributes, notes and tax
+// registrations (see extended.go). Package en16931 checks the CEN rules that
+// the XSLT keeps for this profile.
 package facturx
 
 import (
@@ -55,12 +64,17 @@ func Check(c *rules.Checker) {
 		k.p = mMin
 	case invoice.ProfileBasicWL:
 		k.p = mBWL
+	case invoice.ProfileExtended, invoice.ProfileExtendedCTCFR:
+		k.p = mExt
 	default:
 		k.p = mOther
 	}
 	k.profile()
 	if k.p&mLight != 0 {
 		k.light()
+	}
+	if k.p == mExt {
+		k.extended()
 	}
 }
 
@@ -110,7 +124,7 @@ func (k *checker) profile() {
 	raw := text(idNode)
 	urn := strings.TrimSpace(raw)
 	if urn == "" {
-		if k.p == mOther { // BR-01 reports it for MINIMUM and BASIC WL
+		if k.p&mLight == 0 { // BR-01 reports it for MINIMUM and BASIC WL
 			k.fail("FX-PROFILE-01", loc, "the specification identifier (BT-24) is missing: the Factur-X profile cannot be determined")
 		}
 		return

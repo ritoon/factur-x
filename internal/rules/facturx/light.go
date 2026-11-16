@@ -72,6 +72,7 @@ func (k *checker) light() {
 	k.parties()
 	k.totals()
 	k.breakdown(&w)
+	k.vatTotals(false)
 	k.period()
 	k.allowances()
 	if k.p == mMin {
