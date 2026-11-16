@@ -22,7 +22,8 @@
 //
 // The schematron targets the EN 16931 and EXTENDED-CTC-FR profiles. Check
 // applies it whatever the profile of the invoice: the caller decides when the
-// French rules apply. Assertions on elements that only exist in the EXTENDED
+// French rules apply. CheckProfile, which is not part of the schematron,
+// reports the profiles that the reform does not admit (FR-PROFILE-*). Assertions on elements that only exist in the EXTENDED
 // data set never fire on an EN 16931 invoice: they are the EXT-FR-FE-*
 // variants of BR-FR-01 to BR-FR-04 (line invoice references, line delivery
 // dates), BR-FR-09, BR-FR-23, BR-FR-25 and BR-FR-CO-10 for the agent,

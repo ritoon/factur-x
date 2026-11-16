@@ -3,7 +3,7 @@
 //
 //	facturx extract [-o out.xml] invoice.pdf
 //	facturx info invoice.pdf
-//	facturx validate [-fr] [-de] [-auto] [-profile p] [-json] invoice.pdf|invoice.xml
+//	facturx validate [-fr] [-de] [-auto] [-reject-basicwl] [-profile p] [-json] invoice.pdf|invoice.xml
 //	facturx embed -xml invoice.xml [-profile p] [-o out.pdf] input.pdf
 //	facturx json invoice.pdf|invoice.xml
 //	facturx rules [-fr] [-de]
@@ -33,7 +33,7 @@ const usage = `facturx reads, validates and creates Factur-X / ZUGFeRD / XRechnu
 Usage:
   facturx extract [-o out.xml] invoice.pdf
   facturx info invoice.pdf
-  facturx validate [-fr] [-de] [-auto] [-profile p] [-json] invoice.pdf|invoice.xml
+  facturx validate [-fr] [-de] [-auto] [-reject-basicwl] [-profile p] [-json] invoice.pdf|invoice.xml
   facturx embed -xml invoice.xml [-profile p] [-o out.pdf] input.pdf
   facturx json invoice.pdf|invoice.xml
   facturx rules [-fr] [-de]
@@ -163,16 +163,17 @@ func info(args []string) error {
 
 func validateCmd(args []string) (int, error) {
 	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
-	fr := fs.Bool("fr", false, "apply the French rules BR-FR")
-	de := fs.Bool("de", false, "apply the German rules BR-DE (XRechnung)")
+	fr := fs.Bool("fr", false, "apply the French rules BR-FR and the profiles the French reform admits")
+	de := fs.Bool("de", false, "apply the German rules BR-DE (XRechnung) and the profiles the BMF accepts")
 	auto := fs.Bool("auto", false, "apply the national rules of the seller's country")
+	rejectBasicWL := fs.Bool("reject-basicwl", false, "report the profile BASIC WL as an error under the French rules")
 	profile := fs.String("profile", "", "validate against this profile instead of BT-24")
 	asJSON := fs.Bool("json", false, "print the report as JSON")
 	_, data, err := oneFile(fs, args)
 	if err != nil {
 		return 0, err
 	}
-	opts := &validate.Options{Auto: *auto}
+	opts := &validate.Options{Auto: *auto, RejectBasicWL: *rejectBasicWL}
 	if *profile != "" {
 		if opts.Profile = invoice.ParseProfile(*profile); opts.Profile == invoice.ProfileUnknown {
 			return 0, fmt.Errorf("unknown profile %q", *profile)
@@ -184,7 +185,7 @@ func validateCmd(args []string) (int, error) {
 			opts.Rules |= validate.France
 		}
 		if *de {
-			opts.Rules |= validate.Germany
+			opts.Rules |= validate.Germany | validate.GermanyProfile
 		}
 	}
 	var r *validate.Report
@@ -290,7 +291,7 @@ func rulesCmd(args []string) error {
 		set |= validate.France
 	}
 	if *de {
-		set |= validate.Germany
+		set |= validate.Germany | validate.GermanyProfile
 	}
 	for _, r := range validate.Catalog(set) {
 		fmt.Printf("%-28s %-8s %s\n", r.ID, r.Severity, strings.TrimSpace(r.Description))

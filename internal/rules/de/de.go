@@ -18,7 +18,9 @@
 // CII-SR-*) are not part of this package.
 //
 // Check applies the CIUS rules whatever BT-24: the caller decides when the
-// German rules apply (typically when BT-24 starts with CIUSID).
+// German rules apply (typically when BT-24 starts with CIUSID). CheckProfile,
+// which is not part of the schematron, reports the ZUGFeRD profiles that the
+// BMF does not accept as e-invoices (DE-PROFILE-01).
 //
 // Values are evaluated as XPath 2.0 evaluates them in the reference
 // implementation: general comparisons on the raw string value of the

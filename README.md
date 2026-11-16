@@ -85,11 +85,25 @@ if !report.Valid() { /* au moins une erreur */ }
 | Option | Effet |
 |---|---|
 | `nil` ou `&validate.Options{}` | Schéma du profil, règles EN 16931, règles de profil Factur-X ; règles BR-DE en plus pour une facture XRECHNUNG |
-| `Auto: true` | Ajoute les règles BR-FR quand le vendeur est en France (BT-40 = FR) |
-| `Rules: validate.Default \| validate.France` | Choix explicite des jeux de règles |
+| `Auto: true` | Ajoute les règles du pays du vendeur (BT-40) : BR-FR et profils admis en France pour un vendeur en France, profils acceptés par le BMF pour un vendeur en Allemagne |
+| `Rules: validate.Default \| validate.France` | Choix explicite des jeux de règles (`France`, `Germany`, `GermanyProfile`) |
+| `RejectBasicWL: true` | Avec les règles françaises, signale BASIC WL en erreur (FR-PROFILE-03) |
 | `Profile: invoice.ProfileBasic` | Valide contre un profil plutôt que celui que déclare BT-24 |
 
 `validate.Catalog(set)` liste les règles implémentées.
+
+#### Profils admis par pays
+
+Les schematrons officiels ne contrôlent pas le profil ; ces contrôles ont des identifiants propres au package.
+
+| Règle | Gravité | Jeu | Constat |
+|---|---|---|---|
+| FR-PROFILE-01 | erreur | `France` | MINIMUM, exclu de la réforme française |
+| FR-PROFILE-02 | avertissement | `France` | BASIC, que la réforme ne liste pas (absent du paquet FNFE-MPE et des capacités de l'annuaire) |
+| FR-PROFILE-03 | erreur | `France` avec `RejectBasicWL` | BASIC WL, admis aujourd'hui sans date de fin publiée : l'option permet de le refuser dès maintenant ou quand il ne sera plus admis |
+| DE-PROFILE-01 | erreur | `GermanyProfile` | MINIMUM et BASIC WL, que le BMF n'accepte pas comme factures électroniques (BMF-Schreiben du 15/10/2024 : ZUGFeRD à partir de 2.0.1, sauf ces deux profils) |
+
+En France, EN 16931 et EXTENDED-CTC-FR forment le socle et EXTENDED est admis ; en Allemagne, BASIC, EN 16931, EXTENDED et XRECHNUNG sont acceptés. `Auto` n'applique pas les règles BR-DE à une facture ZUGFeRD : elles ne concernent que XRECHNUNG.
 
 ### En ligne de commande
 
@@ -100,7 +114,7 @@ go install github.com/ritoon/factur-x/cmd/facturx@latest
 ```text
 facturx extract [-o out.xml] facture.pdf
 facturx info facture.pdf
-facturx validate [-fr] [-de] [-auto] [-profile p] [-json] facture.pdf|facture.xml
+facturx validate [-fr] [-de] [-auto] [-reject-basicwl] [-profile p] [-json] facture.pdf|facture.xml
 facturx embed -xml facture.xml [-profile p] [-o out.pdf] entree.pdf
 facturx json facture.pdf|facture.xml
 facturx rules [-fr] [-de]
@@ -136,8 +150,8 @@ warning [PDF] PDF-06: the catalog has no PDF/A output intent (/S /GTS_PDFA1) (ca
 | Schéma | 11 contrôles (éléments, ordre, cardinalités, types, listes fermées) | XSD Factur-X 1.08, compilés en tables Go |
 | EN 16931 | 793 assertions (328 erreurs, 465 avertissements) : BR, BR-CO, BR-CL, BR-DEC, règles par catégorie de TVA (BR-S, BR-Z, BR-E, BR-AE, BR-IC, BR-IG, BR-IP, BR-G, BR-O, BR-AF, BR-AG, BR-B), CII-SR, CII-DT | Artefacts CEN TC 434 v1.3.17 (CII) |
 | Factur-X | 162 assertions : identification du profil (BT-24), assertions des schematrons MINIMUM et BASIC WL, éléments non utilisés par profil | Schematrons Factur-X 1.08 |
-| France (BR-FR) | 59 règles, 170 assertions : SIREN/SIRET, adresses électroniques, mentions obligatoires, cadres de facturation, multi-vendeurs | Schematron FNFE-MPE v1.4.0.04 |
-| Allemagne (BR-DE) | 52 assertions (BR-DE, BR-DE-CVD, BR-DEX, BR-TMP) | Schematron KoSIT XRechnung 3.0.2 |
+| France (BR-FR) | 59 règles, 170 assertions : SIREN/SIRET, adresses électroniques, mentions obligatoires, cadres de facturation, multi-vendeurs ; 3 contrôles des profils admis (FR-PROFILE) | Schematron FNFE-MPE v1.4.0.04 |
+| Allemagne (BR-DE) | 52 assertions (BR-DE, BR-DE-CVD, BR-DEX, BR-TMP) ; contrôle des profils acceptés par le BMF (DE-PROFILE-01) | Schematron KoSIT XRechnung 3.0.2 ; BMF |
 | Conteneur PDF | 30 contrôles (PDF-01 à PDF-30) : PDF/A-3 ou PDF/A-4f déclaré, cohérent avec la version PDF, XMP `fx` cohérent avec le XML, pièce jointe, `/AF`, `/AFRelationship`, type MIME, chiffrement | Spécification Factur-X 1.08, ISO 19005-3 et 19005-4 |
 
 Les messages sont ceux des artefacts officiels. Les listes de codes (pays, devises, unités, schémas d'identifiants, motifs d'exonération…) sont embarquées.
