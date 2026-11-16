@@ -1,6 +1,7 @@
 package cii
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -201,26 +202,40 @@ func (r *reader) indicator(n *xmltree.Node) bool {
 
 // binary decodes a base64 binary object, ignoring white space.
 func (r *reader) binary(n *xmltree.Node) []byte {
-	s := strings.Map(func(c rune) rune {
-		switch c {
-		case ' ', '\t', '\n', '\r':
-			return -1
-		}
-		return c
-	}, n.Text)
-	if s == "" {
+	s := unspace(n.Text)
+	if len(s) == 0 {
 		return nil
 	}
-	b, err := base64.StdEncoding.DecodeString(s)
+	b := make([]byte, base64.StdEncoding.DecodedLen(len(s)))
+	k, err := base64.StdEncoding.Decode(b, s)
 	if err != nil {
+		s = bytes.TrimRight(s, "=")
+		b = make([]byte, base64.RawStdEncoding.DecodedLen(len(s)))
 		var err2 error
-		if b, err2 = base64.RawStdEncoding.DecodeString(strings.TrimRight(s, "=")); err2 != nil {
+		if k, err2 = base64.RawStdEncoding.Decode(b, s); err2 != nil {
 			r.issue(n, "invalid base64 content: "+err.Error())
 			return nil
 		}
 	}
-	return b
+	return b[:k]
 }
+
+// unspace returns s without XML white space.
+func unspace(s string) []byte {
+	out := make([]byte, 0, len(s))
+	for i := 0; i < len(s); {
+		j := i
+		for j < len(s) && (s[j] > ' ' || !isXMLSpace(s[j])) {
+			j++
+		}
+		out = append(out, s[i:j]...)
+		for i = j; i < len(s) && isXMLSpace(s[i]); i++ {
+		}
+	}
+	return out
+}
+
+func isXMLSpace(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' }
 
 func (r *reader) document(root *xmltree.Node) {
 	for _, c := range root.Children {

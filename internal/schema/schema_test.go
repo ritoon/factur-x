@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -676,5 +677,47 @@ func BenchmarkCheckInvalid(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		Check(&rules.Checker{Doc: doc, Report: &rules.Report{}, Source: rules.SourceSyntax})
+	}
+}
+
+// validBase64Ref is the former implementation of validBase64.
+func validBase64Ref(s string) bool {
+	n, pad := 0, 0
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case isSpace(c):
+			continue
+		case c == '=':
+			pad++
+			if pad > 2 {
+				return false
+			}
+		case pad > 0:
+			return false
+		case c >= 'A' && c <= 'Z', c >= 'a' && c <= 'z', isDigit(c), c == '+', c == '/':
+		default:
+			return false
+		}
+		n++
+	}
+	return n%4 == 0
+}
+
+func TestValidBase64(t *testing.T) {
+	inputs := []string{"", " ", "aGVsbG8=", "aGVsbG8", "aGVs\nbG8=", "aGVsbG8==", "aGVsbG8===", "aGVsbG8=a", "aGVs bG8 = ", "abc*", "\xff"}
+	rnd := rand.New(rand.NewPCG(1, 2))
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/= \t\r\n*\x00\xff"
+	for range 5000 {
+		b := make([]byte, rnd.IntN(16))
+		for i := range b {
+			b[i] = alphabet[rnd.IntN(len(alphabet))]
+		}
+		inputs = append(inputs, string(b))
+	}
+	for _, in := range inputs {
+		if got, want := validBase64(in), validBase64Ref(in); got != want {
+			t.Errorf("validBase64(%q) = %v, want %v", in, got, want)
+		}
 	}
 }
