@@ -138,7 +138,11 @@ func info(args []string) error {
 		fmt.Fprintf(w, "Modification date:  %s\n", att.ModDate.Format(time.RFC3339))
 	}
 	if m := att.Metadata; m != nil {
-		fmt.Fprintf(w, "PDF/A:              %d%s\n", m.PDFAPart, m.PDFAConformance)
+		if m.PDFARev != "" {
+			fmt.Fprintf(w, "PDF/A:              %d%s (rev %s)\n", m.PDFAPart, m.PDFAConformance, m.PDFARev)
+		} else {
+			fmt.Fprintf(w, "PDF/A:              %d%s\n", m.PDFAPart, m.PDFAConformance)
+		}
 		fmt.Fprintf(w, "XMP namespace:      %s\n", m.NamespaceURI)
 		fmt.Fprintf(w, "XMP profile:        %s (document %s, file %s, version %s)\n", m.ConformanceLevel, m.DocumentType, m.DocumentFileName, m.Version)
 	} else {

@@ -267,3 +267,66 @@ func TestMergeNamespace(t *testing.T) {
 		t.Fatalf("%+v %v", info, err)
 	}
 }
+
+func TestMergePDFAIdentification(t *testing.T) {
+	// pkt returns a packet whose PDF/A identification is given as
+	// elements, or as attributes when attr is set.
+	pkt := func(attr bool, props ...string) string {
+		var attrs, elems string
+		for i := 0; i+1 < len(props); i += 2 {
+			if attr {
+				attrs += " pdfaid:" + props[i] + `="` + props[i+1] + `"`
+			} else {
+				elems += "<pdfaid:" + props[i] + ">" + props[i+1] + "</pdfaid:" + props[i] + ">"
+			}
+		}
+		return `<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:Description rdf:about="" xmlns:pdfaid="http://www.aiim.org/pdfa/ns/id/" xmlns:dc="http://purl.org/dc/elements/1.1/"` + attrs + `>` + elems +
+			`<dc:format>application/pdf</dc:format></rdf:Description>
+</rdf:RDF></x:xmpmeta>`
+	}
+	for _, tc := range []struct {
+		name       string
+		in         string
+		part, conf string // Params.PDFAPart and Params.PDFAConformance
+		want       [3]string
+	}{
+		{"fresh", "", "", "", [3]string{"3", "B", ""}},
+		{"fresh, part 4", "", "4", "", [3]string{"4", "F", "2020"}},
+		{"fresh, part 4, level E", "", "4", "E", [3]string{"4", "E", "2020"}},
+		{"fresh, part 4, level B ignored", "", "4", "B", [3]string{"4", "F", "2020"}},
+		{"fresh, unknown part", "", "2", "", [3]string{"3", "B", ""}},
+		{"PDF/A-3a kept", pkt(false, "part", "3", "conformance", "A"), "", "", [3]string{"3", "A", ""}},
+		{"PDF/A-2u to 3u", pkt(false, "part", "2", "conformance", "U"), "", "", [3]string{"3", "U", ""}},
+		{"lower-case level", pkt(false, "part", "3", "conformance", "b"), "", "", [3]string{"3", "B", ""}},
+		{"PDF/A-4f kept", pkt(false, "part", "4", "rev", "2020", "conformance", "F"), "", "", [3]string{"4", "F", "2020"}},
+		{"PDF/A-4e kept", pkt(false, "part", "4", "rev", "2020", "conformance", "E"), "", "", [3]string{"4", "E", "2020"}},
+		{"PDF/A-4e kept with part 4", pkt(false, "part", "4", "conformance", "E"), "4", "F", [3]string{"4", "E", "2020"}},
+		{"later revision kept", pkt(false, "part", "4", "rev", "2026", "conformance", "F"), "", "", [3]string{"4", "F", "2026"}},
+		{"plain PDF/A-4 gets F and rev", pkt(false, "part", "4"), "", "", [3]string{"4", "F", "2020"}},
+		{"PDF/A-4 attributes", pkt(true, "part", "4", "rev", "2020", "conformance", "E"), "", "", [3]string{"4", "E", "2020"}},
+		{"PDF/A-3b to 4f", pkt(false, "part", "3", "conformance", "B"), "4", "", [3]string{"4", "F", "2020"}},
+		{"PDF/A-4f to 3b", pkt(true, "part", "4", "rev", "2020", "conformance", "F"), "3", "", [3]string{"3", "B", ""}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := params
+			p.PDFAPart, p.PDFAConformance = tc.part, tc.conf
+			out := Merge([]byte(tc.in), p)
+			info, err := Parse(out)
+			if err != nil {
+				t.Fatalf("Parse: %v\n%s", err, out)
+			}
+			if got := [3]string{info.PDFAPart, info.PDFAConformance, info.PDFARev}; got != tc.want {
+				t.Errorf("part, conformance, rev %q, want %q\n%s", got, tc.want, out)
+			}
+			for _, prop := range []string{"part", "conformance", "rev"} {
+				if n := bytes.Count(out, []byte("pdfaid:"+prop+">"))/2 + bytes.Count(out, []byte("pdfaid:"+prop+"=")); n > 1 {
+					t.Errorf("pdfaid:%s written %d times:\n%s", prop, n, out)
+				}
+			}
+			if tc.in != "" && !bytes.Contains(out, []byte("<dc:format>application/pdf</dc:format>")) {
+				t.Errorf("dc:format dropped:\n%s", out)
+			}
+		})
+	}
+}

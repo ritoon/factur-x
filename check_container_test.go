@@ -55,6 +55,14 @@ func TestCheckContainer(t *testing.T) {
 	modFile := func(fn func(fl *file)) *fixture {
 		return mod(func(f *fixture) { fn(&f.files[0]) })
 	}
+	// pdfa4 returns a valid PDF/A-4f fixture (PDF 2.0) modified by fn.
+	pdfa4 := func(fn func(f *fixture)) *fixture {
+		return mod(func(f *fixture) {
+			f.version = "2.0"
+			f.xmp = xmpWith(func(p *xmp.Params) { p.PDFAPart = "4" })
+			fn(f)
+		})
+	}
 	pdfaOnly := `<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
 <rdf:Description rdf:about="" xmlns:pdfaid="http://www.aiim.org/pdfa/ns/id/"><pdfaid:part>3</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance></rdf:Description>
 </rdf:RDF></x:xmpmeta>`
@@ -72,6 +80,18 @@ func TestCheckContainer(t *testing.T) {
 		{"PDF/A-2", mod(func(f *fixture) { f.xmp = replaced(f.xmp, "<pdfaid:part>3<", "<pdfaid:part>2<") }), "PDF-04"},
 		{"no conformance", mod(func(f *fixture) { f.xmp = replaced(f.xmp, "<pdfaid:conformance>B</pdfaid:conformance>", "") }), "PDF-05"},
 		{"bad conformance", mod(func(f *fixture) { f.xmp = replaced(f.xmp, "<pdfaid:conformance>B<", "<pdfaid:conformance>X<") }), "PDF-05"},
+		{"PDF/A-3 level F", mod(func(f *fixture) { f.xmp = replaced(f.xmp, "<pdfaid:conformance>B<", "<pdfaid:conformance>F<") }), "PDF-05"},
+		{"PDF/A-4f", pdfa4(func(f *fixture) {}), ""},
+		{"PDF/A-4e", pdfa4(func(f *fixture) { f.xmp = replaced(f.xmp, "<pdfaid:conformance>F<", "<pdfaid:conformance>E<") }), ""},
+		{"PDF/A-4 xref stream", pdfa4(func(f *fixture) { f.opts.Layout, f.opts.ObjStm = 1, true }), ""},
+		{"plain PDF/A-4", pdfa4(func(f *fixture) { f.xmp = replaced(f.xmp, "<pdfaid:conformance>F</pdfaid:conformance>", "") }), "PDF-05"},
+		{"PDF/A-4 level B", pdfa4(func(f *fixture) { f.xmp = replaced(f.xmp, "<pdfaid:conformance>F<", "<pdfaid:conformance>B<") }), "PDF-05"},
+		{"PDF/A-4 without rev", pdfa4(func(f *fixture) { f.xmp = replaced(f.xmp, "<pdfaid:rev>2020</pdfaid:rev>", "") }), "PDF-29"},
+		{"PDF/A-4 bad rev", pdfa4(func(f *fixture) { f.xmp = replaced(f.xmp, "<pdfaid:rev>2020<", "<pdfaid:rev>20<") }), "PDF-29"},
+		{"PDF/A-4 in PDF 1.7", pdfa4(func(f *fixture) { f.version = "1.7" }), "PDF-30"},
+		{"PDF/A-3 in PDF 2.0", mod(func(f *fixture) { f.version = "2.0" }), "PDF-30"},
+		{"PDF/A-1", mod(func(f *fixture) { f.xmp = replaced(f.xmp, "<pdfaid:part>3<", "<pdfaid:part>1<") }), "PDF-04"},
+		{"no part", mod(func(f *fixture) { f.xmp = replaced(f.xmp, "<pdfaid:part>3</pdfaid:part>", "") }), "PDF-04"},
 		{"no output intent", mod(func(f *fixture) { f.noOutputIntent = true }), "PDF-06"},
 		{"no ICC profile", mod(func(f *fixture) { f.noDest = true }), "PDF-07"},
 		{"no ID", mod(func(f *fixture) { f.noID = true }), "PDF-08"},
