@@ -1,0 +1,12 @@
+Les fichiers suivants proviennent du corpus ZUGFeRD
+(https://github.com/ZUGFeRD/corpus, commit 84f8d8f68f6c3698aa3019d701a8b82db9ba0aac
+du 2026-11-10), distribué sous licence Apache 2.0
+(https://www.apache.org/licenses/LICENSE-2.0). Ils sont reproduits sans
+modification.
+
+  EN16931_Einfach.cii.xml    XML-Rechnung/CII/EN16931_Einfach.cii.xml
+  EN16931_Rabatte.cii.xml    XML-Rechnung/CII/EN16931_Rabatte.cii.xml
+  XRECHNUNG_Einfach.cii.xml  XML-Rechnung/CII/XRECHNUNG_Einfach.cii.xml
+  EN16931_Einfach.pdf        XML-Rechnung/FX/EN16931_Einfach.pdf
+
+host.pdf est un PDF d'une page généré pour les tests de ce dépôt (licence MIT).
