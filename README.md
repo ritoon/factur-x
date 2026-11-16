@@ -150,13 +150,14 @@ Sur les 26 XML CII valides du corpus officiel `XML-Rechnung/CII`, le validateur 
 
 Le lecteur PDF est écrit pour ce package : tables xref classiques et flux xref, flux d'objets, mises à jour incrémentales, reconstruction quand la table xref est endommagée, filtres Flate (avec prédicteurs), ASCIIHex et ASCII85. La décompression est bornée (256 Mio par flux) et la profondeur d'imbrication limitée, pour qu'un fichier hostile ne puisse ni saturer la mémoire ni faire déborder la pile. Le décompresseur est testé par fuzzing différentiel contre `compress/flate`.
 
+Le lecteur XML est lui aussi écrit pour ce package : un seul passage sur les octets, espaces de noms résolus, imbrication limitée à 256 niveaux, déclarations DOCTYPE ignorées et aucune entité développée hors des cinq prédéfinies. Il est testé par fuzzing différentiel contre `encoding/xml` : mêmes documents acceptés, même arbre.
+
 ## Limites
 
 - **Pas de conversion PDF/A.** `Embed` déclare PDF/A-3 dans le XMP mais ne touche ni aux polices, ni aux espaces de couleur, ni aux output intents : le PDF hôte doit déjà respecter PDF/A-2 ou PDF/A-3 (polices incorporées, output intent), ce que la plupart des générateurs savent faire sur option. `Check` signale ce qui manque.
 - **Pas d'UBL.** XRechnung et la réforme française acceptent aussi l'UBL ; seule la syntaxe CII est traitée.
 - **PDF chiffrés** : signalés (PDF-01), pas déchiffrés.
 - **ZUGFeRD 1.0** : le XMP est reconnu, le XML (syntaxe CII antérieure à D16B) n'est pas lu.
-- **Gros fichiers** : la validation d'un XML de 1,3 Mo prend 12 ms, 1,8 fois le plus rapide des validateurs Go mesurés. L'analyse XML repose sur un arbre générique ; un lecteur dédié est la prochaine optimisation.
 - Les règles des schematrons sont réécrites en Go, pas interprétées : une nouvelle version des artefacts officiels demande une mise à jour du code (le catalogue EN 16931 est régénéré par `go generate`, les tests vérifient l'alignement).
 
 ## Performances
@@ -165,12 +166,13 @@ Apple M4 Pro, Go 1.26, 16/11/2026. Comparaison avec le plus rapide des autres pa
 
 | Opération | factur-x | Meilleur autre package Go |
 |---|---|---|
-| Extraction du XML (PDF de 149 Ko) | 29 µs | 75 µs (speedata) |
-| Lecture XML → modèle (13 Ko) | 120 µs | 126 µs (fX) |
-| Lecture et validation complète (13 Ko) | 127 µs | 132 µs (pdf0 + formalis, sans règles françaises) |
-| Écriture modèle → XML (13 Ko) | 2,8 µs | 20,7 µs (fX) |
-| Injection dans un PDF à flux xref | 83 µs | 543 µs (pdfcpu) |
-| Contrôle complet d'un PDF hybride (149 Ko) | 165 µs | 1,18 ms (DCNWS) |
+| Extraction du XML (PDF de 149 Ko) | 28 µs | 75 µs (speedata) |
+| Lecture XML → modèle (13 Ko) | 15 µs | 126 µs (fX) |
+| Lecture et validation complète (13 Ko) | 23 µs | 132 µs (pdf0 + formalis, sans règles françaises) |
+| Lecture et validation complète (1,3 Mo, pièces jointes base64) | 744 µs | 7,01 ms (angelo) |
+| Écriture modèle → XML (13 Ko) | 2,7 µs | 20,7 µs (fX) |
+| Injection dans un PDF à flux xref | 80 µs | 543 µs (pdfcpu) |
+| Contrôle complet d'un PDF hybride (149 Ko) | 55 µs | 1,18 ms (DCNWS) |
 
 Le harnais est dans [bench/ecosystem](bench/ecosystem) ; chaque librairie y a son propre module.
 
