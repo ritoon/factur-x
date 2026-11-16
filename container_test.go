@@ -13,6 +13,7 @@ import (
 
 	"github.com/ritoon/factur-x/internal/pdf"
 	"github.com/ritoon/factur-x/internal/pdf/pdftest"
+	"github.com/ritoon/factur-x/internal/xmltree"
 	"github.com/ritoon/factur-x/internal/xmp"
 	"github.com/ritoon/factur-x/invoice"
 )
@@ -363,6 +364,8 @@ func TestSpecificationIDMalformed(t *testing.T) {
 		"</a>",
 		"<a></a></b><c><d><e><f>",
 		"<a/></b><c>",
+		// "<?" and "?>" overlap.
+		"<?>",
 	} {
 		func() {
 			defer func() {
@@ -388,8 +391,90 @@ func TestSpecificationIDMalformed(t *testing.T) {
 	}
 }
 
+// specificationIDCases are documents on which the quick scan of BT-24 used
+// to read something else than xmltree. specificationID must now give the
+// root and BT-24 of the full parse.
+var specificationIDCases = []struct {
+	name     string
+	doc      string
+	root, id string
+}{
+	// Markup and references inside BT-24: xmltree keeps the character data
+	// only, and expands the references.
+	{"element", string(ciiXML("a<x/>b")), "CrossIndustryInvoice", "ab"},
+	{"element with text", string(ciiXML("a<x>y</x>b")), "CrossIndustryInvoice", "ab"},
+	{"comment", string(ciiXML("a<!--c-->b")), "CrossIndustryInvoice", "ab"},
+	{"processing instruction", string(ciiXML("a<?p?>b")), "CrossIndustryInvoice", "ab"},
+	{"CDATA", string(ciiXML("a<![CDATA[<b>]]>c")), "CrossIndustryInvoice", "a<b>c"},
+	{"character reference", string(ciiXML("&#65;")), "CrossIndustryInvoice", "A"},
+	{"escaped URN", string(ciiXML("urn&#58;cen.eu:en16931:2017")), "CrossIndustryInvoice", invoice.URNEN16931},
+	{"carriage return", string(ciiXML("a\rb\r\nc")), "CrossIndustryInvoice", "a\nb\nc"},
+	// Attribute values may hold '>' and "/>".
+	{"attribute with >", strings.Replace(string(ciiXML(invoice.URNEN16931)), "<ram:ID>", `<ram:ID schemeID="a>b">`, 1),
+		"CrossIndustryInvoice", invoice.URNEN16931},
+	{"attribute with />", strings.Replace(string(ciiXML(invoice.URNEN16931)), "<rsm:ExchangedDocumentContext>", `<rsm:ExchangedDocumentContext a="/>">`, 1),
+		"CrossIndustryInvoice", invoice.URNEN16931},
+	// A colon that starts a name belongs to the local name.
+	{"leading colon", strings.ReplaceAll(string(ciiXML(invoice.URNEN16931)), "rsm:CrossIndustryInvoice", ":CrossIndustryInvoice"),
+		":CrossIndustryInvoice", invoice.URNEN16931},
+	// xmltree converts ISO-8859-1 to UTF-8.
+	{"ISO-8859-1", strings.Replace(string(ciiXML("urn:\xe9")), `encoding="UTF-8"`, `encoding="ISO-8859-1"`, 1),
+		"CrossIndustryInvoice", "urn:é"},
+	// A DOCTYPE may hide '>' and '<' that are not markup.
+	{"DOCTYPE", `<!DOCTYPE x [<!ENTITY e ">"><y>]><ExchangedDocumentContext><GuidelineSpecifiedDocumentContextParameter>` +
+		`<ID>urn</ID></GuidelineSpecifiedDocumentContextParameter></ExchangedDocumentContext>`, "ExchangedDocumentContext", ""},
+	// The "-->" of a comment comes after its "<!--".
+	{"comment <!-->", `<r><!--><ExchangedDocumentContext>--><GuidelineSpecifiedDocumentContextParameter>` +
+		`<ID>u</ID></GuidelineSpecifiedDocumentContextParameter></r>`, "r", ""},
+	// The first ID decides, even empty; the ZUGFeRD 1.0 path comes next.
+	{"empty ID first", strings.Replace(string(ciiXML(invoice.URNEN16931)), "<ram:ID>", "<ram:ID/><ram:ID>", 1),
+		"CrossIndustryInvoice", ""},
+	{"empty ID, ZUGFeRD 1.0 context", strings.Replace(string(ciiXML("")), "</rsm:CrossIndustryInvoice>",
+		"<rsm:SpecifiedExchangedDocumentContext><ram:GuidelineSpecifiedDocumentContextParameter><ram:ID>zf1</ram:ID>"+
+			"</ram:GuidelineSpecifiedDocumentContextParameter></rsm:SpecifiedExchangedDocumentContext></rsm:CrossIndustryInvoice>", 1),
+		"CrossIndustryInvoice", "zf1"},
+}
+
+func TestSpecificationIDAsXMLTree(t *testing.T) {
+	for _, tc := range specificationIDCases {
+		if _, err := xmltree.Parse([]byte(tc.doc)); err != nil {
+			t.Errorf("%s: not well-formed: %v", tc.name, err)
+		}
+		if root, id := specificationID([]byte(tc.doc)); root != tc.root || id != tc.id {
+			t.Errorf("%s: root %q, BT-24 %q; want %q, %q", tc.name, root, id, tc.root, tc.id)
+		}
+	}
+
+	// Ordinary invoices keep the quick scan, with CRLF line ends too.
+	docs := [][]byte{zf1XML("BASIC")}
+	for _, urn := range []string{invoice.URNMinimum, invoice.URNEN16931, invoice.URNExtended} {
+		docs = append(docs, ciiXML(urn), bytes.ReplaceAll(ciiXML(urn), []byte("\n"), []byte("\r\n")))
+	}
+	for _, name := range []string{"EN16931_Einfach.cii.xml", "XRECHNUNG_Einfach.cii.xml"} {
+		docs = append(docs, readTestdata(t, name))
+	}
+	for _, doc := range docs {
+		if root, id, ok := scanSpecificationID(doc); !ok || id == "" {
+			t.Errorf("quick scan: root %q, BT-24 %q, ok %v\n%.300s", root, id, ok, doc)
+		}
+	}
+
+	// An escaped URN is a known profile for Embed and CheckContainer.
+	escaped := func(urn string) []byte { return ciiXML(strings.Replace(urn, ":", "&#58;", 1)) }
+	out, err := Embed(base(pdftest.Options{}), escaped(invoice.URNEN16931), &EmbedOptions{ModDate: testDate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a, findings, err := CheckContainer(out); err != nil || len(findings) > 0 || a.Relationship != "Alternative" {
+		t.Errorf("Embed: %+v, %v, %v", a, findings, err)
+	}
+	// The XMP says EN 16931, BT-24 BASIC.
+	checkContainerRules(t, valid(escaped(invoice.URNBasic)), "PDF-24")
+}
+
 // FuzzSpecificationID checks that reading BT-24 never panics, whatever the
-// attachment holds:
+// attachment holds, and that the quick scan reads the root element and BT-24
+// as xmltree does whenever both accept the document:
 //
 //	go test -run '^$' -fuzz FuzzSpecificationID .
 func FuzzSpecificationID(f *testing.F) {
@@ -398,6 +483,9 @@ func FuzzSpecificationID(f *testing.F) {
 	}
 	f.Add(zf1XML("BASIC"))
 	f.Add([]byte("</a></b><c>"))
+	for _, tc := range specificationIDCases {
+		f.Add([]byte(tc.doc))
+	}
 	for _, name := range []string{"EN16931_Einfach.cii.xml", "XRECHNUNG_Einfach.cii.xml"} {
 		if data, err := os.ReadFile(filepath.Join("testdata", name)); err == nil {
 			f.Add(data)
@@ -405,6 +493,24 @@ func FuzzSpecificationID(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, data []byte) {
 		specificationID(data)
+		root, id, ok := scanSpecificationID(data)
+		if !ok {
+			return
+		}
+		tree, err := xmltree.Parse(data)
+		if err != nil {
+			return // not well-formed: the quick scan reads what it can
+		}
+		want, zf1 := tree.Value(bt24Path), tree.Value(bt24PathZF1)
+		if want == "" {
+			want = zf1
+		}
+		// The quick scan reads the first document context, the full parse
+		// prefers ExchangedDocumentContext: a document holding both may give
+		// the ZUGFeRD 1.0 identifier.
+		if root != tree.Name || id != want && id != zf1 {
+			t.Errorf("quick scan: root %q, BT-24 %q; xmltree: root %q, BT-24 %q\n%q", root, id, tree.Name, want, data)
+		}
 	})
 }
 

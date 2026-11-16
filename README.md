@@ -222,7 +222,7 @@ Sur les 147 XML CII lus du corpus ZUGFeRD et des XML extraits de ses PDF, 145 so
 
 Le lecteur PDF est écrit pour ce package : tables xref classiques et flux xref, flux d'objets, mises à jour incrémentales, reconstruction quand la table xref est endommagée, filtres Flate (avec prédicteurs), ASCIIHex et ASCII85. La décompression est bornée (256 Mio par flux) et la profondeur d'imbrication limitée, pour qu'un fichier hostile ne puisse ni saturer la mémoire ni faire déborder la pile. Le décompresseur est testé par fuzzing différentiel contre `compress/flate`.
 
-Le lecteur XML est lui aussi écrit pour ce package : un seul passage sur les octets, espaces de noms résolus, imbrication limitée à 256 niveaux, déclarations DOCTYPE ignorées et aucune entité développée hors des cinq prédéfinies. Il est testé par fuzzing différentiel contre `encoding/xml` : mêmes documents acceptés, même arbre.
+Le lecteur XML est lui aussi écrit pour ce package : un seul passage sur les octets, espaces de noms résolus, imbrication limitée à 256 niveaux, déclarations DOCTYPE ignorées et aucune entité développée hors des cinq prédéfinies. Il est testé par fuzzing différentiel contre `encoding/xml` : mêmes documents acceptés, même arbre. La lecture rapide de BT-24 (le profil de la pièce jointe, lu par `Embed` et `CheckContainer` sans construire d'arbre) est à son tour comparée à ce lecteur par fuzzing : même élément racine, même identifiant.
 
 ## Limites
 

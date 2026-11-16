@@ -502,11 +502,19 @@ func isXMLNameEnd(c byte) bool {
 	return c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '/' || c == '>'
 }
 
+// Paths of BT-24 from the root element: Factur-X and ZUGFeRD 2
+// (CrossIndustryInvoice), ZUGFeRD 1.0 (CrossIndustryDocument).
+const (
+	bt24Path    = "ExchangedDocumentContext/GuidelineSpecifiedDocumentContextParameter/ID"
+	bt24PathZF1 = "SpecifiedExchangedDocumentContext/GuidelineSpecifiedDocumentContextParameter/ID"
+)
+
 // specificationID reads BT-24
 // (rsm:ExchangedDocumentContext/ram:GuidelineSpecifiedDocumentContextParameter/ram:ID)
 // and the local name of the root element. It scans the start of the
 // document only, and falls back to a full parse with internal/xmltree when
-// the quick scan does not find the identifier.
+// the quick scan does not find the identifier or cannot read it the way
+// xmltree does.
 func specificationID(doc []byte) (root, id string) {
 	if root, id, ok := scanSpecificationID(doc); ok {
 		return root, id
@@ -515,17 +523,19 @@ func specificationID(doc []byte) (root, id string) {
 	if err != nil {
 		return xmlRoot(doc), ""
 	}
-	id = t.Value("ExchangedDocumentContext/GuidelineSpecifiedDocumentContextParameter/ID")
+	id = t.Value(bt24Path)
 	if id == "" {
-		// ZUGFeRD 1.0 (CrossIndustryDocument).
-		id = t.Value("SpecifiedExchangedDocumentContext/GuidelineSpecifiedDocumentContextParameter/ID")
+		id = t.Value(bt24PathZF1)
 	}
 	return t.Name, id
 }
 
 // scanSpecificationID finds BT-24 by tracking the element path, without
 // building a tree. ok is false when the identifier is not found before the
-// document context element ends.
+// document context element ends, and whenever the scan could read something
+// else than xmltree: a DOCTYPE or a CDATA section, an XML declaration of
+// another encoding than UTF-8, or BT-24 empty or holding markup, character
+// references or carriage returns. Ordinary invoices hold none of these.
 func scanSpecificationID(b []byte) (root, id string, ok bool) {
 	var path [4][]byte // local names of the open elements at depth 1 to 4
 	depth := 0
@@ -538,36 +548,36 @@ func scanSpecificationID(b []byte) (root, id string, ok bool) {
 		}
 		i += k
 		rest := b[i:]
+		if textStart >= 0 && !bytes.HasPrefix(rest, []byte("</")) {
+			// An element, a comment or a processing instruction inside
+			// BT-24: xmltree joins the pieces of text around it.
+			return root, "", false
+		}
 		switch {
 		case bytes.HasPrefix(rest, []byte("<?")):
-			j := bytes.Index(rest, []byte("?>"))
-			if j < 0 {
+			j := bytes.Index(rest[2:], []byte("?>"))
+			if j < 0 || !keepsUTF8(rest[2:2+j]) {
 				return root, "", false
 			}
-			i += j + 2
+			i += j + 4
 		case bytes.HasPrefix(rest, []byte("<!--")):
-			j := bytes.Index(rest, []byte("-->"))
+			j := bytes.Index(rest[4:], []byte("-->"))
 			if j < 0 {
 				return root, "", false
 			}
-			i += j + 3
+			i += j + 7
 		case bytes.HasPrefix(rest, []byte("<!")):
-			// CDATA or DOCTYPE: give up on the quick scan if it matters.
-			if textStart >= 0 {
-				return root, "", false
-			}
-			j := bytes.IndexByte(rest, '>')
-			if j < 0 {
-				return root, "", false
-			}
-			i += j + 1
+			// A DOCTYPE or a CDATA section may hold '<' and '>' that are
+			// not markup: leave them to xmltree.
+			return root, "", false
 		case bytes.HasPrefix(rest, []byte("</")):
 			j := bytes.IndexByte(rest, '>')
 			if j < 0 {
 				return root, "", false
 			}
-			if textStart >= 0 && depth == 4 {
-				return root, unescapeXML(bytes.TrimSpace(b[textStart:i])), true
+			if textStart >= 0 {
+				id, ok := bt24Text(b[textStart:i])
+				return root, id, ok
 			}
 			if depth == 2 && isContext(path[1]) {
 				return root, "", false // context closed without BT-24
@@ -582,13 +592,13 @@ func scanSpecificationID(b []byte) (root, id string, ok bool) {
 			for j < len(rest) && !isXMLNameEnd(rest[j]) {
 				j++
 			}
-			name := rest[1:j]
-			if c := bytes.IndexByte(name, ':'); c >= 0 {
-				name = name[c+1:]
-			}
-			e := bytes.IndexByte(rest, '>')
-			if e < 0 {
-				return root, "", false
+			name := localName(rest[1:j])
+			e := j // no attribute: '>' right after the name
+			if j >= len(rest) || rest[j] != '>' {
+				if e = tagEnd(rest[j:]); e < 0 {
+					return root, "", false
+				}
+				e += j
 			}
 			self := rest[e-1] == '/'
 			depth++
@@ -598,7 +608,10 @@ func scanSpecificationID(b []byte) (root, id string, ok bool) {
 			if depth <= 4 {
 				path[depth-1] = name
 			}
-			if depth == 4 && !self && isContext(path[1]) && string(path[2]) == "GuidelineSpecifiedDocumentContextParameter" && string(name) == "ID" {
+			if depth == 4 && isContext(path[1]) && string(path[2]) == "GuidelineSpecifiedDocumentContextParameter" && string(name) == "ID" {
+				if self {
+					return root, "", false // empty BT-24
+				}
 				textStart = i + e + 1
 			}
 			if self {
@@ -611,6 +624,73 @@ func scanSpecificationID(b []byte) (root, id string, ok bool) {
 
 func isContext(name []byte) bool {
 	return string(name) == "ExchangedDocumentContext" || string(name) == "SpecifiedExchangedDocumentContext"
+}
+
+// localName strips the prefix of an element name as xmltree does: a colon
+// that starts or ends the name belongs to the local name.
+func localName(name []byte) []byte {
+	if c := bytes.IndexByte(name, ':'); c > 0 && c < len(name)-1 {
+		return name[c+1:]
+	}
+	return name
+}
+
+// tagEnd returns the index of the '>' that ends a start tag, b following
+// its name, or -1. Attribute values may hold '>': they are skipped.
+func tagEnd(b []byte) int {
+	e := bytes.IndexByte(b, '>')
+	for i := 0; e >= 0; {
+		q := e // first quote before the '>', if any
+		if k := bytes.IndexByte(b[i:e], '"'); k >= 0 {
+			q = i + k
+		}
+		if k := bytes.IndexByte(b[i:q], '\''); k >= 0 {
+			q = i + k
+		}
+		if q == e {
+			return e
+		}
+		c := bytes.IndexByte(b[q+1:], b[q])
+		if c < 0 {
+			return -1
+		}
+		i = q + 1 + c + 1
+		if i > e { // the '>' was in the value
+			if e = bytes.IndexByte(b[i:], '>'); e >= 0 {
+				e += i
+			}
+		}
+	}
+	return -1
+}
+
+// keepsUTF8 reports whether a processing instruction (its content between
+// "<?" and "?>") leaves the document in UTF-8: xmltree converts the rest of
+// the input when an XML declaration names ISO-8859-1 or windows-1252. The
+// first encoding="..." found decides, as for xmltree; any doubt answers
+// false.
+func keepsUTF8(pi []byte) bool {
+	_, v, found := bytes.Cut(pi, []byte("encoding="))
+	if !found {
+		return true
+	}
+	if len(v) == 0 || v[0] != '"' && v[0] != '\'' {
+		return false
+	}
+	enc, _, closed := bytes.Cut(v[1:], v[:1])
+	return closed && bytes.EqualFold(enc, []byte("utf-8"))
+}
+
+// bt24Text decodes the text of BT-24 as xmltree does: trimmed, with the
+// predefined entities expanded. ok is false when the text is empty (the full
+// parse then also tries the ZUGFeRD 1.0 path), holds a character reference,
+// or a carriage return, which xmltree turns into a line feed.
+func bt24Text(raw []byte) (id string, ok bool) {
+	t := bytes.TrimSpace(raw)
+	if len(t) == 0 || bytes.Contains(t, []byte("&#")) || bytes.IndexByte(t, '\r') >= 0 {
+		return "", false
+	}
+	return unescapeXML(t), true
 }
 
 func unescapeXML(b []byte) string {
