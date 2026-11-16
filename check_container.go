@@ -16,9 +16,11 @@ import (
 // Factur-X specification (and ZUGFeRD, XRechnung hybrids) requires from the
 // PDF container — the invoice attachment, its file specification and the
 // XMP metadata — and the PDF/A-3 requirements a reader can verify without
-// analysing the page content. They do not replace a PDF/A validator: fonts,
-// colour spaces, transparency and the structure of the page content are not
-// checked.
+// parsing the page content: encryption, output intent, file identifier,
+// embedded fonts, JavaScript and actions, /Info and XMP consistency, other
+// embedded files and forbidden filters. They do not replace a PDF/A
+// validator: colour spaces, transparency, the font programs themselves and
+// the page content are not checked.
 var ContainerCatalog = []rules.RuleInfo{
 	{ID: "PDF-01", Severity: rules.Error, Description: "The PDF is not encrypted (PDF/A forbids encryption; the attachment cannot be read)."},
 	{ID: "PDF-02", Severity: rules.Error, Description: "The document catalog has an XMP metadata stream (/Metadata)."},
@@ -50,6 +52,14 @@ var ContainerCatalog = []rules.RuleInfo{
 	{ID: "PDF-28", Severity: rules.Error, Description: "The PDF has a single invoice attachment: no other embedded file is named factur-x.xml, xrechnung.xml or zugferd-invoice.xml."},
 	{ID: "PDF-29", Severity: rules.Warning, Description: "A PDF/A-4 declaration gives the edition of ISO 19005-4 it follows (pdfaid:rev, a four-digit year: 2020)."},
 	{ID: "PDF-30", Severity: rules.Warning, Description: "The PDF version matches the declared PDF/A part: PDF 1.7 or earlier for PDF/A-3, PDF 2.0 for PDF/A-4."},
+	{ID: "PDF-31", Severity: rules.Warning, Description: "The fonts of the pages (in the resources of the pages, form XObjects, patterns, Type 3 fonts and annotation appearances) embed their font program (/FontFile, /FontFile2 or /FontFile3 in the font descriptor). PDF/A requires it for the fonts used for rendering; whether the content draws visible text with them is not analysed."},
+	{ID: "PDF-32", Severity: rules.Error, Description: "The document has no document-level JavaScript (/JavaScript in the catalog /Names), which PDF/A forbids."},
+	{ID: "PDF-33", Severity: rules.Error, Description: "No action forbidden by PDF/A (Launch, Sound, Movie, ResetForm, ImportData, Hide, SetOCGState, Rendition, Trans, GoTo3DView, JavaScript, SetState, NOP, or a named action other than NextPage, PrevPage, FirstPage and LastPage) in the /OpenAction, the outlines, the annotations or a chain of /Next actions."},
+	{ID: "PDF-34", Severity: rules.Error, Description: "No additional-actions dictionary (/AA) in the document catalog, the pages, the annotations or the form fields, as PDF/A requires."},
+	{ID: "PDF-35", Severity: rules.Error, Description: "The entries of the document information dictionary (/Info) that have an XMP equivalent (Title, Author, Subject, Keywords, Creator, Producer, CreationDate, ModDate) have the same value in the XMP metadata, as ISO 19005-3 requires. Not checked for PDF/A-4."},
+	{ID: "PDF-36", Severity: rules.Error, Description: "Every embedded file besides the invoice has an /AFRelationship entry (PDF/A-3 associated file)."},
+	{ID: "PDF-37", Severity: rules.Error, Description: "Every embedded file besides the invoice has a MIME type (/Subtype of the embedded file stream), as PDF/A-3 requires."},
+	{ID: "PDF-38", Severity: rules.Error, Description: "No stream of the pages, their resources, the annotation appearances, the font programs, the embedded files or the metadata uses the LZWDecode filter, which PDF/A forbids. Inline images of the page content are not checked."},
 }
 
 // containerSeverity returns the severity of a rule of ContainerCatalog.
@@ -79,8 +89,10 @@ func (k *containerCheck) add(id, path, format string, args ...any) {
 
 // CheckContainer checks the PDF container of a hybrid invoice: the PDF/A-3
 // or PDF/A-4 identification and XMP metadata, the invoice attachment and its
-// file specification, and the consistency of the XMP hybrid-invoice schema
-// with the attachment and its profile (BT-24). The rules are listed in
+// file specification, the consistency of the XMP hybrid-invoice schema
+// with the attachment and its profile (BT-24), and the PDF/A requirements
+// that do not depend on rendering the pages (fonts, actions, document
+// information, other attachments, filters). The rules are listed in
 // ContainerCatalog; every finding has Source rules.SourcePDF.
 //
 // The returned attachment is the one Extract returns, or nil when the PDF is
@@ -106,6 +118,7 @@ func CheckContainer(pdfData []byte) (*Attachment, []rules.Finding, error) {
 		} else {
 			k.add("PDF-09", specPath(fs), "the invoice attachment cannot be decoded: %v", err)
 		}
+		k.pdfa(c, fs)
 		return nil, k.findings, nil
 	}
 	a := c.attachment(fs, data, st, metadataOf(info))
@@ -124,6 +137,9 @@ func CheckContainer(pdfData []byte) (*Attachment, []rules.Finding, error) {
 	if info != nil {
 		k.metadata(info, a, root, profile, zf1)
 	}
+	// Last: the scan adds the files of page-level /AF arrays to c.specs,
+	// which PDF-28 does not look at.
+	k.pdfa(c, fs)
 	return a, k.findings, nil
 }
 
@@ -142,6 +158,10 @@ func (k *containerCheck) document(c *container) *xmp.Info {
 	}
 	if info != nil {
 		k.identification(c, info)
+		// PDF/A-4 deprecates the document information dictionary.
+		if strings.TrimSpace(info.PDFAPart) != "4" {
+			k.docInfo(c, info)
+		}
 	}
 
 	found := false

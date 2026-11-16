@@ -9,6 +9,8 @@ package xmp
 
 import (
 	"errors"
+	"strings"
+	"time"
 )
 
 // Namespaces of the hybrid-invoice XMP schema.
@@ -58,6 +60,133 @@ type Info struct {
 	CreateDate      string   // xmp:CreateDate
 	MetadataDate    string   // xmp:MetadataDate
 	AboutMismatch   bool     // rdf:Description elements carry different rdf:about values
+	// InfoProps holds the properties that have an equivalent entry in the
+	// PDF document information dictionary, keyed by the name of that entry:
+	// Title (dc:title), Author (dc:creator), Subject (dc:description),
+	// Keywords (pdf:Keywords), Creator (xmp:CreatorTool), Producer
+	// (pdf:Producer), CreationDate (xmp:CreateDate) and ModDate
+	// (xmp:ModifyDate). Only the properties found in the packet are listed.
+	// dc:title and dc:description give their x-default alternative (the
+	// first one when none is marked x-default), dc:creator its entries
+	// joined with ", ".
+	InfoProps map[string]string
+}
+
+// InfoEquivalents lists the entries of the PDF document information
+// dictionary that have an XMP equivalent (ISO 19005-1, Table 1), with the
+// qualified name of that property.
+var InfoEquivalents = []struct{ Entry, Property string }{
+	{"Title", "dc:title"},
+	{"Author", "dc:creator"},
+	{"Subject", "dc:description"},
+	{"Keywords", "pdf:Keywords"},
+	{"Creator", "xmp:CreatorTool"},
+	{"Producer", "pdf:Producer"},
+	{"CreationDate", "xmp:CreateDate"},
+	{"ModDate", "xmp:ModifyDate"},
+}
+
+// infoEntry returns the document information entry equivalent to an XMP
+// property, or "".
+func infoEntry(space, local string) string {
+	switch space {
+	case nsDC:
+		switch local {
+		case "title":
+			return "Title"
+		case "creator":
+			return "Author"
+		case "description":
+			return "Subject"
+		}
+	case nsPDF:
+		switch local {
+		case "Keywords", "Producer":
+			return local
+		}
+	case nsXMP:
+		switch local {
+		case "CreatorTool":
+			return "Creator"
+		case "CreateDate":
+			return "CreationDate"
+		case "ModifyDate":
+			return "ModDate"
+		}
+	}
+	return ""
+}
+
+func (in *Info) setInfoProp(entry, value string) {
+	if in.InfoProps == nil {
+		in.InfoProps = make(map[string]string, len(InfoEquivalents))
+	}
+	in.InfoProps[entry] = value
+}
+
+// setList reads a property whose value is an rdf:Alt, rdf:Seq or rdf:Bag
+// and that has a document information equivalent: dc:title and
+// dc:description (language alternatives), dc:creator (ordered list).
+func (in *Info) setList(data []byte, n *node) {
+	entry := infoEntry(n.space, string(n.local))
+	if entry == "" {
+		return
+	}
+	var list *node
+	for _, c := range n.children {
+		if c.is(nsRDF, "Alt") || c.is(nsRDF, "Seq") || c.is(nsRDF, "Bag") {
+			list = c
+			break
+		}
+	}
+	if list == nil {
+		return
+	}
+	var (
+		items []string
+		def   = -1 // index of the x-default alternative
+	)
+	for _, li := range list.children {
+		if !li.is(nsRDF, "li") || len(li.children) > 0 {
+			continue
+		}
+		if lang, _ := li.attr(nsXML, "lang"); def < 0 && strings.EqualFold(lang, "x-default") {
+			def = len(items)
+		}
+		items = append(items, li.text(data))
+	}
+	value := ""
+	switch {
+	case entry == "Author":
+		value = strings.Join(items, ", ")
+	case def >= 0:
+		value = items[def]
+	case len(items) > 0:
+		value = items[0]
+	}
+	in.setInfoProp(entry, value)
+}
+
+// ParseDate parses an XMP date: ISO 8601 as XMP restricts it ("2026",
+// "2026-11", "2026-11-16", "2026-11-16T14:30+01:00",
+// "2026-11-16T14:30:00Z", with optional fractional seconds). A date and
+// time without time zone is read as UTC.
+func ParseDate(s string) (time.Time, bool) {
+	s = strings.TrimSpace(s)
+	for _, layout := range []string{
+		"2006-01-02T15:04:05Z07:00",
+		"2006-01-02T15:04Z07:00",
+		"2006-01-02T15:04:05",
+		"2006-01-02T15:04",
+		"2006-01-02",
+		"2006-01",
+		"2006",
+	} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
 }
 
 // Invoice holds the properties of the hybrid-invoice schema.
@@ -124,6 +253,8 @@ func Parse(data []byte) (*Info, error) {
 			}
 			if len(c.children) == 0 {
 				info.setProp(invoices, c.space, string(c.local), c.text(data))
+			} else {
+				info.setList(data, c)
 			}
 		}
 	}
@@ -149,6 +280,9 @@ func findRDF(n *node) *node {
 }
 
 func (in *Info) setProp(invoices map[string]*Invoice, space, local, value string) {
+	if entry := infoEntry(space, local); entry != "" {
+		in.setInfoProp(entry, value)
+	}
 	switch {
 	case space == nsPDFAID:
 		switch local {

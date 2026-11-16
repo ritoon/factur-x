@@ -104,13 +104,6 @@ func managed(space, local string) bool {
 	return isInvoiceNS(space)
 }
 
-// docInfoProps are the XMP equivalents of document information entries.
-var docInfoProps = []struct{ space, local string }{
-	{nsDC, "title"}, {nsDC, "creator"}, {nsDC, "description"},
-	{nsPDF, "Keywords"}, {nsPDF, "Producer"},
-	{nsXMP, "CreatorTool"}, {nsXMP, "CreateDate"},
-}
-
 func mergeInto(data []byte, rdf *node, p Params) ([]byte, bool) {
 	rdfPrefix := string(rdf.prefix)
 	if rdfPrefix == "" {

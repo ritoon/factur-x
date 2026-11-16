@@ -53,6 +53,7 @@ type file struct {
 	modDate   string // /Params /ModDate, none when empty
 	data      []byte
 	hex       bool // ASCIIHexDecode instead of FlateDecode
+	lzw       bool // declared LZWDecode, data left as is
 	notInAF   bool
 	notInTree bool
 }
@@ -69,13 +70,25 @@ type fixture struct {
 	noDest         bool
 	noID           bool
 	encrypted      bool
+	info           string // document information dictionary; testInfo when empty
+	names          string // entries added to the /Names dictionary of the catalog
+	pagesExtra     string // entries added to the root of the page tree
+	// extra, when set, adds objects and returns entries appended to the
+	// catalog and page dictionaries.
+	extra func(b *pdftest.Builder) (catalog, page string)
 }
+
+// testInfo is the document information dictionary of the fixtures, and
+// testDocInfo its XMP equivalent (its ModDate is testDate).
+const testInfo = "<< /Producer (pdftest) /Title (Facture) /CreationDate (D:20260101000000Z) /ModDate (D:20261116120000+01'00') >>"
+
+var testDocInfo = xmp.DocInfo{Title: "Facture", Producer: "pdftest", CreationDate: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
 
 // validXMP returns the XMP packet of a Factur-X EN 16931 file.
 func validXMP() string {
 	return string(xmp.Merge(nil, xmp.Params{
 		DocumentType: "INVOICE", DocumentFileName: "factur-x.xml", Version: "1.0",
-		ConformanceLevel: "EN 16931", Date: testDate,
+		ConformanceLevel: "EN 16931", Date: testDate, DocInfo: testDocInfo,
 	}))
 }
 
@@ -106,10 +119,14 @@ func (f *fixture) build() []byte {
 			dict += " /Params << /ModDate " + lit(fl.modDate) + fmt.Sprintf(" /Size %d >>", len(fl.data))
 		}
 		data := pdftest.Flate(fl.data)
-		if fl.hex {
+		switch {
+		case fl.lzw:
+			dict += " /Filter /LZWDecode"
+			data = fl.data
+		case fl.hex:
 			dict += " /Filter /ASCIIHexDecode"
 			data = []byte(fmt.Sprintf("%X>", fl.data))
-		} else {
+		default:
 			dict += " /Filter /FlateDecode"
 		}
 		ef := b.AddStream(dict+" >>", data)
@@ -144,17 +161,26 @@ func (f *fixture) build() []byte {
 	}
 
 	catalog := fmt.Sprintf("<< /Type /Catalog /Pages %d 0 R", pages)
+	pageDict := fmt.Sprintf("<< /Type /Page /Parent %d 0 R /MediaBox [0 0 595 842]", pages)
+	names := f.names
 	switch {
 	case len(leaves) > 0:
 		var kids []string
 		for _, l := range leaves {
 			kids = append(kids, fmt.Sprintf("%d 0 R", l))
 		}
-		catalog += fmt.Sprintf(" /Names << /EmbeddedFiles << /Kids [%s] >> >>", strings.Join(kids, " "))
+		names = fmt.Sprintf(" /EmbeddedFiles << /Kids [%s] >>", strings.Join(kids, " ")) + names
 	case len(tree) > 0:
-		catalog += " /Names << /EmbeddedFiles << /Names [" + strings.Join(tree, " ") + "] >> >>"
+		names = " /EmbeddedFiles << /Names [" + strings.Join(tree, " ") + "] >>" + names
 	}
-	pageDict := fmt.Sprintf("<< /Type /Page /Parent %d 0 R /MediaBox [0 0 595 842]", pages)
+	if names != "" {
+		catalog += " /Names <<" + names + " >>"
+	}
+	if f.extra != nil {
+		c, p := f.extra(b)
+		catalog += " " + c
+		pageDict += " " + p
+	}
 	if len(af) > 0 {
 		if f.pageAF {
 			pageDict += " /AF [" + strings.Join(af, " ") + "]"
@@ -173,10 +199,13 @@ func (f *fixture) build() []byte {
 		catalog += " /OutputIntents [<< /Type /OutputIntent /S /GTS_PDFA1 /OutputConditionIdentifier (sRGB)" + dest + " >>]"
 	}
 	b.Set(cat, catalog+" >>")
-	b.Set(pages, fmt.Sprintf("<< /Type /Pages /Kids [%d 0 R] /Count 1 >>", page))
+	b.Set(pages, fmt.Sprintf("<< /Type /Pages /Kids [%d 0 R] /Count 1%s >>", page, f.pagesExtra))
 	b.Set(page, pageDict+" >>")
-	info := b.Add("<< /Producer (pdftest) /Title (Facture) /CreationDate (D:20260101000000Z) /ModDate (D:20260101000000Z) >>")
-	b.Trailer = fmt.Sprintf("/Root %d 0 R /Info %d 0 R", cat, info)
+	info := f.info
+	if info == "" {
+		info = testInfo
+	}
+	b.Trailer = fmt.Sprintf("/Root %d 0 R /Info %d 0 R", cat, b.Add(info))
 	if !f.noID {
 		b.Trailer += " /ID [<00112233445566778899AABBCCDDEEFF> <00112233445566778899AABBCCDDEEFF>]"
 	}

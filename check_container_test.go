@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ritoon/factur-x/internal/pdf/pdftest"
 	"github.com/ritoon/factur-x/internal/rules"
 	"github.com/ritoon/factur-x/internal/xmp"
 	"github.com/ritoon/factur-x/invoice"
@@ -15,7 +16,7 @@ import (
 
 // xmpWith returns a valid Factur-X XMP packet modified by fn.
 func xmpWith(fn func(p *xmp.Params)) string {
-	p := xmp.Params{DocumentType: "INVOICE", DocumentFileName: "factur-x.xml", Version: "1.0", ConformanceLevel: "EN 16931", Date: testDate}
+	p := xmp.Params{DocumentType: "INVOICE", DocumentFileName: "factur-x.xml", Version: "1.0", ConformanceLevel: "EN 16931", Date: testDate, DocInfo: testDocInfo}
 	fn(&p)
 	return string(xmp.Merge(nil, p))
 }
@@ -121,7 +122,7 @@ func TestCheckContainer(t *testing.T) {
 		{"bad ModDate", modFile(func(fl *file) { fl.modDate = "2026-11-16" }), "PDF-19"},
 		{"no UF", modFile(func(fl *file) { fl.noUF = true }), "PDF-20"},
 		{"no F", modFile(func(fl *file) { fl.noF = true }), "PDF-20"},
-		{"no fx schema", mod(func(f *fixture) { f.xmp = pdfaOnly }), "PDF-21"},
+		{"no fx schema", mod(func(f *fixture) { f.xmp, f.info = pdfaOnly, "<< >>" }), "PDF-21"},
 		{"ORDER", mod(func(f *fixture) { f.xmp = replaced(f.xmp, ">INVOICE<", ">ORDER<") }), "PDF-22"},
 		{"DocumentFileName", mod(func(f *fixture) { f.xmp = replaced(f.xmp, ">factur-x.xml<", ">invoice.xml<") }), "PDF-23"},
 		{"ConformanceLevel mismatch", mod(func(f *fixture) { f.xmp = replaced(f.xmp, ">EN 16931<", ">BASIC<") }), "PDF-24"},
@@ -153,34 +154,232 @@ func TestCheckContainer(t *testing.T) {
 			})
 		}), "PDF-11,PDF-24"},
 		{"two invoices", mod(func(f *fixture) {
-			f.files = append(f.files, file{name: "xrechnung.xml", data: ciiXML(invoice.URNXRechnung), rel: "Alternative"})
+			f.files = append(f.files, file{name: "xrechnung.xml", data: ciiXML(invoice.URNXRechnung), rel: "Alternative", subtype: "text#2Fxml"})
 		}), "PDF-28"},
 		{"many problems", mod(func(f *fixture) {
 			f.noID, f.noOutputIntent = true, true
 			f.files[0].rel, f.files[0].notInAF, f.files[0].subtype = "", true, ""
 		}), "PDF-06,PDF-08,PDF-12,PDF-15,PDF-16"},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			a, findings, err := CheckContainer(tc.f.build())
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := strings.Join(rulesOf(findings), ","); got != tc.rules {
-				t.Errorf("rules %q, want %q", got, tc.rules)
-				for _, f := range findings {
-					t.Log(f)
-				}
-			}
-			noAttachment := tc.rules == "PDF-01" || tc.rules == "PDF-09"
-			if (a == nil) != noAttachment {
-				t.Errorf("attachment %v", a)
-			}
-			for _, f := range findings {
-				if f.Source != rules.SourcePDF || f.Message == "" || f.Severity != containerSeverity(f.Rule) {
-					t.Errorf("finding %+v", f)
-				}
-			}
+		t.Run(tc.name, func(t *testing.T) { checkContainerRules(t, tc.f, tc.rules) })
+	}
+}
+
+// checkContainerRules checks that CheckContainer reports the rules want
+// (sorted, comma separated) for the fixture f.
+func checkContainerRules(t *testing.T, f *fixture, want string) {
+	t.Helper()
+	a, findings, err := CheckContainer(f.build())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(rulesOf(findings), ","); got != want {
+		t.Errorf("rules %q, want %q", got, want)
+		for _, f := range findings {
+			t.Log(f)
+		}
+	}
+	noAttachment := strings.HasPrefix(want, "PDF-01") || strings.Contains(want, "PDF-09")
+	if (a == nil) != noAttachment {
+		t.Errorf("attachment %v", a)
+	}
+	for _, f := range findings {
+		if f.Source != rules.SourcePDF || f.Message == "" || f.Severity != containerSeverity(f.Rule) {
+			t.Errorf("finding %+v", f)
+		}
+	}
+}
+
+// TestCheckContainerPDFA covers the PDF/A requirements checked without
+// rendering: fonts, JavaScript and actions, /Info and XMP, other embedded
+// files and filters. The catalog is object 1, the page tree object 2 and
+// the page object 3.
+func TestCheckContainerPDFA(t *testing.T) {
+	en := ciiXML(invoice.URNEN16931)
+	mod := func(fn func(f *fixture)) *fixture {
+		f := valid(en)
+		fn(f)
+		return f
+	}
+	// extra returns a valid fixture whose catalog and page get the entries
+	// returned by fn.
+	extra := func(fn func(b *pdftest.Builder) (catalog, page string)) *fixture {
+		return mod(func(f *fixture) { f.extra = fn })
+	}
+	catalog := func(entries string) *fixture {
+		return extra(func(*pdftest.Builder) (string, string) { return entries, "" })
+	}
+	page := func(entries string) *fixture {
+		return extra(func(*pdftest.Builder) (string, string) { return "", entries })
+	}
+	// pageFont returns a valid fixture whose page uses the font written by
+	// fn as /F1.
+	pageFont := func(fn func(b *pdftest.Builder) string) *fixture {
+		return extra(func(b *pdftest.Builder) (string, string) {
+			return "", fmt.Sprintf("/Resources << /Font << /F1 %d 0 R >> >>", b.Add(fn(b)))
 		})
+	}
+	font := func(body string) func(*pdftest.Builder) string {
+		return func(*pdftest.Builder) string { return body }
+	}
+	// descriptor adds a font descriptor whose font program, when key is
+	// set, is in the entry key.
+	descriptor := func(b *pdftest.Builder, key string) int {
+		d := "<< /Type /FontDescriptor /FontName /Font /Flags 32"
+		if key != "" {
+			d += fmt.Sprintf(" /%s %d 0 R", key, b.AddStream("<< >>", []byte("font program")))
+		}
+		return b.Add(d + " >>")
+	}
+	// form adds a form XObject whose resources use a non-embedded font.
+	form := func(b *pdftest.Builder) int {
+		f := b.Add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+		return b.AddStream(fmt.Sprintf("<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] /Resources << /Font << /F1 %d 0 R >> >> >>", f), []byte("BT /F1 1 Tf (a) Tj ET"))
+	}
+	info := func(entries string) *fixture {
+		return mod(func(f *fixture) { f.info = strings.Replace(testInfo, ">>", entries+" >>", 1) })
+	}
+	attachment := func(fl file) *fixture {
+		return mod(func(f *fixture) { f.files = append(f.files, fl) })
+	}
+	notes := func(rel, subtype string) file {
+		return file{name: "notes.txt", data: []byte("notes"), rel: rel, subtype: subtype, modDate: "D:20261116120000+01'00'"}
+	}
+	js := "<< /S /JavaScript /JS (app.alert\\(1\\)) >>"
+
+	for _, tc := range []struct {
+		name  string
+		f     *fixture
+		rules string // expected rules, comma separated
+	}{
+		// PDF-31: embedded fonts.
+		{"standard font not embedded", pageFont(font("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")), "PDF-31"},
+		{"embedded TrueType font", pageFont(func(b *pdftest.Builder) string {
+			return fmt.Sprintf("<< /Type /Font /Subtype /TrueType /BaseFont /ABCDEF+Arial /FontDescriptor %d 0 R >>", descriptor(b, "FontFile2"))
+		}), ""},
+		{"embedded CFF font", pageFont(func(b *pdftest.Builder) string {
+			return fmt.Sprintf("<< /Type /Font /Subtype /Type1 /BaseFont /ABCDEF+Font /FontDescriptor %d 0 R >>", descriptor(b, "FontFile3"))
+		}), ""},
+		{"descriptor without font file", pageFont(func(b *pdftest.Builder) string {
+			return fmt.Sprintf("<< /Type /Font /Subtype /TrueType /BaseFont /Arial /FontDescriptor %d 0 R >>", descriptor(b, ""))
+		}), "PDF-31"},
+		{"embedded composite font", pageFont(func(b *pdftest.Builder) string {
+			cid := b.Add(fmt.Sprintf("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /ABCDEF+Arial /FontDescriptor %d 0 R >>", descriptor(b, "FontFile2")))
+			return fmt.Sprintf("<< /Type /Font /Subtype /Type0 /BaseFont /ABCDEF+Arial /Encoding /Identity-H /DescendantFonts [%d 0 R] >>", cid)
+		}), ""},
+		{"composite font not embedded", pageFont(func(b *pdftest.Builder) string {
+			cid := b.Add(fmt.Sprintf("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /Arial /FontDescriptor %d 0 R >>", descriptor(b, "")))
+			return fmt.Sprintf("<< /Type /Font /Subtype /Type0 /BaseFont /Arial /Encoding /Identity-H /DescendantFonts [%d 0 R] >>", cid)
+		}), "PDF-31"},
+		{"Type 3 font", pageFont(font("<< /Type /Font /Subtype /Type3 /FontBBox [0 0 1 1] /FontMatrix [1 0 0 1 0 0] /CharProcs << >> /Encoding << >> /FirstChar 0 /LastChar 0 /Widths [0] >>")), ""},
+		{"font of a form XObject", extra(func(b *pdftest.Builder) (string, string) {
+			return "", fmt.Sprintf("/Resources << /XObject << /X1 %d 0 R >> >>", form(b))
+		}), "PDF-31"},
+		{"font of an annotation appearance", extra(func(b *pdftest.Builder) (string, string) {
+			return "", fmt.Sprintf("/Annots [<< /Type /Annot /Subtype /FreeText /Rect [0 0 1 1] /AP << /N %d 0 R >> >>]", form(b))
+		}), "PDF-31"},
+		{"inherited resources", mod(func(f *fixture) {
+			f.pagesExtra = " /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >>"
+		}), "PDF-31"},
+		{"font used twice", extra(func(b *pdftest.Builder) (string, string) {
+			f := b.Add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+			return "", fmt.Sprintf("/Resources << /Font << /F1 %d 0 R /F2 %d 0 R >> /XObject << /X1 %d 0 R >> >>", f, f, form(b))
+		}), "PDF-31"},
+
+		// PDF-32 to PDF-34: JavaScript and actions.
+		{"document JavaScript", mod(func(f *fixture) { f.names = " /JavaScript << /Names [(init) " + js + "] >>" }), "PDF-32"},
+		{"JavaScript open action", catalog("/OpenAction " + js), "PDF-33"},
+		{"destination open action", catalog("/OpenAction [3 0 R /Fit]"), ""},
+		{"allowed named action", catalog("/OpenAction << /S /Named /N /NextPage >>"), ""},
+		{"forbidden named action", catalog("/OpenAction << /S /Named /N /Print >>"), "PDF-33"},
+		{"chained ImportData action", catalog("/OpenAction << /S /GoTo /D [3 0 R /Fit] /Next << /S /ImportData /F (data.fdf) >> >>"), "PDF-33"},
+		{"chain of actions", catalog("/OpenAction << /S /GoTo /D [3 0 R /Fit] /Next [<< /S /URI /URI (https://example.com) >> << /S /ResetForm >>] >>"), "PDF-33"},
+		{"Launch link", page("/Annots [<< /Type /Annot /Subtype /Link /Rect [0 0 1 1] /A << /S /Launch /F (calc.exe) >> >>]"), "PDF-33"},
+		{"URI link", page("/Annots [<< /Type /Annot /Subtype /Link /Rect [0 0 1 1] /A << /S /URI /URI (https://example.com) >> >>]"), ""},
+		{"outline action", extra(func(b *pdftest.Builder) (string, string) {
+			root, item := b.Reserve(), b.Reserve()
+			b.Set(root, fmt.Sprintf("<< /Type /Outlines /First %d 0 R /Last %d 0 R /Count 1 >>", item, item))
+			b.Set(item, fmt.Sprintf("<< /Title (Total) /Parent %d 0 R /A %s >>", root, js))
+			return fmt.Sprintf("/Outlines %d 0 R", root), ""
+		}), "PDF-33"},
+		{"catalog additional actions", catalog("/AA << /WC " + js + " >>"), "PDF-34"},
+		{"page additional actions", page("/AA << /O << /S /GoTo /D [3 0 R /Fit] >> >>"), "PDF-34"},
+		{"widget additional actions", extra(func(b *pdftest.Builder) (string, string) {
+			// A field merged with its widget is reported once.
+			w := b.Add("<< /Type /Annot /Subtype /Widget /FT /Tx /T (amount) /Rect [0 0 1 1] /P 3 0 R /AA << /K " + js + " >> >>")
+			return fmt.Sprintf("/AcroForm << /Fields [%d 0 R] >>", w), fmt.Sprintf("/Annots [%d 0 R]", w)
+		}), "PDF-34"},
+		{"field additional actions", extra(func(b *pdftest.Builder) (string, string) {
+			parent, w := b.Reserve(), b.Reserve()
+			b.Set(parent, fmt.Sprintf("<< /FT /Tx /T (amount) /Kids [%d 0 R] /AA << /F %s >> >>", w, js))
+			b.Set(w, fmt.Sprintf("<< /Type /Annot /Subtype /Widget /Parent %d 0 R /Rect [0 0 1 1] /P 3 0 R >>", parent))
+			return fmt.Sprintf("/AcroForm << /Fields [%d 0 R] >>", parent), fmt.Sprintf("/Annots [%d 0 R]", w)
+		}), "PDF-34"},
+		{"no invoice, JavaScript", mod(func(f *fixture) {
+			f.files = nil
+			f.names = " /JavaScript << /Names [(init) " + js + "] >>"
+		}), "PDF-09,PDF-32"},
+
+		// PDF-35: /Info and XMP.
+		{"Info title differs", mod(func(f *fixture) { f.info = strings.Replace(testInfo, "(Facture)", "(Avoir)", 1) }), "PDF-35"},
+		{"Info author not in XMP", info("/Author (Jean Dupont)"), "PDF-35"},
+		{"Info ModDate differs", mod(func(f *fixture) { f.info = strings.Replace(testInfo, "120000+01'00'", "130000+01'00'", 1) }), "PDF-35"},
+		{"Info ModDate in another time zone", mod(func(f *fixture) { f.info = strings.Replace(testInfo, "120000+01'00'", "110000Z", 1) }), ""},
+		{"Info empty subject", info("/Subject ()"), ""},
+		{"Info title in UTF-16", mod(func(f *fixture) {
+			f.info = strings.Replace(testInfo, "(Facture)", "<FEFF0046006100630074007500720065>", 1)
+		}), ""},
+		{"Info producer and creation date differ", mod(func(f *fixture) {
+			f.info = strings.Replace(testInfo, "(pdftest)", "(other)", 1)
+			f.info = strings.Replace(f.info, "(D:20260101000000Z)", "(D:20250101000000Z)", 1)
+		}), "PDF-35,PDF-35"},
+		{"no Info", mod(func(f *fixture) { f.info = "null" }), ""},
+		{"PDF/A-4 Info not checked", mod(func(f *fixture) {
+			f.version, f.info = "2.0", "<< /Title (Avoir) >>"
+			f.xmp = xmpWith(func(p *xmp.Params) { p.PDFAPart = "4" })
+		}), ""},
+
+		// PDF-36, PDF-37: other embedded files.
+		{"other attachment", attachment(notes("Supplement", "text#2Fplain")), ""},
+		{"other attachment without AFRelationship", attachment(notes("", "text#2Fplain")), "PDF-36"},
+		{"other attachment without MIME type", attachment(notes("Supplement", "")), "PDF-37"},
+		{"file attachment annotation", extra(func(b *pdftest.Builder) (string, string) {
+			ef := b.AddStream("<< /Type /EmbeddedFile >>", []byte("notes"))
+			return "", fmt.Sprintf("/Annots [<< /Type /Annot /Subtype /FileAttachment /Rect [0 0 1 1] /FS << /Type /Filespec /F (a.txt) /UF (a.txt) /EF << /F %d 0 R >> >> >>]", ef)
+		}), "PDF-36,PDF-37"},
+
+		// PDF-38: LZWDecode.
+		{"LZW content stream", extra(func(b *pdftest.Builder) (string, string) {
+			return "", fmt.Sprintf("/Contents %d 0 R", b.AddStream("<< /Filter /LZWDecode >>", []byte("data")))
+		}), "PDF-38"},
+		{"LZW image in a filter chain", extra(func(b *pdftest.Builder) (string, string) {
+			im := b.AddStream("<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter [/ASCII85Decode /LZWDecode] >>", []byte("data"))
+			return "", fmt.Sprintf("/Contents [%d 0 R] /Resources << /XObject << /Im1 %d 0 R >> >>", b.AddStream("<< >>", []byte("q 1 0 0 1 0 0 cm /Im1 Do Q")), im)
+		}), "PDF-38"},
+		{"LZW other attachment", attachment(file{name: "notes.txt", data: []byte("notes"), rel: "Supplement", subtype: "text#2Fplain", lzw: true}), "PDF-38"},
+	} {
+		t.Run(tc.name, func(t *testing.T) { checkContainerRules(t, tc.f, tc.rules) })
+	}
+}
+
+func TestCheckContainerPDFALimit(t *testing.T) {
+	f := valid(ciiXML(invoice.URNEN16931))
+	f.extra = func(b *pdftest.Builder) (string, string) {
+		var fonts []string
+		for i := 0; i < maxReported+5; i++ {
+			fonts = append(fonts, fmt.Sprintf("/F%d %d 0 R", i, b.Add(fmt.Sprintf("<< /Type /Font /Subtype /Type1 /BaseFont /Font%d >>", i))))
+		}
+		return "", "/Resources << /Font << " + strings.Join(fonts, " ") + " >> >>"
+	}
+	_, findings, err := CheckContainer(f.build())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != maxReported+1 || findings[maxReported].Message != "5 more occurrences not listed" {
+		t.Errorf("%d findings", len(findings))
+		for _, f := range findings {
+			t.Log(f)
+		}
 	}
 }
 

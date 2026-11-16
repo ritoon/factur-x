@@ -143,6 +143,72 @@ func TestParseErrors(t *testing.T) {
 	}
 }
 
+func TestParseInfoProps(t *testing.T) {
+	const packet = `<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:pdf="http://ns.adobe.com/pdf/1.3/"
+  xmlns:xmp="http://ns.adobe.com/xap/1.0/" pdf:Producer="Producteur &amp; Cie" xmp:CreateDate="2026-01-01T00:00:00Z">
+ <dc:title><rdf:Alt><rdf:li xml:lang="fr">Facture</rdf:li><rdf:li xml:lang="x-default">Invoice</rdf:li></rdf:Alt></dc:title>
+ <dc:description><rdf:Alt><rdf:li xml:lang="de">Rechnung</rdf:li></rdf:Alt></dc:description>
+ <dc:creator><rdf:Seq><rdf:li>Jean</rdf:li><rdf:li>Marie</rdf:li></rdf:Seq></dc:creator>
+ <dc:subject><rdf:Bag><rdf:li>ignored</rdf:li></rdf:Bag></dc:subject>
+ <pdf:Keywords></pdf:Keywords>
+ <xmp:CreatorTool>Writer</xmp:CreatorTool>
+</rdf:Description>
+</rdf:RDF></x:xmpmeta>`
+	info, err := Parse([]byte(packet))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"Title":        "Invoice",
+		"Subject":      "Rechnung",
+		"Author":       "Jean, Marie",
+		"Keywords":     "",
+		"Creator":      "Writer",
+		"Producer":     "Producteur & Cie",
+		"CreationDate": "2026-01-01T00:00:00Z",
+	}
+	if len(info.InfoProps) != len(want) {
+		t.Errorf("InfoProps %q", info.InfoProps)
+	}
+	for k, v := range want {
+		if got, ok := info.InfoProps[k]; !ok || got != v {
+			t.Errorf("%s: %q, want %q", k, got, v)
+		}
+	}
+
+	info, _ = Parse([]byte(zugferd1))
+	if len(info.InfoProps) != 1 || info.InfoProps["Title"] != "Rechnung & Co" {
+		t.Errorf("ZUGFeRD 1.0: %q", info.InfoProps)
+	}
+	info, _ = Parse([]byte(attrForm))
+	if len(info.InfoProps) != 1 || info.InfoProps["ModDate"] != "2026-11-16T12:00:00+01:00" {
+		t.Errorf("attributes: %q", info.InfoProps)
+	}
+}
+
+func TestParseDate(t *testing.T) {
+	cet := time.FixedZone("", 3600)
+	for s, want := range map[string]time.Time{
+		"2026":                          time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		"2026-11":                       time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC),
+		"2026-11-16":                    time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC),
+		"2026-11-16T12:30+01:00":        time.Date(2026, 11, 16, 12, 30, 0, 0, cet),
+		"2026-11-16T12:30:15Z":          time.Date(2026, 11, 16, 12, 30, 15, 0, time.UTC),
+		" 2026-11-16T12:30:15.5+01:00 ": time.Date(2026, 11, 16, 12, 30, 15, 5e8, cet),
+		"2026-11-16T12:30:15":           time.Date(2026, 11, 16, 12, 30, 15, 0, time.UTC),
+	} {
+		if got, ok := ParseDate(s); !ok || !got.Equal(want) {
+			t.Errorf("ParseDate(%q) = %v, %v", s, got, ok)
+		}
+	}
+	for _, s := range []string{"", "16/11/2026", "2026-13-01", "D:20261116"} {
+		if _, ok := ParseDate(s); ok {
+			t.Errorf("ParseDate(%q): no error", s)
+		}
+	}
+}
+
 var params = Params{
 	DocumentType:     "INVOICE",
 	DocumentFileName: "factur-x.xml",
