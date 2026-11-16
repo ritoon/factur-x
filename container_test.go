@@ -354,6 +354,60 @@ func TestExtractTestdata(t *testing.T) {
 	}
 }
 
+func TestSpecificationIDMalformed(t *testing.T) {
+	// More end tags than start tags used to drive the scan depth below zero
+	// and panic (index out of range).
+	for _, doc := range []string{
+		"</a></b><c>",
+		"</a><b>",
+		"</a>",
+		"<a></a></b><c><d><e><f>",
+		"<a/></b><c>",
+	} {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("%q: specificationID panics: %v", doc, r)
+				}
+			}()
+			specificationID([]byte(doc))
+		}()
+	}
+	if root, id := specificationID([]byte("</a></b><c>")); id != "" {
+		t.Errorf("root %q, BT-24 %q", root, id)
+	}
+
+	// The same XML through the public API: an error, not a panic.
+	// CheckContainer leaves the unreadable BT-24 to the XML validation.
+	xml := []byte("</a></b><rsm:CrossIndustryInvoice>")
+	if _, err := Embed(base(pdftest.Options{}), xml, nil); err == nil {
+		t.Error("Embed: no error")
+	}
+	if a, _, err := CheckContainer(valid(xml).build()); err != nil || a == nil {
+		t.Errorf("CheckContainer: %+v, %v", a, err)
+	}
+}
+
+// FuzzSpecificationID checks that reading BT-24 never panics, whatever the
+// attachment holds:
+//
+//	go test -run '^$' -fuzz FuzzSpecificationID .
+func FuzzSpecificationID(f *testing.F) {
+	for _, urn := range []string{invoice.URNMinimum, invoice.URNEN16931, invoice.URNExtended} {
+		f.Add(ciiXML(urn))
+	}
+	f.Add(zf1XML("BASIC"))
+	f.Add([]byte("</a></b><c>"))
+	for _, name := range []string{"EN16931_Einfach.cii.xml", "XRECHNUNG_Einfach.cii.xml"} {
+		if data, err := os.ReadFile(filepath.Join("testdata", name)); err == nil {
+			f.Add(data)
+		}
+	}
+	f.Fuzz(func(t *testing.T, data []byte) {
+		specificationID(data)
+	})
+}
+
 // base returns a PDF/A-ready document without attachment nor XMP.
 func base(opts pdftest.Options) []byte {
 	return (&fixture{opts: opts}).build()
