@@ -3,7 +3,7 @@
 Package Go pour les factures électroniques hybrides **Factur-X**, **ZUGFeRD** et **XRechnung**. Il prend un PDF déjà produit par votre application et y ajoute ce que la norme exige ; il relit et valide n'importe quelle facture de ces formats, quel que soit son profil.
 
 - Pur Go, bibliothèque standard uniquement : pas de CGO, pas de JVM, pas de binaire externe, pas d'appel réseau.
-- Factur-X 1.0x = ZUGFeRD 2.x, syntaxe CII, profils MINIMUM, BASIC WL, BASIC, EN 16931, EXTENDED, XRECHNUNG et EXTENDED-CTC-FR.
+- Factur-X 1.0x = ZUGFeRD 2.x, syntaxe CII, profils MINIMUM, BASIC WL, BASIC, EN 16931, EXTENDED, XRECHNUNG et EXTENDED-CTC-FR ; schémas et règles de profil à jour de Factur-X 1.09.2 (ZUGFeRD 2.5.2).
 - Validation complète sans Java : schéma du profil, règles EN 16931, règles de profil Factur-X, règles françaises BR-FR (réforme 2026) et allemandes BR-DE (XRechnung), contrôle du conteneur PDF.
 - Licence MIT.
 
@@ -187,9 +187,9 @@ warning [PDF] PDF-06: the catalog has no PDF/A output intent (/S /GTS_PDFA1) (ca
 
 | Jeu | Règles | Référence |
 |---|---|---|
-| Schéma | 11 contrôles (éléments, ordre, cardinalités, types, listes fermées) | XSD Factur-X 1.08, compilés en tables Go |
+| Schéma | 11 contrôles (éléments, ordre, cardinalités, types, listes fermées) | XSD Factur-X 1.09.2 (ZUGFeRD 2.5.2), compilés en tables Go |
 | EN 16931 | 793 assertions (328 erreurs, 465 avertissements) : BR, BR-CO, BR-CL, BR-DEC, règles par catégorie de TVA (BR-S, BR-Z, BR-E, BR-AE, BR-IC, BR-IG, BR-IP, BR-G, BR-O, BR-AF, BR-AG, BR-B), CII-SR, CII-DT | Artefacts CEN TC 434 v1.3.17 (CII) |
-| Factur-X | 162 assertions : identification du profil (BT-24), assertions des schematrons MINIMUM et BASIC WL, éléments non utilisés par profil | Schematrons Factur-X 1.08 |
+| Factur-X | 229 règles (207 erreurs, 22 avertissements) : identification du profil (BT-24), assertions des schematrons MINIMUM et BASIC WL, éléments non utilisés par profil ; règles BR-FXEXT d'EXTENDED et EXTENDED-CTC-FR (sous-types et regroupements de lignes, totaux avec tolérance, frais logistiques et frais pour compte de tiers, ventilation de TVA par catégorie, taux et motif d'exonération) | Schematrons Factur-X 1.09 (MINIMUM, BASIC WL) ; XSLT EXTENDED Factur-X 1.09.2 (ZUGFeRD 2.5.2) |
 | France (BR-FR) | 59 règles, 170 assertions : SIREN/SIRET, adresses électroniques, mentions obligatoires, cadres de facturation, multi-vendeurs ; 3 contrôles des profils admis (FR-PROFILE) | Schematron FNFE-MPE v1.4.0.04 |
 | Allemagne (BR-DE) | 52 assertions (BR-DE, BR-DE-CVD, BR-DEX, BR-TMP) ; contrôle des profils acceptés par le BMF (DE-PROFILE-01) | Schematron KoSIT XRechnung 3.0.2 ; BMF |
 | Chorus Pro (B2G) | 8 contrôles (CPRO-01 à CPRO-08) : SIRET de la structure publique, code service, numéro d'engagement, type de document, numéro de facture | Spécifications externes Chorus Pro (annexe EDI V4.23) |
@@ -255,8 +255,8 @@ Les tests de base n'ont besoin que du dépôt ; la CI ([.github/workflows/ci.yml
 |---|---|---|
 | `FX_CORPUS` | Clone de [ZUGFeRD/corpus](https://github.com/ZUGFeRD/corpus) | Extraction et contrôle des PDF du corpus |
 | `FX_CORPUS_XML` | XML extraits du corpus | Lecture, validation et aller-retour lecture → écriture |
-| `FX_XSD` | XSD du paquet Factur-X 1.08, un dossier par profil | Le XML écrit par `cii.Marshal` est vérifié contre les XSD d'origine |
-| `FX_XSD_DIR` | Paquet Factur-X 1.08 | Les tables de schéma régénérées sont identiques à celles du dépôt |
+| `FX_XSD` | XSD Factur-X 1.09.2, un dossier par profil (`MINIMUM`, `BASICWL`, `BASIC`, `EN16931`, `EXTENDED`) | Le XML écrit par `cii.Marshal` est vérifié contre les XSD d'origine |
+| `FX_XSD_DIR` | XSD Factur-X 1.09.2 : paquet FeRD ZUGFeRD 2.5.2 (BASIC, EN 16931, EXTENDED) et paquet FNFE-MPE 1.09 (MINIMUM, BASIC WL, que le corrigendum 1.09.2 ne modifie pas) | Les tables de schéma régénérées sont identiques à celles du dépôt |
 | `FX_KOSIT` | Clone de [itplr-kosit/xrechnung-testsuite](https://github.com/itplr-kosit/xrechnung-testsuite) | Toutes les factures CII de la suite de tests KoSIT passent les règles BR-DE |
 
 ## Licence et provenance
@@ -270,6 +270,8 @@ Les règles sont réécrites en Go à partir des artefacts officiels, qui ne son
 | Artefacts de validation EN 16931 (CEN TC 434, ConnectingEurope/eInvoicing-EN16931) | 1.3.17 | EUPL-1.2 |
 | Schematron BR-FR (FNFE-MPE, fnfempe/France_RFE) | 1.4.0.04 | EUPL-1.2 |
 | Schematron XRechnung (KoSIT) | 3.0.2 | Apache-2.0 |
-| Schémas et schematrons Factur-X (FNFE-MPE / FeRD) | 1.08 | Apache-2.0 |
+| Schémas XSD Factur-X (FNFE-MPE / FeRD) : BASIC, EN 16931 et EXTENDED de ZUGFeRD 2.5.2, MINIMUM et BASIC WL de Factur-X 1.09 | 1.09.2 | Apache-2.0 |
+| Schematrons Factur-X MINIMUM et BASIC WL (FNFE-MPE / FeRD) | 1.09 | Apache-2.0 |
+| XSLT de validation EXTENDED (FeRD, ZUGFeRD 2.5.2) | 1.09.2 | Apache-2.0 |
 
 Les fichiers de `testdata/` à la racine viennent du corpus ZUGFeRD (Apache-2.0), voir [testdata/NOTICE](testdata/NOTICE). Les factures de test des règles françaises et allemandes ont été écrites à la main, avec des parties fictives.
