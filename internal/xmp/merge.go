@@ -15,8 +15,15 @@ type Params struct {
 	DocumentFileName string // fx:DocumentFileName, "factur-x.xml"
 	Version          string // fx:Version, "1.0"
 	ConformanceLevel string // fx:ConformanceLevel, "EN 16931"
-	// PDFAConformance is written when the packet has no pdfaid:conformance;
-	// "B" when empty. An existing conformance letter is kept.
+	// PDFAPart is the PDF/A part to declare: "3" or "4". When it is empty
+	// (or another value), a packet that declares part 4 keeps it and any
+	// other packet gets part 3.
+	PDFAPart string
+	// PDFAConformance is the conformance level written when the packet has
+	// none that is valid for the part declared (A, B or U for PDF/A-3, F or E
+	// for PDF/A-4, the levels that allow embedded files). When it is empty or
+	// not valid either: "B" for PDF/A-3, "F" for PDF/A-4. A valid existing
+	// level is kept.
 	PDFAConformance string
 	// Date, when not zero, is written to xmp:ModifyDate and
 	// xmp:MetadataDate.
@@ -45,12 +52,16 @@ type edit struct {
 }
 
 // Merge returns an XMP packet holding the properties of existing (which may
-// be empty), with the PDF/A part set to 3, the hybrid-invoice properties of
-// p, their PDF/A extension schema description, and the dates of p.
+// be empty), with the PDF/A identification of a hybrid invoice (part 3, or
+// part 4 with its revision, see Params.PDFAPart), the hybrid-invoice
+// properties of p, their PDF/A extension schema description, and the dates
+// of p.
 //
 // Properties of the hybrid-invoice namespaces, pdfaid:part,
-// pdfaid:conformance, xmp:ModifyDate and xmp:MetadataDate are replaced, as
-// are the extension schema descriptions of the hybrid-invoice namespaces.
+// pdfaid:conformance, pdfaid:rev, xmp:ModifyDate and xmp:MetadataDate are
+// replaced, as are the extension schema descriptions of the hybrid-invoice
+// namespaces. An existing pdfaid:rev is kept for part 4; part 4 without one
+// gets "2020", the edition of ISO 19005-4.
 // Everything else is kept byte for byte. A packet that cannot be parsed is
 // replaced by a new one.
 func Merge(existing []byte, p Params) []byte {
@@ -77,11 +88,7 @@ func fresh(p Params) []byte {
 	b.WriteString("<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\n")
 	b.WriteString("  <rdf:RDF xmlns:rdf=\"" + nsRDF + "\">\n")
 	present := map[string]bool{}
-	conf := p.PDFAConformance
-	if conf == "" {
-		conf = "B"
-	}
-	writeDescriptions(&b, "rdf", "", conf, p, present, true)
+	writeDescriptions(&b, "rdf", "", identify(pdfaID{}, p), p, present, true)
 	b.WriteString("  </rdf:RDF>\n</x:xmpmeta>\n<?xpacket end=\"w\"?>")
 	return []byte(b.String())
 }
@@ -90,7 +97,7 @@ func fresh(p Params) []byte {
 func managed(space, local string) bool {
 	switch space {
 	case nsPDFAID:
-		return local == "part" || local == "conformance"
+		return local == "part" || local == "conformance" || local == "rev"
 	case nsXMP:
 		return local == "ModifyDate" || local == "MetadataDate"
 	}
@@ -113,8 +120,8 @@ func mergeInto(data []byte, rdf *node, p Params) ([]byte, bool) {
 		edits   []edit
 		about   string
 		gotAbt  bool
-		conf    string
-		bag     *node // pdfaExtension:schemas container where the fx schema goes
+		found   pdfaID // PDF/A identification of the packet
+		bag     *node  // pdfaExtension:schemas container where the fx schema goes
 		present = map[string]bool{}
 	)
 	for _, d := range rdf.children {
@@ -131,8 +138,8 @@ func mergeInto(data []byte, rdf *node, p Params) ([]byte, bool) {
 				continue
 			}
 			local := string(a.local)
-			if a.space == nsPDFAID && local == "conformance" {
-				conf = strings.TrimSpace(unescape(a.value))
+			if a.space == nsPDFAID {
+				found.set(local, unescape(a.value))
 			}
 			if managed(a.space, local) {
 				dEdits = append(dEdits, edit{start: trimLeft(data, a.start), end: a.end})
@@ -143,8 +150,8 @@ func mergeInto(data []byte, rdf *node, p Params) ([]byte, bool) {
 		}
 		for _, c := range d.children {
 			local := string(c.local)
-			if c.space == nsPDFAID && local == "conformance" {
-				conf = strings.TrimSpace(c.text(data))
+			if c.space == nsPDFAID {
+				found.set(local, c.text(data))
 			}
 			if managed(c.space, local) {
 				dEdits = append(dEdits, edit{start: trimLeft(data, c.start), end: c.end})
@@ -175,16 +182,9 @@ func mergeInto(data []byte, rdf *node, p Params) ([]byte, bool) {
 			edits = append(edits, dEdits...)
 		}
 	}
-	if conf == "" {
-		conf = p.PDFAConformance
-	}
-	if conf == "" {
-		conf = "B"
-	}
-
 	var b strings.Builder
 	b.WriteString("\n")
-	writeDescriptions(&b, rdfPrefix, about, conf, p, present, bag == nil)
+	writeDescriptions(&b, rdfPrefix, about, identify(found, p), p, present, bag == nil)
 	ins := strings.TrimSuffix(b.String(), "\n") + indentBefore(data, rdf.endStart)
 	edits = append(edits, edit{start: trimLeft(data, rdf.endStart), end: rdf.endStart, text: ins})
 	if bag != nil {
@@ -199,6 +199,64 @@ func mergeInto(data []byte, rdf *node, p Params) ([]byte, bool) {
 		}
 	}
 	return apply(data, edits), true
+}
+
+// pdfaID is a PDF/A identification: pdfaid:part, pdfaid:conformance and
+// pdfaid:rev.
+type pdfaID struct {
+	part, conf, rev string
+}
+
+// set records a pdfaid property read from a packet.
+func (id *pdfaID) set(local, value string) {
+	value = strings.TrimSpace(value)
+	switch local {
+	case "part":
+		id.part = value
+	case "conformance":
+		id.conf = value
+	case "rev":
+		id.rev = value
+	}
+}
+
+// allowsEmbedding reports whether conformance level conf of PDF/A part allows
+// embedded files of any type, such as the invoice XML: all levels of
+// PDF/A-3, levels F and E of PDF/A-4 (plain PDF/A-4 only allows embedded
+// PDF/A files).
+func allowsEmbedding(part, conf string) bool {
+	if part == "4" {
+		return conf == "F" || conf == "E"
+	}
+	return conf == "A" || conf == "B" || conf == "U"
+}
+
+// identify returns the PDF/A identification to write, from the one found
+// in the packet and the parameters.
+func identify(found pdfaID, p Params) pdfaID {
+	id := found
+	switch {
+	case p.PDFAPart == "3" || p.PDFAPart == "4":
+		id.part = p.PDFAPart
+	case id.part != "4":
+		id.part = "3"
+	}
+	switch {
+	case allowsEmbedding(id.part, id.conf):
+	case allowsEmbedding(id.part, p.PDFAConformance):
+		id.conf = p.PDFAConformance
+	case id.part == "4":
+		id.conf = "F"
+	default:
+		id.conf = "B"
+	}
+	switch {
+	case id.part != "4":
+		id.rev = ""
+	case id.rev == "":
+		id.rev = "2020"
+	}
+	return id
 }
 
 // schemaNS returns the pdfaSchema:namespaceURI of an extension schema li.
@@ -263,7 +321,7 @@ func escape(s string) string {
 // writeDescriptions writes the managed properties: one rdf:Description with
 // the simple properties and, when withSchema is set, one with the extension
 // schema description.
-func writeDescriptions(b *strings.Builder, r, about, conf string, p Params, present map[string]bool, withSchema bool) {
+func writeDescriptions(b *strings.Builder, r, about string, id pdfaID, p Params, present map[string]bool, withSchema bool) {
 	has := func(space, local string) bool { return present[space+" "+local] }
 	ab := escape(about)
 	open := func(ns ...string) {
@@ -303,8 +361,11 @@ func writeDescriptions(b *strings.Builder, r, about, conf string, p Params, pres
 	}
 	ns = append(ns, "fx", p.NamespaceURI)
 	open(ns...)
-	prop("pdfaid:part", "3")
-	prop("pdfaid:conformance", conf)
+	prop("pdfaid:part", id.part)
+	if id.rev != "" {
+		prop("pdfaid:rev", id.rev)
+	}
+	prop("pdfaid:conformance", id.conf)
 	if needXMP {
 		if !p.Date.IsZero() {
 			d := FormatDate(p.Date)

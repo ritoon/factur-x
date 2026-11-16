@@ -64,7 +64,8 @@ type Metadata struct {
 	Version          string // "1.0"
 	ConformanceLevel string // "EN 16931"
 	PDFAPart         int    // pdfaid:part; 0 when absent or not a number
-	PDFAConformance  string // pdfaid:conformance ("B")
+	PDFAConformance  string // pdfaid:conformance ("B"; "F" or "E" for PDF/A-4)
+	PDFARev          string // pdfaid:rev, the year of the PDF/A-4 edition ("2020"); "" when absent
 }
 
 // Attachment names, in order of preference.
@@ -394,7 +395,7 @@ func metadataOf(info *xmp.Info) *Metadata {
 	if info == nil {
 		return nil
 	}
-	m := &Metadata{PDFAConformance: strings.TrimSpace(info.PDFAConformance)}
+	m := &Metadata{PDFAConformance: strings.TrimSpace(info.PDFAConformance), PDFARev: strings.TrimSpace(info.PDFARev)}
 	m.PDFAPart, _ = strconv.Atoi(strings.TrimSpace(info.PDFAPart))
 	if inv := info.Invoice; inv != nil {
 		m.NamespaceURI = inv.NamespaceURI
@@ -646,8 +647,11 @@ type EmbedOptions struct {
 // are (existing signatures stay valid) and followed by the embedded file, its
 // file specification (listed in the catalog /AF array and in the
 // EmbeddedFiles name tree), a new version of the catalog and an XMP
-// metadata stream merged from the existing one: PDF/A part 3, the
-// hybrid-invoice (fx) properties and their PDF/A extension schema. An
+// metadata stream merged from the existing one: the PDF/A identification,
+// the hybrid-invoice (fx) properties and their PDF/A extension schema. The
+// document is declared PDF/A-4f when it is a PDF 2.0 file or already
+// declares PDF/A-4 (level E is kept), and PDF/A-3 otherwise, keeping the
+// existing conformance level when it is A, B or U (B by default). An
 // attachment of the same name and any other invoice attachment
 // (factur-x.xml, xrechnung.xml, zugferd-invoice.xml) are replaced: the
 // result carries a single invoice. Other attachments are kept.
@@ -818,9 +822,15 @@ func Embed(pdfData, xml []byte, opts *EmbedOptions) ([]byte, error) {
 		}
 	}
 
-	// XMP metadata, merged with the existing packet.
+	// XMP metadata, merged with the existing packet. A PDF 2.0 file cannot
+	// be PDF/A-3 (based on PDF 1.7): it is declared PDF/A-4.
 	existing, _ := c.xmpPacket()
+	var part string
+	if !versionLess(c.version(), "2.0") {
+		part = "4"
+	}
 	packet := xmp.Merge(existing, xmp.Params{
+		PDFAPart:         part,
 		NamespaceURI:     xmp.NSFacturX,
 		DocumentType:     o.DocumentType,
 		DocumentFileName: o.Filename,

@@ -23,8 +23,8 @@ var ContainerCatalog = []rules.RuleInfo{
 	{ID: "PDF-01", Severity: rules.Error, Description: "The PDF is not encrypted (PDF/A forbids encryption; the attachment cannot be read)."},
 	{ID: "PDF-02", Severity: rules.Error, Description: "The document catalog has an XMP metadata stream (/Metadata)."},
 	{ID: "PDF-03", Severity: rules.Error, Description: "The XMP metadata is a readable RDF/XML packet."},
-	{ID: "PDF-04", Severity: rules.Error, Description: "The XMP metadata declares PDF/A-3 (pdfaid:part is 3)."},
-	{ID: "PDF-05", Severity: rules.Error, Description: "The XMP metadata declares a PDF/A conformance level (pdfaid:conformance is A, B or U)."},
+	{ID: "PDF-04", Severity: rules.Error, Description: "The XMP metadata declares PDF/A-3 or PDF/A-4 (pdfaid:part is 3 or 4), the parts that allow embedded XML files."},
+	{ID: "PDF-05", Severity: rules.Error, Description: "The XMP metadata declares a PDF/A conformance level that allows embedded XML files (pdfaid:conformance is A, B or U for PDF/A-3, F or E for PDF/A-4)."},
 	{ID: "PDF-06", Severity: rules.Warning, Description: "The catalog has a PDF/A output intent (/OutputIntents with /S /GTS_PDFA1). PDF/A requires it as soon as a device-dependent colour space is used, which is not analysed here."},
 	{ID: "PDF-07", Severity: rules.Error, Description: "The PDF/A output intent has an ICC profile (/DestOutputProfile stream)."},
 	{ID: "PDF-08", Severity: rules.Error, Description: "The trailer has a file identifier (/ID), as PDF/A requires."},
@@ -48,6 +48,8 @@ var ContainerCatalog = []rules.RuleInfo{
 	{ID: "PDF-26", Severity: rules.Warning, Description: "The XMP Version of the hybrid-invoice schema is set (\"1.0\" for Factur-X)."},
 	{ID: "PDF-27", Severity: rules.Warning, Description: "The XMP namespace matches the XML syntax: Factur-X or ZUGFeRD 2.0 for CrossIndustryInvoice, ZUGFeRD 1.0 for CrossIndustryDocument."},
 	{ID: "PDF-28", Severity: rules.Error, Description: "The PDF has a single invoice attachment: no other embedded file is named factur-x.xml, xrechnung.xml or zugferd-invoice.xml."},
+	{ID: "PDF-29", Severity: rules.Warning, Description: "A PDF/A-4 declaration gives the edition of ISO 19005-4 it follows (pdfaid:rev, a four-digit year: 2020)."},
+	{ID: "PDF-30", Severity: rules.Warning, Description: "The PDF version matches the declared PDF/A part: PDF 1.7 or earlier for PDF/A-3, PDF 2.0 for PDF/A-4."},
 }
 
 // containerSeverity returns the severity of a rule of ContainerCatalog.
@@ -76,9 +78,9 @@ func (k *containerCheck) add(id, path, format string, args ...any) {
 }
 
 // CheckContainer checks the PDF container of a hybrid invoice: the PDF/A-3
-// identification and XMP metadata, the invoice attachment and its file
-// specification, and the consistency of the XMP hybrid-invoice schema with
-// the attachment and its profile (BT-24). The rules are listed in
+// or PDF/A-4 identification and XMP metadata, the invoice attachment and its
+// file specification, and the consistency of the XMP hybrid-invoice schema
+// with the attachment and its profile (BT-24). The rules are listed in
 // ContainerCatalog; every finding has Source rules.SourcePDF.
 //
 // The returned attachment is the one Extract returns, or nil when the PDF is
@@ -139,20 +141,7 @@ func (k *containerCheck) document(c *container) *xmp.Info {
 		info = nil
 	}
 	if info != nil {
-		switch part := strings.TrimSpace(info.PDFAPart); part {
-		case "3":
-		case "":
-			k.add("PDF-04", "XMP pdfaid:part", "pdfaid:part is missing: the document does not declare PDF/A-3")
-		default:
-			k.add("PDF-04", "XMP pdfaid:part", "pdfaid:part is %q, not 3: PDF/A-%s does not allow embedded XML files", part, part)
-		}
-		switch conf := strings.TrimSpace(info.PDFAConformance); conf {
-		case "A", "B", "U":
-		case "":
-			k.add("PDF-05", "XMP pdfaid:conformance", "pdfaid:conformance is missing")
-		default:
-			k.add("PDF-05", "XMP pdfaid:conformance", "pdfaid:conformance is %q, not A, B or U", conf)
-		}
+		k.identification(c, info)
 	}
 
 	found := false
@@ -180,6 +169,70 @@ func (k *containerCheck) document(c *container) *xmp.Info {
 		k.add("PDF-08", "trailer /ID", "the trailer has no file identifier (/ID array of two strings)")
 	}
 	return info
+}
+
+// identification checks the PDF/A identification of the XMP metadata
+// against what a hybrid invoice needs: PDF/A-3 (any level), or PDF/A-4 at
+// level F or E, which allow embedded files of any type. Plain PDF/A-4 only
+// allows embedded PDF/A files.
+func (k *containerCheck) identification(c *container, info *xmp.Info) {
+	part := strings.TrimSpace(info.PDFAPart)
+	switch part {
+	case "3", "4":
+	case "":
+		k.add("PDF-04", "XMP pdfaid:part", "pdfaid:part is missing: the document declares neither PDF/A-3 nor PDF/A-4")
+	default:
+		k.add("PDF-04", "XMP pdfaid:part", "pdfaid:part is %q, not 3 or 4: PDF/A-%s does not allow embedded XML files", part, part)
+	}
+
+	conf := strings.TrimSpace(info.PDFAConformance)
+	if part == "4" {
+		switch conf {
+		case "F", "E":
+		case "":
+			k.add("PDF-05", "XMP pdfaid:conformance", "pdfaid:conformance is missing: plain PDF/A-4 only allows embedded PDF/A files; an XML attachment needs PDF/A-4f (F) or PDF/A-4e (E)")
+		default:
+			k.add("PDF-05", "XMP pdfaid:conformance", "pdfaid:conformance is %q; the PDF/A-4 levels that allow an XML attachment are F and E", conf)
+		}
+		switch rev := strings.TrimSpace(info.PDFARev); {
+		case rev == "":
+			k.add("PDF-29", "XMP pdfaid:rev", "pdfaid:rev is missing: a PDF/A-4 file gives the year of the ISO 19005-4 edition it follows (2020)")
+		case !isYear(rev):
+			k.add("PDF-29", "XMP pdfaid:rev", "pdfaid:rev is %q, not a four-digit year", rev)
+		}
+	} else {
+		switch conf {
+		case "A", "B", "U":
+		case "":
+			k.add("PDF-05", "XMP pdfaid:conformance", "pdfaid:conformance is missing")
+		default:
+			k.add("PDF-05", "XMP pdfaid:conformance", "pdfaid:conformance is %q, not A, B or U", conf)
+		}
+	}
+
+	v, where := c.version(), "header"
+	if v != c.r.Version() {
+		where = "catalog /Version"
+	}
+	switch {
+	case part == "3" && !versionLess(v, "2.0"):
+		k.add("PDF-30", where, "the PDF version is %s, but PDF/A-3 is based on PDF 1.7: a PDF 2.0 file can only be PDF/A-4", v)
+	case part == "4" && versionLess(v, "2.0"):
+		k.add("PDF-30", where, "the PDF version is %s, but PDF/A-4 is based on PDF 2.0", v)
+	}
+}
+
+// isYear reports whether s is made of four digits.
+func isYear(s string) bool {
+	if len(s) != 4 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // attachment checks the file specification and the embedded file stream.

@@ -23,7 +23,7 @@ Go 1.24 ou plus récent.
 
 ### Créer une facture Factur-X
 
-Votre application produit le PDF visuel (idéalement en PDF/A-3) ; le package écrit le XML CII du profil voulu et l'injecte.
+Votre application produit le PDF visuel (idéalement en PDF/A-3, ou en PDF/A-4 pour un PDF 2.0) ; le package écrit le XML CII du profil voulu et l'injecte.
 
 ```go
 d := invoice.MustDecimal
@@ -54,7 +54,7 @@ pdf, err := facturx.Create(host, inv, &facturx.CreateOptions{
 
 - `Calculate` remplit les montants que la norme déduit des autres (BT-131, BT-106 à BT-115, ventilation BG-23), en décimaux exacts.
 - Avec `Validate`, `Create` refuse d'injecter un XML qui a des erreurs et renvoie un `*facturx.ValidationError` qui porte le rapport complet.
-- L'injection se fait par mise à jour incrémentale : les octets d'origine sont conservés, une signature existante reste valide. Le XMP est fusionné avec l'existant (PDF/A-3, propriétés `fx`, schéma d'extension).
+- L'injection se fait par mise à jour incrémentale : les octets d'origine sont conservés, une signature existante reste valide. Le XMP est fusionné avec l'existant (identification PDF/A, propriétés `fx`, schéma d'extension) : un PDF 2.0 ou un hôte déjà PDF/A-4 est déclaré PDF/A-4f (le niveau E est conservé), les autres PDF/A-3.
 
 L'exemple complet, avec les mentions obligatoires de la réforme française, est dans [example_test.go](example_test.go).
 
@@ -138,7 +138,7 @@ warning [PDF] PDF-06: the catalog has no PDF/A output intent (/S /GTS_PDFA1) (ca
 | Factur-X | 162 assertions : identification du profil (BT-24), assertions des schematrons MINIMUM et BASIC WL, éléments non utilisés par profil | Schematrons Factur-X 1.08 |
 | France (BR-FR) | 59 règles, 170 assertions : SIREN/SIRET, adresses électroniques, mentions obligatoires, cadres de facturation, multi-vendeurs | Schematron FNFE-MPE v1.4.0.04 |
 | Allemagne (BR-DE) | 52 assertions (BR-DE, BR-DE-CVD, BR-DEX, BR-TMP) | Schematron KoSIT XRechnung 3.0.2 |
-| Conteneur PDF | 28 contrôles (PDF-01 à PDF-28) : PDF/A-3 déclaré, XMP `fx` cohérent avec le XML, pièce jointe, `/AF`, `/AFRelationship`, type MIME, chiffrement | Spécification Factur-X 1.08, ISO 19005-3 |
+| Conteneur PDF | 30 contrôles (PDF-01 à PDF-30) : PDF/A-3 ou PDF/A-4f déclaré, cohérent avec la version PDF, XMP `fx` cohérent avec le XML, pièce jointe, `/AF`, `/AFRelationship`, type MIME, chiffrement | Spécification Factur-X 1.08, ISO 19005-3 et 19005-4 |
 
 Les messages sont ceux des artefacts officiels. Les listes de codes (pays, devises, unités, schémas d'identifiants, motifs d'exonération…) sont embarquées.
 
@@ -154,7 +154,7 @@ Le lecteur XML est lui aussi écrit pour ce package : un seul passage sur les oc
 
 ## Limites
 
-- **Pas de conversion PDF/A.** `Embed` déclare PDF/A-3 dans le XMP mais ne touche ni aux polices, ni aux espaces de couleur, ni aux output intents : le PDF hôte doit déjà respecter PDF/A-2 ou PDF/A-3 (polices incorporées, output intent), ce que la plupart des générateurs savent faire sur option. `Check` signale ce qui manque.
+- **Pas de conversion PDF/A.** `Embed` déclare PDF/A-3 (ou PDF/A-4f pour un PDF 2.0) dans le XMP mais ne touche ni aux polices, ni aux espaces de couleur, ni aux output intents : le PDF hôte doit déjà respecter PDF/A-2, PDF/A-3 ou PDF/A-4 (polices incorporées, output intent), ce que la plupart des générateurs savent faire sur option. `Check` signale ce qui manque.
 - **Pas d'UBL.** XRechnung et la réforme française acceptent aussi l'UBL ; seule la syntaxe CII est traitée.
 - **PDF chiffrés** : signalés (PDF-01), pas déchiffrés.
 - **ZUGFeRD 1.0** : le XMP est reconnu, le XML (syntaxe CII antérieure à D16B) n'est pas lu.

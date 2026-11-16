@@ -51,6 +51,7 @@ type Info struct {
 	About           string // rdf:about of the first rdf:Description
 	PDFAPart        string // pdfaid:part, "" when absent
 	PDFAConformance string // pdfaid:conformance, "" when absent
+	PDFARev         string // pdfaid:rev, the year of the PDF/A-4 edition ("2020"), "" when absent
 	Invoice         *Invoice
 	Schemas         []Schema // PDF/A extension schemas (pdfaExtension:schemas)
 	ModifyDate      string   // xmp:ModifyDate
@@ -155,6 +156,8 @@ func (in *Info) setProp(invoices map[string]*Invoice, space, local, value string
 			in.PDFAPart = value
 		case "conformance":
 			in.PDFAConformance = value
+		case "rev":
+			in.PDFARev = value
 		}
 	case space == nsXMP:
 		switch local {

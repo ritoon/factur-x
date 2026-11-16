@@ -399,6 +399,60 @@ func TestEmbedDeterministic(t *testing.T) {
 	}
 }
 
+// pdfaPacket returns an XMP packet holding only a PDF/A identification.
+func pdfaPacket(props string) string {
+	return `<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:Description rdf:about="" xmlns:pdfaid="http://www.aiim.org/pdfa/ns/id/">` + props + `</rdf:Description>
+</rdf:RDF></x:xmpmeta>`
+}
+
+func TestEmbedPDFAPart(t *testing.T) {
+	const (
+		a4f = "<pdfaid:part>4</pdfaid:part><pdfaid:rev>2020</pdfaid:rev><pdfaid:conformance>F</pdfaid:conformance>"
+		a4e = "<pdfaid:part>4</pdfaid:part><pdfaid:rev>2020</pdfaid:rev><pdfaid:conformance>E</pdfaid:conformance>"
+	)
+	x := ciiXML(invoice.URNEN16931)
+	for _, tc := range []struct {
+		name            string
+		version, packet string
+		part            int
+		conf, rev       string
+		rules           string // findings of CheckContainer on the result
+	}{
+		{"PDF/A-4f", "2.0", pdfaPacket(a4f), 4, "F", "2020", ""},
+		{"PDF/A-4e", "2.0", pdfaPacket(a4e), 4, "E", "2020", ""},
+		{"PDF/A-4, no level nor rev", "2.0", pdfaPacket("<pdfaid:part>4</pdfaid:part>"), 4, "F", "2020", ""},
+		{"PDF 2.0, no XMP", "2.0", "", 4, "F", "2020", ""},
+		{"PDF 2.0 declared PDF/A-3b", "2.0", pdfaPacket("<pdfaid:part>3</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance>"), 4, "F", "2020", ""},
+		{"PDF/A-2u", "1.7", pdfaPacket("<pdfaid:part>2</pdfaid:part><pdfaid:conformance>U</pdfaid:conformance>"), 3, "U", "", ""},
+		{"PDF 1.7, no XMP", "", "", 3, "B", "", ""},
+		// The declaration of the host is kept; the version mismatch is reported.
+		{"PDF 1.7 declared PDF/A-4f", "1.7", pdfaPacket(a4f), 4, "F", "2020", "PDF-30"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			in := (&fixture{version: tc.version, xmp: tc.packet}).build()
+			out, err := Embed(in, x, &EmbedOptions{ModDate: testDate})
+			if err != nil {
+				t.Fatal(err)
+			}
+			a, findings, err := CheckContainer(out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Join(rulesOf(findings), ","); got != tc.rules {
+				t.Errorf("rules %q, want %q", got, tc.rules)
+				for _, f := range findings {
+					t.Log(f)
+				}
+			}
+			m := a.Metadata
+			if m == nil || m.PDFAPart != tc.part || m.PDFAConformance != tc.conf || m.PDFARev != tc.rev {
+				t.Errorf("metadata %+v, want part %d, conformance %q, rev %q", m, tc.part, tc.conf, tc.rev)
+			}
+		})
+	}
+}
+
 func TestEmbedReplace(t *testing.T) {
 	f := &fixture{files: []file{{name: "notes.txt", data: []byte("notes"), rel: "Supplement"}}}
 	in := f.build()
