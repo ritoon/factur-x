@@ -88,6 +88,11 @@ type Invoice struct {
 	VATBreakdown      []VATBreakdown    // BG-23 VAT breakdown
 	Totals            Totals            // BG-22 Document totals
 
+	// ThirdPartyCharges are the charges collected on behalf of a third party
+	// (BG-34, EXTENDED from Factur-X 1.09): not part of the invoice total,
+	// they are added to the amount due for payment (BT-115).
+	ThirdPartyCharges []ThirdPartyCharge
+
 	Lines []Line // BG-25 Invoice lines
 }
 
@@ -238,7 +243,15 @@ type PaymentMeans struct {
 	CardID         string // BT-87 Payment card primary account number (at most the last 4 to 6 digits)
 	CardholderName string // BT-88 Payment card holder name
 
-	PayerIBAN string // BT-91 Debited account identifier
+	PayerIBAN        string // BT-91 Debited account identifier
+	PayerAccountName string // BT-216 Debited account name (EXTENDED)
+	PayerBIC         string // BT-215 Debited account payment service provider identifier (EXTENDED)
+}
+
+// ThirdPartyCharge is a charge collected on behalf of a third party (BG-34).
+type ThirdPartyCharge struct {
+	Reason string  // BT-180 Charges specification
+	Amount Decimal // BT-179 Charge amount collected on behalf of a third party
 }
 
 // PaymentTerms are payment terms (BT-20) with the due date (BT-9) and the

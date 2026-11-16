@@ -100,6 +100,8 @@ func TestMarshalEN16931Content(t *testing.T) {
 	want.AdditionalDocuments[0].IssueDate = invoice.Date{}
 	want.Buyer.Description = ""
 	want.Buyer.TaxRegistrationID = ""
+	want.PaymentMeans[3].PayerAccountName, want.PaymentMeans[3].PayerBIC = "", ""
+	want.ThirdPartyCharges = nil
 	trimParty := func(p *invoice.Party, keep func(*invoice.Party) invoice.Party) { *p = keep(p) }
 	trimParty(want.SellerTaxRepresentative, func(p *invoice.Party) invoice.Party {
 		return invoice.Party{Name: p.Name, Address: p.Address, VATID: p.VATID}
@@ -135,7 +137,7 @@ func TestMarshalStrict(t *testing.T) {
 	}{
 		{invoice.ProfileExtended, nil, nil},
 		{invoice.ProfileEN16931,
-			[]string{"EXT TestIndicator", "EXT Language", "EXT Note.ContentCode", "EXT SalesAgent", "EXT Payer",
+			[]string{"EXT TestIndicator", "EXT Language", "EXT Note.ContentCode", "EXT SalesAgent", "EXT Payer", "BT-215", "BT-216", "BG-34",
 				"EXT Line.ParentID", "EXT Line.OrderReference", "EXT Line.ShipTo", "EXT PaymentTerms[2:]",
 				"EXT Payee.Address", "EXT ShipTo.Contact", "EXT Buyer.Description", "EXT AdditionalDocument.IssueDate"},
 			[]string{"BG-25", "BT-33", "BT-132", "BG-24"}},

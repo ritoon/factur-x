@@ -282,6 +282,25 @@ func TestSeverities(t *testing.T) {
 	if s := sev(ext, "BR-06"); s != rules.Error {
 		t.Errorf("BR-06 (EXTENDED): %v, want error", s)
 	}
+	// BR-27 and BR-28 are not among the CEN rules of the EXTENDED XSLT
+	// (1.09.2): negative unit prices are allowed there.
+	negative := edit(t, tBase, "<ram:NetPriceProductTradePrice><ram:ChargeAmount>10.00</ram:ChargeAmount>",
+		`<ram:GrossPriceProductTradePrice><ram:ChargeAmount>-10.00</ram:ChargeAmount></ram:GrossPriceProductTradePrice><ram:NetPriceProductTradePrice><ram:ChargeAmount>-10.00</ram:ChargeAmount>`)
+	for _, id := range []string{"BR-27", "BR-28"} {
+		if s := sev(negative, id); s != rules.Error {
+			t.Errorf("%s (CEN): %v, want error", id, s)
+		}
+	}
+	negExt := edit(t, negative, "urn:cen.eu:en16931:2017", "urn:cen.eu:en16931:2017#conformant#urn:factur-x.eu:1p0:extended")
+	r, _ := findings(t, negExt, invoice.ProfileUnknown)
+	if errs := r.Errors(); len(errs) > 0 {
+		t.Errorf("EXTENDED with negative prices: errors %v", errs)
+	}
+	for _, id := range []string{"BR-27", "BR-28"} {
+		if s := sev(negExt, id); s != rules.Warning {
+			t.Errorf("%s (EXTENDED): %v, want warning", id, s)
+		}
+	}
 }
 
 // TestMalformed checks that incomplete documents do not crash the checker.

@@ -107,7 +107,7 @@ func fullInvoice() *invoice.Invoice {
 			},
 			{TypeCode: "30", PayeeProprietaryID: "LOCAL-ACCOUNT-1"},
 			{TypeCode: "48", Information: "Card", CardID: "1234", CardholderName: "J. Doe"},
-			{TypeCode: "59", PayerIBAN: "DE02120300000000202051"},
+			{TypeCode: "59", PayerIBAN: "DE02120300000000202051", PayerAccountName: "Buyer account", PayerBIC: "DEUTDEFF"},
 		},
 		PaymentTerms: []invoice.PaymentTerms{
 			{Description: "30 days", DueDate: dt("2026-12-16"), DirectDebitMandateID: "MANDATE-1", PartialAmount: d("100.00")},
@@ -124,8 +124,9 @@ func fullInvoice() *invoice.Invoice {
 		Totals: invoice.Totals{
 			LineTotal: d("210.00"), AllowanceTotal: d("10.00"), ChargeTotal: d("5.00"),
 			TaxBasisTotal: d("205.00"), TaxTotal: d("39.00"), TaxTotalInTaxCurrency: d("42.12"),
-			GrandTotal: d("244.00"), PaidAmount: d("4.00"), RoundingAmount: d("0.00"), DuePayable: d("240.00"),
+			GrandTotal: d("244.00"), PaidAmount: d("4.00"), RoundingAmount: d("0.00"), DuePayable: d("252.50"),
 		},
+		ThirdPartyCharges: []invoice.ThirdPartyCharge{{Reason: "Stamp duty", Amount: d("12.50")}},
 		Lines: []invoice.Line{
 			{
 				ID:   "1",

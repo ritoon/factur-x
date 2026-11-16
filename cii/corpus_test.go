@@ -138,11 +138,9 @@ var knownLosses = []string{
 	"/ReceivingAdviceReferencedDocument/FormattedIssueDateTime",
 	"/ProcuringProjectReferencedDocument",
 	"/SpecifiedProcuringProject/Name", // see below: Name is kept, other parts not
-	"/PayerSpecifiedDebtorFinancialInstitution",
 	"/SpecifiedTradeSettlementPaymentMeans/ApplicableTradeSettlementFinancialCard/CardholderName",
 	"/SpecifiedTradeAllowanceCharge/SequenceNumeric",
 	"/SpecifiedTradeAllowanceCharge/CategoryTradeTax/ExemptionReason",
-	"/SpecifiedFinancialAdjustment",
 	"/SubordinateLineTradeAgreement",
 	"/IncludedSupplyChainTradeLineItem/SpecifiedLineTradeAgreement/BuyerOrderReferencedDocument/IssuerAssignedID",
 	"/SpecifiedLineTradeAgreement/ContractReferencedDocument",

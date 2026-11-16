@@ -138,8 +138,9 @@ func TestCalculate(t *testing.T) {
 			{Charge: true, Amount: d("5.00"), VATCategoryCode: VATStandard, VATRate: d("20"), Reason: "Port"},
 			{Amount: d("10.00"), VATCategoryCode: VATStandard, VATRate: d("5.5")},
 		},
-		VATBreakdown: []VATBreakdown{{CategoryCode: VATExempt, Rate: d("0"), ExemptionReason: "Exonération article 261"}},
-		Totals:       Totals{PaidAmount: d("10.00")},
+		VATBreakdown:      []VATBreakdown{{CategoryCode: VATExempt, Rate: d("0"), ExemptionReason: "Exonération article 261"}},
+		Totals:            Totals{PaidAmount: d("10.00")},
+		ThirdPartyCharges: []ThirdPartyCharge{{Reason: "Stamp duty", Amount: d("2.50")}},
 	}
 	inv.Calculate()
 
@@ -157,7 +158,7 @@ func TestCalculate(t *testing.T) {
 		"BT-109": {tt.TaxBasisTotal.String(), "146.17"},
 		"BT-110": {tt.TaxTotal.String(), "17.06"},
 		"BT-112": {tt.GrandTotal.String(), "163.23"},
-		"BT-115": {tt.DuePayable.String(), "153.23"},
+		"BT-115": {tt.DuePayable.String(), "155.73"}, // 163.23 − 10.00 + 2.50 (BG-34)
 	} {
 		if c[0] != c[1] {
 			t.Errorf("%s = %s, want %s", name, c[0], c[1])

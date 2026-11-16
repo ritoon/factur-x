@@ -448,6 +448,11 @@ func (r *reader) settlement(n *xmltree.Node) {
 			}
 		case "SpecifiedTradeSettlementHeaderMonetarySummation":
 			summation = c
+		case "SpecifiedFinancialAdjustment":
+			inv.ThirdPartyCharges = append(inv.ThirdPartyCharges, invoice.ThirdPartyCharge{
+				Reason: childText(c, "Reason"),
+				Amount: r.decimal(child(c, "ActualAmount")),
+			})
 		case "InvoiceReferencedDocument":
 			inv.PrecedingInvoices = append(inv.PrecedingInvoices, r.docRef(c))
 		case "ReceivableSpecifiedTradeAccountingAccount":
@@ -475,6 +480,9 @@ func (r *reader) paymentMeans(n *xmltree.Node) invoice.PaymentMeans {
 			pm.CardholderName = childText(c, "CardholderName")
 		case "PayerPartyDebtorFinancialAccount":
 			pm.PayerIBAN = childText(c, "IBANID")
+			pm.PayerAccountName = childText(c, "AccountName")
+		case "PayerSpecifiedDebtorFinancialInstitution":
+			pm.PayerBIC = childText(c, "BICID")
 		case "PayeePartyCreditorFinancialAccount":
 			for _, cc := range c.Children {
 				switch cc.Name {
