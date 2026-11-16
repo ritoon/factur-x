@@ -123,6 +123,38 @@ func TestUnsupported(t *testing.T) {
 	}
 }
 
+// TestCorrigendumVersion checks that the tables take the highest version of
+// the main schemas, as when a corrigendum renames only the changed profiles.
+func TestCorrigendumVersion(t *testing.T) {
+	dir := writeSchemas(t, "", "")
+	for _, p := range []string{"BASIC", "EXTENDED"} {
+		if err := os.Rename(filepath.Join(dir, "Test_2.3_"+p+".xsd"), filepath.Join(dir, "Test_2.3.10_"+p+".xsd")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Rename(filepath.Join(dir, "Test_2.3_EN16931.xsd"), filepath.Join(dir, "Test_2.3.9_EN16931.xsd")); err != nil {
+		t.Fatal(err)
+	}
+	src, err := generate(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(src, []byte(`const schemaVersion = "2.3.10"`)) {
+		t.Errorf("generated source lacks version 2.3.10\n%s", src[:300])
+	}
+	for _, c := range []struct {
+		v, cur string
+		want   bool
+	}{
+		{"1.09", "", true}, {"1.09.2", "1.09", true}, {"1.09", "1.09.2", false},
+		{"1.10", "1.09.2", true}, {"1.09", "1.09", false}, {"2.3.10", "2.3.9", true},
+	} {
+		if got := newerVersion(c.v, c.cur); got != c.want {
+			t.Errorf("newerVersion(%q, %q) = %v", c.v, c.cur, got)
+		}
+	}
+}
+
 func TestMissingProfile(t *testing.T) {
 	dir := writeSchemas(t, "", "")
 	if err := os.Remove(filepath.Join(dir, "Test_2.3_BASICWL.xsd")); err != nil {

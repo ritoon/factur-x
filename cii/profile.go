@@ -109,7 +109,7 @@ type partyRules struct {
 }
 
 // rulesFor returns the elements allowed for a party role in a profile, from
-// the Factur-X 1.08 schemas and the "not used in the given context" rules of
+// the Factur-X 1.09.2 schemas and the "not used in the given context" rules of
 // the profile schematrons.
 func rulesFor(r role, l level) partyRules {
 	if l >= lvlExtended {
