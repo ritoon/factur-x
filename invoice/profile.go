@@ -1,6 +1,9 @@
 package invoice
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // Profile is a Factur-X / ZUGFeRD profile, identified in the XML by the
 // specification identifier BT-24.
@@ -136,6 +139,25 @@ func (p Profile) level() int {
 // AtLeast reports whether p carries at least the data set of q.
 func (p Profile) AtLeast(q Profile) bool { return p.level() >= q.level() }
 
+// MarshalText implements encoding.TextMarshaler: the profile name, as String.
+func (p Profile) MarshalText() ([]byte, error) { return []byte(p.String()), nil }
+
+// UnmarshalText implements encoding.TextUnmarshaler. It accepts what
+// ParseProfile accepts; "UNKNOWN" and empty text give ProfileUnknown.
+func (p *Profile) UnmarshalText(b []byte) error {
+	s := strings.TrimSpace(string(b))
+	if s == "" || strings.EqualFold(s, "UNKNOWN") {
+		*p = ProfileUnknown
+		return nil
+	}
+	q := ParseProfile(s)
+	if q == ProfileUnknown {
+		return fmt.Errorf("invoice: unknown profile %q", s)
+	}
+	*p = q
+	return nil
+}
+
 // ProfileFromURN returns the profile identified by a specification identifier
 // (BT-24). It recognizes the Factur-X identifiers, the ZUGFeRD 2.x ones
 // (urn:zugferd.de:2p0:…), all XRechnung versions and both spellings of the
@@ -159,6 +181,37 @@ func ProfileFromURN(urn string) Profile {
 	if strings.HasPrefix(u, urnXRechnungNew) || strings.HasPrefix(u, urnXRechnungOld) {
 		// "…xrechnung_3.0" and the extension variant "…xrechnung_3.0#conformant#…".
 		return ProfileXRechnung
+	}
+	return ProfileUnknown
+}
+
+// DetectProfile is a lenient ProfileFromURN: when the identifier is not one
+// of the official ones, it looks for a profile name in it, which recognizes
+// spellings found in older or non-conforming invoices such as
+// "urn:cen.eu:en16931:2017:compliant:factur-x.eu:1p0:basic". Use it to read
+// invoices; validators report such identifiers with ProfileFromURN.
+func DetectProfile(urn string) Profile {
+	if p := ProfileFromURN(urn); p != ProfileUnknown {
+		return p
+	}
+	u := strings.ToLower(strings.TrimSpace(urn))
+	switch {
+	case u == "":
+		return ProfileUnknown
+	case strings.Contains(u, "extended-ctc-fr"):
+		return ProfileExtendedCTCFR
+	case strings.Contains(u, "extended"):
+		return ProfileExtended
+	case strings.Contains(u, "xrechnung"):
+		return ProfileXRechnung
+	case strings.Contains(u, "basicwl"), strings.Contains(u, "basic-wl"):
+		return ProfileBasicWL
+	case strings.Contains(u, "basic"):
+		return ProfileBasic
+	case strings.Contains(u, "minimum"):
+		return ProfileMinimum
+	case strings.HasPrefix(u, "urn:cen.eu:en16931"):
+		return ProfileEN16931
 	}
 	return ProfileUnknown
 }

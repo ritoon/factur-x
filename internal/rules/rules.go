@@ -185,7 +185,8 @@ type Doc struct {
 }
 
 // NewDoc wraps the root element of a CII invoice. The profile is read from
-// BT-24 unless profile is not ProfileUnknown.
+// BT-24 (leniently, see invoice.DetectProfile) unless profile is not
+// ProfileUnknown.
 func NewDoc(root *xmltree.Node, profile invoice.Profile) *Doc {
 	d := &Doc{Root: root}
 	d.Context = root.Elem("ExchangedDocumentContext")
@@ -197,7 +198,7 @@ func NewDoc(root *xmltree.Node, profile invoice.Profile) *Doc {
 	d.Summation = d.Settlement.Elem("SpecifiedTradeSettlementHeaderMonetarySummation")
 	d.Lines = d.Transaction.Elems("IncludedSupplyChainTradeLineItem")
 	if profile == invoice.ProfileUnknown {
-		profile = invoice.ProfileFromURN(d.SpecificationID())
+		profile = invoice.DetectProfile(d.SpecificationID())
 	}
 	d.Profile = profile
 	return d

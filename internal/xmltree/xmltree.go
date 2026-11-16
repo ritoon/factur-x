@@ -37,6 +37,11 @@ type Attr struct {
 	Value  string
 }
 
+// MaxDepth bounds the nesting of elements accepted by Parse. CII invoices
+// nest about a dozen levels deep; the limit protects the recursive helpers of
+// this package and its callers from hostile documents.
+const MaxDepth = 256
+
 // Parse parses an XML document and returns its root element.
 //
 // DOCTYPE declarations are ignored and no entity other than the five
@@ -103,6 +108,9 @@ func Parse(data []byte) (*Node, error) {
 				return nil, errors.New("xml: more than one root element")
 			} else {
 				root = n
+			}
+			if len(stack) >= MaxDepth {
+				return nil, fmt.Errorf("xml: line %d: elements nested more than %d levels deep", line, MaxDepth)
 			}
 			stack = append(stack, scope{node: n, ns: ns})
 			n.Space = lookup(n.Prefix)

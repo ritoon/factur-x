@@ -1,0 +1,291 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- French EXTENDED-CTC-FR two-way self-billed invoice (billing frame S9)
+     written by hand to pass every BR-FR assertion (FNFE-MPE schematron
+     v1.4.0.04): one sub-invoice for the seller and one for the buyer (GROUP
+     lines without parent), each with one DETAIL line; the buyer sub-invoice
+     has a negative unit price. Parties and identifiers are fictitious. -->
+<rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100" xmlns:qdt="urn:un:unece:uncefact:data:standard:QualifiedDataType:100" xmlns:ram="urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100" xmlns:udt="urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100">
+  <rsm:ExchangedDocumentContext>
+    <ram:BusinessProcessSpecifiedDocumentContextParameter>
+      <ram:ID>S9</ram:ID>
+    </ram:BusinessProcessSpecifiedDocumentContextParameter>
+    <ram:GuidelineSpecifiedDocumentContextParameter>
+      <ram:ID>urn:cen.eu:en16931:2017#conformant#urn.cpro.gouv.fr:1p0:extended-ctc-fr</ram:ID>
+    </ram:GuidelineSpecifiedDocumentContextParameter>
+  </rsm:ExchangedDocumentContext>
+  <rsm:ExchangedDocument>
+    <ram:ID>AF-2026-0005</ram:ID>
+    <ram:TypeCode>389</ram:TypeCode>
+    <ram:IssueDateTime>
+      <udt:DateTimeString format="102">20261015</udt:DateTimeString>
+    </ram:IssueDateTime>
+    <ram:IncludedNote>
+      <ram:Content>B2B</ram:Content>
+      <ram:SubjectCode>BAR</ram:SubjectCode>
+    </ram:IncludedNote>
+    <ram:IncludedNote>
+      <ram:Content>Indemnité forfaitaire pour frais de recouvrement : 40 euros.</ram:Content>
+      <ram:SubjectCode>PMT</ram:SubjectCode>
+    </ram:IncludedNote>
+    <ram:IncludedNote>
+      <ram:Content>Pénalités de retard : trois fois le taux d'intérêt légal.</ram:Content>
+      <ram:SubjectCode>PMD</ram:SubjectCode>
+    </ram:IncludedNote>
+    <ram:IncludedNote>
+      <ram:Content>Pas d'escompte pour paiement anticipé.</ram:Content>
+      <ram:SubjectCode>AAB</ram:SubjectCode>
+    </ram:IncludedNote>
+  </rsm:ExchangedDocument>
+  <rsm:SupplyChainTradeTransaction>
+    <ram:IncludedSupplyChainTradeLineItem>
+      <ram:AssociatedDocumentLineDocument>
+        <ram:LineID>1</ram:LineID>
+        <ram:LineStatusReasonCode>GROUP</ram:LineStatusReasonCode>
+      </ram:AssociatedDocumentLineDocument>
+      <ram:SpecifiedTradeProduct>
+        <ram:Name>Sous-facture Exemple Informatique</ram:Name>
+      </ram:SpecifiedTradeProduct>
+      <ram:SpecifiedLineTradeAgreement>
+        <ram:NetPriceProductTradePrice>
+          <ram:ChargeAmount>100.00</ram:ChargeAmount>
+        </ram:NetPriceProductTradePrice>
+        <ram:ItemSellerTradeParty>
+          <ram:Name>Exemple Informatique SAS</ram:Name>
+          <ram:SpecifiedLegalOrganization>
+            <ram:ID schemeID="0002">123456789</ram:ID>
+          </ram:SpecifiedLegalOrganization>
+          <ram:PostalTradeAddress>
+            <ram:CountryID>FR</ram:CountryID>
+          </ram:PostalTradeAddress>
+        </ram:ItemSellerTradeParty>
+      </ram:SpecifiedLineTradeAgreement>
+      <ram:SpecifiedLineTradeDelivery>
+        <ram:BilledQuantity unitCode="C62">1</ram:BilledQuantity>
+      </ram:SpecifiedLineTradeDelivery>
+      <ram:SpecifiedLineTradeSettlement>
+        <ram:ApplicableTradeTax>
+          <ram:TypeCode>VAT</ram:TypeCode>
+        </ram:ApplicableTradeTax>
+        <ram:SpecifiedTradeSettlementLineMonetarySummation>
+          <ram:LineTotalAmount>100.00</ram:LineTotalAmount>
+          <ram:TaxTotalAmount currencyID="EUR">20.00</ram:TaxTotalAmount>
+          <ram:GrandTotalAmount>120.00</ram:GrandTotalAmount>
+        </ram:SpecifiedTradeSettlementLineMonetarySummation>
+        <ram:AdditionalReferencedDocument>
+          <ram:IssuerAssignedID>AF-2026-0005</ram:IssuerAssignedID>
+          <ram:TypeCode>130</ram:TypeCode>
+          <ram:ReferenceTypeCode>AFL</ram:ReferenceTypeCode>
+        </ram:AdditionalReferencedDocument>
+        <ram:AdditionalReferencedDocument>
+          <ram:IssuerAssignedID>COMMANDE-A-17</ram:IssuerAssignedID>
+          <ram:TypeCode>130</ram:TypeCode>
+          <ram:ReferenceTypeCode>AVV</ram:ReferenceTypeCode>
+        </ram:AdditionalReferencedDocument>
+      </ram:SpecifiedLineTradeSettlement>
+    </ram:IncludedSupplyChainTradeLineItem>
+    <ram:IncludedSupplyChainTradeLineItem>
+      <ram:AssociatedDocumentLineDocument>
+        <ram:LineID>2</ram:LineID>
+        <ram:ParentLineID>1</ram:ParentLineID>
+        <ram:LineStatusReasonCode>DETAIL</ram:LineStatusReasonCode>
+      </ram:AssociatedDocumentLineDocument>
+      <ram:SpecifiedTradeProduct>
+        <ram:Name>Clavier mécanique</ram:Name>
+      </ram:SpecifiedTradeProduct>
+      <ram:SpecifiedLineTradeAgreement>
+        <ram:NetPriceProductTradePrice>
+          <ram:ChargeAmount>50.00</ram:ChargeAmount>
+        </ram:NetPriceProductTradePrice>
+        <ram:ItemSellerTradeParty>
+          <ram:Name>Exemple Informatique SAS</ram:Name>
+          <ram:SpecifiedLegalOrganization>
+            <ram:ID schemeID="0002">123456789</ram:ID>
+          </ram:SpecifiedLegalOrganization>
+          <ram:PostalTradeAddress>
+            <ram:CountryID>FR</ram:CountryID>
+          </ram:PostalTradeAddress>
+        </ram:ItemSellerTradeParty>
+      </ram:SpecifiedLineTradeAgreement>
+      <ram:SpecifiedLineTradeDelivery>
+        <ram:BilledQuantity unitCode="C62">2</ram:BilledQuantity>
+      </ram:SpecifiedLineTradeDelivery>
+      <ram:SpecifiedLineTradeSettlement>
+        <ram:ApplicableTradeTax>
+          <ram:TypeCode>VAT</ram:TypeCode>
+          <ram:ExemptionReason>#AF-2026-0005# Exemple Informatique SAS</ram:ExemptionReason>
+          <ram:CategoryCode>S</ram:CategoryCode>
+          <ram:RateApplicablePercent>20.00</ram:RateApplicablePercent>
+        </ram:ApplicableTradeTax>
+        <ram:SpecifiedTradeSettlementLineMonetarySummation>
+          <ram:LineTotalAmount>100.00</ram:LineTotalAmount>
+        </ram:SpecifiedTradeSettlementLineMonetarySummation>
+        <ram:AdditionalReferencedDocument>
+          <ram:IssuerAssignedID>AF-2026-0005</ram:IssuerAssignedID>
+          <ram:TypeCode>130</ram:TypeCode>
+          <ram:ReferenceTypeCode>AFL</ram:ReferenceTypeCode>
+        </ram:AdditionalReferencedDocument>
+      </ram:SpecifiedLineTradeSettlement>
+    </ram:IncludedSupplyChainTradeLineItem>
+    <ram:IncludedSupplyChainTradeLineItem>
+      <ram:AssociatedDocumentLineDocument>
+        <ram:LineID>3</ram:LineID>
+        <ram:LineStatusReasonCode>GROUP</ram:LineStatusReasonCode>
+      </ram:AssociatedDocumentLineDocument>
+      <ram:SpecifiedTradeProduct>
+        <ram:Name>Sous-facture Client Exemple</ram:Name>
+      </ram:SpecifiedTradeProduct>
+      <ram:SpecifiedLineTradeAgreement>
+        <ram:NetPriceProductTradePrice>
+          <ram:ChargeAmount>-15.00</ram:ChargeAmount>
+        </ram:NetPriceProductTradePrice>
+        <ram:ItemSellerTradeParty>
+          <ram:Name>Client Exemple SARL</ram:Name>
+          <ram:SpecifiedLegalOrganization>
+            <ram:ID schemeID="0002">987654321</ram:ID>
+          </ram:SpecifiedLegalOrganization>
+          <ram:PostalTradeAddress>
+            <ram:CountryID>FR</ram:CountryID>
+          </ram:PostalTradeAddress>
+        </ram:ItemSellerTradeParty>
+      </ram:SpecifiedLineTradeAgreement>
+      <ram:SpecifiedLineTradeDelivery>
+        <ram:BilledQuantity unitCode="C62">1</ram:BilledQuantity>
+      </ram:SpecifiedLineTradeDelivery>
+      <ram:SpecifiedLineTradeSettlement>
+        <ram:SpecifiedTradeSettlementLineMonetarySummation>
+          <ram:LineTotalAmount>-30.00</ram:LineTotalAmount>
+          <ram:TaxTotalAmount currencyID="EUR">-6.00</ram:TaxTotalAmount>
+          <ram:GrandTotalAmount>-36.00</ram:GrandTotalAmount>
+        </ram:SpecifiedTradeSettlementLineMonetarySummation>
+        <ram:AdditionalReferencedDocument>
+          <ram:IssuerAssignedID>AF-2026-0005-B</ram:IssuerAssignedID>
+          <ram:TypeCode>130</ram:TypeCode>
+          <ram:ReferenceTypeCode>AFL</ram:ReferenceTypeCode>
+        </ram:AdditionalReferencedDocument>
+      </ram:SpecifiedLineTradeSettlement>
+    </ram:IncludedSupplyChainTradeLineItem>
+    <ram:IncludedSupplyChainTradeLineItem>
+      <ram:AssociatedDocumentLineDocument>
+        <ram:LineID>4</ram:LineID>
+        <ram:ParentLineID>3</ram:ParentLineID>
+        <ram:LineStatusReasonCode>DETAIL</ram:LineStatusReasonCode>
+      </ram:AssociatedDocumentLineDocument>
+      <ram:SpecifiedTradeProduct>
+        <ram:Name>Reprise de matériel</ram:Name>
+      </ram:SpecifiedTradeProduct>
+      <ram:SpecifiedLineTradeAgreement>
+        <ram:NetPriceProductTradePrice>
+          <ram:ChargeAmount>-15.00</ram:ChargeAmount>
+        </ram:NetPriceProductTradePrice>
+        <ram:ItemSellerTradeParty>
+          <ram:Name>Client Exemple SARL</ram:Name>
+          <ram:SpecifiedLegalOrganization>
+            <ram:ID schemeID="0002">987654321</ram:ID>
+          </ram:SpecifiedLegalOrganization>
+          <ram:PostalTradeAddress>
+            <ram:CountryID>FR</ram:CountryID>
+          </ram:PostalTradeAddress>
+        </ram:ItemSellerTradeParty>
+      </ram:SpecifiedLineTradeAgreement>
+      <ram:SpecifiedLineTradeDelivery>
+        <ram:BilledQuantity unitCode="C62">2</ram:BilledQuantity>
+      </ram:SpecifiedLineTradeDelivery>
+      <ram:SpecifiedLineTradeSettlement>
+        <ram:ApplicableTradeTax>
+          <ram:TypeCode>VAT</ram:TypeCode>
+          <ram:ExemptionReason>#AF-2026-0005-B# Client Exemple SARL</ram:ExemptionReason>
+          <ram:CategoryCode>S</ram:CategoryCode>
+          <ram:RateApplicablePercent>20.00</ram:RateApplicablePercent>
+        </ram:ApplicableTradeTax>
+        <ram:SpecifiedTradeSettlementLineMonetarySummation>
+          <ram:LineTotalAmount>-30.00</ram:LineTotalAmount>
+        </ram:SpecifiedTradeSettlementLineMonetarySummation>
+        <ram:AdditionalReferencedDocument>
+          <ram:IssuerAssignedID>AF-2026-0005-B</ram:IssuerAssignedID>
+          <ram:TypeCode>130</ram:TypeCode>
+          <ram:ReferenceTypeCode>AFL</ram:ReferenceTypeCode>
+        </ram:AdditionalReferencedDocument>
+      </ram:SpecifiedLineTradeSettlement>
+    </ram:IncludedSupplyChainTradeLineItem>
+    <ram:ApplicableHeaderTradeAgreement>
+      <ram:BuyerReference>SERVICE-ACHATS</ram:BuyerReference>
+      <ram:SellerTradeParty>
+        <ram:GlobalID schemeID="0009">12345678900017</ram:GlobalID>
+        <ram:Name>Exemple Informatique SAS</ram:Name>
+        <ram:SpecifiedLegalOrganization>
+          <ram:ID schemeID="0002">123456789</ram:ID>
+        </ram:SpecifiedLegalOrganization>
+        <ram:PostalTradeAddress>
+          <ram:PostcodeCode>75001</ram:PostcodeCode>
+          <ram:LineOne>1 rue de l'Exemple</ram:LineOne>
+          <ram:CityName>Paris</ram:CityName>
+          <ram:CountryID>FR</ram:CountryID>
+        </ram:PostalTradeAddress>
+        <ram:URIUniversalCommunication>
+          <ram:URIID schemeID="0225">123456789_FACTURES</ram:URIID>
+        </ram:URIUniversalCommunication>
+        <ram:SpecifiedTaxRegistration>
+          <ram:ID schemeID="VA">FR32123456789</ram:ID>
+        </ram:SpecifiedTaxRegistration>
+      </ram:SellerTradeParty>
+      <ram:BuyerTradeParty>
+        <ram:Name>Client Exemple SARL</ram:Name>
+        <ram:SpecifiedLegalOrganization>
+          <ram:ID schemeID="0002">987654321</ram:ID>
+        </ram:SpecifiedLegalOrganization>
+        <ram:PostalTradeAddress>
+          <ram:PostcodeCode>69002</ram:PostcodeCode>
+          <ram:CityName>Lyon</ram:CityName>
+          <ram:CountryID>FR</ram:CountryID>
+        </ram:PostalTradeAddress>
+        <ram:URIUniversalCommunication>
+          <ram:URIID schemeID="0225">987654321_ACHATS</ram:URIID>
+        </ram:URIUniversalCommunication>
+      </ram:BuyerTradeParty>
+    </ram:ApplicableHeaderTradeAgreement>
+    <ram:ApplicableHeaderTradeDelivery>
+      <ram:ActualDeliverySupplyChainEvent>
+        <ram:OccurrenceDateTime>
+          <udt:DateTimeString format="102">20261012</udt:DateTimeString>
+        </ram:OccurrenceDateTime>
+      </ram:ActualDeliverySupplyChainEvent>
+    </ram:ApplicableHeaderTradeDelivery>
+    <ram:ApplicableHeaderTradeSettlement>
+      <ram:InvoiceCurrencyCode>EUR</ram:InvoiceCurrencyCode>
+      <ram:SpecifiedTradeSettlementPaymentMeans>
+        <ram:TypeCode>58</ram:TypeCode>
+        <ram:PayeePartyCreditorFinancialAccount>
+          <ram:IBANID>FR7630006000011234567890189</ram:IBANID>
+        </ram:PayeePartyCreditorFinancialAccount>
+      </ram:SpecifiedTradeSettlementPaymentMeans>
+      <ram:ApplicableTradeTax>
+        <ram:CalculatedAmount>20.00</ram:CalculatedAmount>
+        <ram:TypeCode>VAT</ram:TypeCode>
+        <ram:ExemptionReason>#AF-2026-0005# Exemple Informatique SAS</ram:ExemptionReason>
+        <ram:BasisAmount>100.00</ram:BasisAmount>
+        <ram:CategoryCode>S</ram:CategoryCode>
+        <ram:RateApplicablePercent>20.00</ram:RateApplicablePercent>
+      </ram:ApplicableTradeTax>
+      <ram:ApplicableTradeTax>
+        <ram:CalculatedAmount>-6.00</ram:CalculatedAmount>
+        <ram:TypeCode>VAT</ram:TypeCode>
+        <ram:ExemptionReason>#AF-2026-0005-B# Client Exemple SARL</ram:ExemptionReason>
+        <ram:BasisAmount>-30.00</ram:BasisAmount>
+        <ram:CategoryCode>S</ram:CategoryCode>
+        <ram:RateApplicablePercent>20.00</ram:RateApplicablePercent>
+      </ram:ApplicableTradeTax>
+      <ram:SpecifiedTradePaymentTerms>
+        <ram:DueDateDateTime>
+          <udt:DateTimeString format="102">20261114</udt:DateTimeString>
+        </ram:DueDateDateTime>
+      </ram:SpecifiedTradePaymentTerms>
+      <ram:SpecifiedTradeSettlementHeaderMonetarySummation>
+        <ram:LineTotalAmount>70.00</ram:LineTotalAmount>
+        <ram:TaxBasisTotalAmount>70.00</ram:TaxBasisTotalAmount>
+        <ram:TaxTotalAmount currencyID="EUR">14.00</ram:TaxTotalAmount>
+        <ram:GrandTotalAmount>84.00</ram:GrandTotalAmount>
+        <ram:DuePayableAmount>84.00</ram:DuePayableAmount>
+      </ram:SpecifiedTradeSettlementHeaderMonetarySummation>
+    </ram:ApplicableHeaderTradeSettlement>
+  </rsm:SupplyChainTradeTransaction>
+</rsm:CrossIndustryInvoice>
