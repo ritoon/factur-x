@@ -3,10 +3,10 @@
 //
 //	facturx extract [-o out.xml] invoice.pdf
 //	facturx info invoice.pdf
-//	facturx validate [-fr] [-de] [-auto] [-reject-basicwl] [-profile p] [-json] invoice.pdf|invoice.xml
+//	facturx validate [-fr] [-de] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-json] invoice.pdf|invoice.xml
 //	facturx embed -xml invoice.xml [-profile p] [-o out.pdf] input.pdf
 //	facturx json invoice.pdf|invoice.xml
-//	facturx rules [-fr] [-de]
+//	facturx rules [-fr] [-de] [-choruspro]
 //
 // validate exits with status 1 when the invoice has errors.
 package main
@@ -33,10 +33,10 @@ const usage = `facturx reads, validates and creates Factur-X / ZUGFeRD / XRechnu
 Usage:
   facturx extract [-o out.xml] invoice.pdf
   facturx info invoice.pdf
-  facturx validate [-fr] [-de] [-auto] [-reject-basicwl] [-profile p] [-json] invoice.pdf|invoice.xml
+  facturx validate [-fr] [-de] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-json] invoice.pdf|invoice.xml
   facturx embed -xml invoice.xml [-profile p] [-o out.pdf] input.pdf
   facturx json invoice.pdf|invoice.xml
-  facturx rules [-fr] [-de]
+  facturx rules [-fr] [-de] [-choruspro]
 
 Profiles: minimum, basicwl, basic, en16931, extended, xrechnung, extended-ctc-fr.
 `
@@ -167,6 +167,9 @@ func validateCmd(args []string) (int, error) {
 	de := fs.Bool("de", false, "apply the German rules BR-DE (XRechnung) and the profiles the BMF accepts")
 	auto := fs.Bool("auto", false, "apply the national rules of the seller's country")
 	rejectBasicWL := fs.Bool("reject-basicwl", false, "report the profile BASIC WL as an error under the French rules")
+	cpro := fs.Bool("choruspro", false, "apply the Chorus Pro checks of French B2G invoices")
+	serviceRequired := fs.Bool("service-required", false, "with -choruspro: the public buyer requires a service code (BT-10)")
+	engagementRequired := fs.Bool("engagement-required", false, "with -choruspro: the public buyer requires an engagement number (BT-13)")
 	profile := fs.String("profile", "", "validate against this profile instead of BT-24")
 	asJSON := fs.Bool("json", false, "print the report as JSON")
 	_, data, err := oneFile(fs, args)
@@ -179,7 +182,7 @@ func validateCmd(args []string) (int, error) {
 			return 0, fmt.Errorf("unknown profile %q", *profile)
 		}
 	}
-	if *fr || *de {
+	if *fr || *de || *cpro {
 		opts.Rules = validate.Default
 		if *fr {
 			opts.Rules |= validate.France
@@ -187,7 +190,11 @@ func validateCmd(args []string) (int, error) {
 		if *de {
 			opts.Rules |= validate.Germany | validate.GermanyProfile
 		}
+		if *cpro {
+			opts.Rules |= validate.ChorusPro
+		}
 	}
+	opts.PublicBuyer = validate.PublicBuyer{ServiceCodeRequired: *serviceRequired, EngagementRequired: *engagementRequired}
 	var r *validate.Report
 	if isPDF(data) {
 		r, _, err = facturx.Check(data, opts)
@@ -283,6 +290,7 @@ func rulesCmd(args []string) error {
 	fs := flag.NewFlagSet("rules", flag.ContinueOnError)
 	fr := fs.Bool("fr", false, "include the French rules")
 	de := fs.Bool("de", false, "include the German rules")
+	cpro := fs.Bool("choruspro", false, "include the Chorus Pro checks")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -292,6 +300,9 @@ func rulesCmd(args []string) error {
 	}
 	if *de {
 		set |= validate.Germany | validate.GermanyProfile
+	}
+	if *cpro {
+		set |= validate.ChorusPro
 	}
 	for _, r := range validate.Catalog(set) {
 		fmt.Printf("%-28s %-8s %s\n", r.ID, r.Severity, strings.TrimSpace(r.Description))

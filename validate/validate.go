@@ -1,7 +1,8 @@
 // Package validate checks CII invoices against the XML schema of their
 // Factur-X profile, the EN 16931 business rules, the Factur-X profile rules,
-// and optionally the French (BR-FR) and German (BR-DE) rules and the
-// profiles that France and Germany admit.
+// and optionally the French (BR-FR) and German (BR-DE) rules, the profiles
+// that France and Germany admit, and the checks of Chorus Pro for French B2G
+// invoices.
 //
 // Validation never stops at the first problem: every finding is collected in
 // a Report. A document that is not well-formed XML, or not a CII invoice,
@@ -10,6 +11,7 @@ package validate
 
 import (
 	"github.com/ritoon/factur-x/internal/rules"
+	"github.com/ritoon/factur-x/internal/rules/choruspro"
 	"github.com/ritoon/factur-x/internal/rules/de"
 	"github.com/ritoon/factur-x/internal/rules/en16931"
 	"github.com/ritoon/factur-x/internal/rules/facturx"
@@ -46,6 +48,8 @@ const (
 	SourceFR      = rules.SourceFR
 	SourceDE      = rules.SourceDE
 	SourcePDF     = rules.SourcePDF
+
+	SourceChorusPro = rules.SourceChorusPro
 )
 
 // RuleSet selects groups of rules.
@@ -59,6 +63,7 @@ const (
 	France                             // French rules BR-FR (2026 reform) and the profiles the reform admits (FR-PROFILE-*)
 	Germany                            // German rules BR-DE (XRechnung)
 	GermanyProfile                     // profiles the BMF accepts as e-invoices (DE-PROFILE-01: not MINIMUM nor BASIC WL)
+	ChorusPro                          // French B2G checks for Chorus Pro (CPRO-*), see Options.PublicBuyer
 
 	// Default is the set used when Options.Rules is zero: schema, EN 16931
 	// and profile rules, plus the German rules for XRECHNUNG invoices.
@@ -82,6 +87,23 @@ type Options struct {
 	// date has been published: set it to refuse BASIC WL already, or once
 	// the profile is no longer admitted.
 	RejectBasicWL bool
+
+	// PublicBuyer gives the settings of the public buyer in the Chorus Pro
+	// directory, used by the ChorusPro rules.
+	PublicBuyer PublicBuyer
+}
+
+// PublicBuyer holds the settings of a public structure in the Chorus Pro
+// directory that change the ChorusPro rules. The zero value requires
+// neither a service code nor an engagement number.
+type PublicBuyer struct {
+	// ServiceCodeRequired: the structure requires a service code, carried by
+	// the buyer reference (BT-10).
+	ServiceCodeRequired bool
+	// EngagementRequired: the structure requires an engagement number,
+	// carried by the purchase order reference (BT-13); Chorus Pro also
+	// accepts the contract reference (BT-12) instead.
+	EngagementRequired bool
 }
 
 // XML validates a CII invoice.
@@ -126,6 +148,12 @@ func Tree(root *xmltree.Node, opts *Options) *Report {
 	})
 	run(Germany, SourceDE, de.Check)
 	run(GermanyProfile, SourceDE, de.CheckProfile)
+	run(ChorusPro, SourceChorusPro, func(c *rules.Checker) {
+		choruspro.Check(c, choruspro.Settings{
+			ServiceCodeRequired: opts.PublicBuyer.ServiceCodeRequired,
+			EngagementRequired:  opts.PublicBuyer.EngagementRequired,
+		})
+	})
 	return r
 }
 
@@ -164,5 +192,6 @@ func Catalog(set RuleSet) []RuleInfo {
 	add(France, fr.ProfileCatalog)
 	add(Germany, de.Catalog)
 	add(GermanyProfile, de.ProfileCatalog)
+	add(ChorusPro, choruspro.Catalog)
 	return out
 }
