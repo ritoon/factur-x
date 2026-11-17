@@ -699,14 +699,14 @@ func TestEmbedOptions(t *testing.T) {
 		t.Errorf("XRechnung: %+v %+v %v", a, a.Metadata, findings)
 	}
 
-	out, err = Embed(in, ciiXML(invoice.URNMinimum), &EmbedOptions{
+	out, err = Embed(in, ciiXML(invoice.URNEN16931), &EmbedOptions{
 		ModDate: testDate, Relationship: "Source", Description: "Facture n° 1", Version: "1.1", DocumentType: "INVOICE",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	a, _ = Extract(out)
-	if a.Relationship != "Source" || a.Description != "Facture n° 1" || a.Metadata.Version != "1.1" || a.Metadata.ConformanceLevel != "MINIMUM" {
+	if a.Relationship != "Source" || a.Description != "Facture n° 1" || a.Metadata.Version != "1.1" || a.Metadata.ConformanceLevel != "EN 16931" {
 		t.Errorf("options: %+v %+v", a, a.Metadata)
 	}
 
@@ -745,6 +745,80 @@ func TestEmbedOptions(t *testing.T) {
 	enc.encrypted = true
 	if _, err := Embed(enc.build(), ciiXML(invoice.URNBasic), nil); !errors.Is(err, ErrEncrypted) {
 		t.Errorf("encrypted: %v", err)
+	}
+}
+
+// sellerXML returns a minimal CII invoice with the given BT-24 and seller's
+// country (BT-40).
+func sellerXML(urn, country string) []byte {
+	return []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100" xmlns:ram="urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100">
+  <rsm:ExchangedDocumentContext>
+    <ram:GuidelineSpecifiedDocumentContextParameter><ram:ID>` + urn + `</ram:ID></ram:GuidelineSpecifiedDocumentContextParameter>
+  </rsm:ExchangedDocumentContext>
+  <rsm:ExchangedDocument><ram:ID>F-1</ram:ID></rsm:ExchangedDocument>
+  <rsm:SupplyChainTradeTransaction>
+    <ram:ApplicableHeaderTradeAgreement>
+      <ram:SellerTradeParty><ram:Name>Vendeur</ram:Name><ram:PostalTradeAddress><ram:CountryID>` + country + `</ram:CountryID></ram:PostalTradeAddress></ram:SellerTradeParty>
+    </ram:ApplicableHeaderTradeAgreement>
+  </rsm:SupplyChainTradeTransaction>
+</rsm:CrossIndustryInvoice>
+`)
+}
+
+// TestEmbedRelationship covers the /AFRelationship that Factur-X 1.09
+// (6.2.2) admits by profile and seller's country.
+func TestEmbedRelationship(t *testing.T) {
+	in := base(pdftest.Options{})
+	xrechnung := readTestdata(t, "XRECHNUNG_Einfach.cii.xml")
+	for _, tc := range []struct {
+		name string
+		xml  []byte
+		rel  string
+		ok   bool
+	}{
+		{"default for MINIMUM", ciiXML(invoice.URNMinimum), "", true},
+		{"Data for MINIMUM", ciiXML(invoice.URNMinimum), "Data", true},
+		{"Data for BASIC WL, seller in Germany", sellerXML(invoice.URNBasicWL, "DE"), "Data", true},
+		{"Source for MINIMUM", ciiXML(invoice.URNMinimum), "Source", false},
+		{"Alternative for BASIC WL", ciiXML(invoice.URNBasicWL), "Alternative", false},
+		{"Data for EN 16931", ciiXML(invoice.URNEN16931), "Data", true},
+		{"Source for EN 16931", ciiXML(invoice.URNEN16931), "Source", true},
+		{"Data for BASIC, seller in France", sellerXML(invoice.URNBasic, "FR"), "Data", true},
+		{"Source for EXTENDED, seller in France", sellerXML(invoice.URNExtended, "FR"), "Source", true},
+		{"default for EN 16931, seller in Germany", sellerXML(invoice.URNEN16931, "DE"), "", true},
+		{"Alternative for EXTENDED, seller in Germany", sellerXML(invoice.URNExtended, "DE"), "Alternative", true},
+		{"Source for EN 16931, seller in Germany", sellerXML(invoice.URNEN16931, "DE"), "Source", false},
+		{"Data for BASIC, seller in Germany", sellerXML(invoice.URNBasic, "DE"), "Data", false},
+		{"Data for EXTENDED-CTC-FR, seller in Germany", sellerXML(invoice.URNExtendedCTCFR, "DE"), "Data", false},
+		{"default for XRECHNUNG", xrechnung, "", true},
+		{"Source for XRECHNUNG", xrechnung, "Source", false},
+		{"Data for XRECHNUNG", sellerXML(invoice.URNXRechnung, "FR"), "Data", false},
+		{"Unspecified", ciiXML(invoice.URNEN16931), "Unspecified", false},
+	} {
+		out, err := Embed(in, tc.xml, &EmbedOptions{Relationship: tc.rel, ModDate: testDate})
+		if (err == nil) != tc.ok {
+			t.Errorf("%s: error %v", tc.name, err)
+			continue
+		}
+		if err != nil {
+			continue
+		}
+		a, findings, err := CheckContainer(out)
+		if err != nil || a == nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if tc.rel != "" && a.Relationship != tc.rel {
+			t.Errorf("%s: relationship %s", tc.name, a.Relationship)
+		}
+		// What Embed accepts passes CheckContainer, except Data for BASIC
+		// and above, which only France admits (PDF-14 without the French
+		// rules).
+		for _, f := range findings {
+			if !(f.Rule == "PDF-14" && tc.rel == "Data") {
+				t.Errorf("%s: %s", tc.name, f)
+			}
+		}
 	}
 }
 

@@ -713,7 +713,12 @@ type EmbedOptions struct {
 	// ("factur-x.xml", or "xrechnung.xml" for XRECHNUNG).
 	Filename string
 	// Relationship is the /AFRelationship: "Data", "Alternative" or
-	// "Source"; Profile.AFRelationship() when empty.
+	// "Source"; Profile.AFRelationship() when empty, which suits both France
+	// and Germany. Embed refuses a value that does not fit the profile or
+	// the seller's country (BT-40), as Factur-X 1.09 (6.2.2) tabulates them:
+	// MINIMUM and BASIC WL take Data; XRECHNUNG, and BASIC and above for a
+	// seller in Germany, take Alternative; BASIC and above take Alternative,
+	// Source or Data otherwise (France admits all three).
 	Relationship string
 	// Description of the attachment (/Desc).
 	Description string
@@ -845,6 +850,39 @@ func supplements(files []File, invoiceName string, date time.Time) ([]File, erro
 	return out, nil
 }
 
+// sellerCountryPath is BT-40 from the root of a CII invoice.
+const sellerCountryPath = "SupplyChainTradeTransaction/ApplicableHeaderTradeAgreement/SellerTradeParty/PostalTradeAddress/CountryID"
+
+// checkRelationship refuses the /AFRelationship of the invoice that
+// Factur-X 1.09 (5.3 and 6.2.2) does not admit for its profile and the
+// seller's country: Data is the only value for MINIMUM and BASIC WL;
+// Alternative is the only value for XRECHNUNG and, in Germany, for BASIC and
+// above; France admits Alternative, Source and Data for BASIC and above. The
+// XML is parsed for the seller's country (BT-40) only when it matters, that
+// is for Data or Source with BASIC and above; an XML that cannot be parsed
+// gives no country.
+func checkRelationship(rel string, p invoice.Profile, xml []byte) error {
+	switch rel {
+	case "Data", "Alternative", "Source":
+	default:
+		return fmt.Errorf("facturx: AFRelationship %q not allowed (Data, Alternative or Source)", rel)
+	}
+	switch {
+	case p == invoice.ProfileMinimum || p == invoice.ProfileBasicWL:
+		if rel != "Data" {
+			return fmt.Errorf("facturx: AFRelationship %s not allowed for profile %s: the XML is not a full invoice, the relationship is Data", rel, p)
+		}
+	case rel == "Alternative":
+	case p == invoice.ProfileXRechnung:
+		return fmt.Errorf("facturx: AFRelationship %s not allowed for profile %s: Germany admits only Alternative", rel, p)
+	default:
+		if t, err := xmltree.Parse(xml); err == nil && t.Value(sellerCountryPath) == "DE" {
+			return fmt.Errorf("facturx: AFRelationship %s not allowed for a seller in Germany (BT-40 is DE): Germany admits only Alternative", rel)
+		}
+	}
+	return nil
+}
+
 // putFile writes an embedded file stream and its file specification, and
 // returns the reference of the file specification and the MD5 checksum of
 // data. The description is left out when empty.
@@ -905,9 +943,14 @@ func putFile(u *pdf.Update, name, desc, rel, mime string, date time.Time, data [
 // name, the name of another one, an AFRelationship PDF/A-3 does not define
 // or a malformed MIME type.
 //
+// Embed fails when EmbedOptions.Relationship does not fit the profile or,
+// for Data and Source, the seller's country (see EmbedOptions).
+//
 // Embed does not convert the PDF to PDF/A: fonts, colour spaces and output
 // intents are left as they are. CheckContainer reports what is missing. Nor
-// does it validate the XML: only BT-24 is read, when Profile is unset.
+// does it validate the XML: only BT-24 is read, when Profile is unset, and
+// the seller's country (BT-40), when Relationship is Data or Source for
+// BASIC and above.
 func Embed(pdfData, xml []byte, opts *EmbedOptions) ([]byte, error) {
 	var o EmbedOptions
 	if opts != nil {
@@ -933,10 +976,8 @@ func Embed(pdfData, xml []byte, opts *EmbedOptions) ([]byte, error) {
 	if o.Relationship == "" {
 		o.Relationship = profile.AFRelationship()
 	}
-	switch o.Relationship {
-	case "Data", "Alternative", "Source":
-	default:
-		return nil, fmt.Errorf("facturx: AFRelationship %q not allowed (Data, Alternative or Source)", o.Relationship)
+	if err := checkRelationship(o.Relationship, profile, xml); err != nil {
+		return nil, err
 	}
 	if o.Description == "" {
 		o.Description = "Invoice " + profile.ConformanceLevel() + " (" + o.Filename + ")"

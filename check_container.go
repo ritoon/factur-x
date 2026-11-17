@@ -10,6 +10,7 @@ import (
 	"github.com/ritoon/factur-x/internal/rules"
 	"github.com/ritoon/factur-x/internal/xmp"
 	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/factur-x/validate"
 )
 
 // ContainerCatalog lists the checks of CheckContainer. They cover what the
@@ -35,7 +36,7 @@ var ContainerCatalog = []rules.RuleInfo{
 	{ID: "PDF-11", Severity: rules.Warning, Description: "The invoice attachment has the name of its profile in current specifications: factur-x.xml, or xrechnung.xml for XRECHNUNG. Legacy ZUGFeRD names are reported here."},
 	{ID: "PDF-12", Severity: rules.Error, Description: "The file specification of the invoice has an /AFRelationship entry (PDF/A-3 associated file)."},
 	{ID: "PDF-13", Severity: rules.Error, Description: "The /AFRelationship of the invoice is Data, Alternative or Source."},
-	{ID: "PDF-14", Severity: rules.Warning, Description: "The /AFRelationship matches the profile: Data for MINIMUM and BASIC WL, Alternative (or Source) for BASIC and above."},
+	{ID: "PDF-14", Severity: rules.Warning, Description: "The /AFRelationship matches the profile: Data for MINIMUM and BASIC WL, Alternative or Source for BASIC and above. Data is not reported for BASIC and above when the French rules apply: France admits it (Factur-X 1.09, 6.2.2)."},
 	{ID: "PDF-15", Severity: rules.Error, Description: "The file specification of the invoice is listed in the /AF array of the document catalog."},
 	{ID: "PDF-16", Severity: rules.Error, Description: "The embedded file stream has an XML MIME type (/Subtype /text#2Fxml)."},
 	{ID: "PDF-17", Severity: rules.Warning, Description: "The MIME type of the embedded file is text/xml rather than application/xml."},
@@ -61,6 +62,30 @@ var ContainerCatalog = []rules.RuleInfo{
 	{ID: "PDF-37", Severity: rules.Error, Description: "Every embedded file besides the invoice has a MIME type (/Subtype of the embedded file stream), as PDF/A-3 requires."},
 	{ID: "PDF-38", Severity: rules.Error, Description: "No stream of the pages, their resources, the annotation appearances, the font programs, the embedded files or the metadata uses the LZWDecode filter, which PDF/A forbids. Inline images of the page content are not checked."},
 	{ID: "PDF-39", Severity: rules.Error, Description: "Every embedded file besides the invoice is an associated file, listed in an /AF array (of the document catalog, a page, an annotation, a form or image XObject, a marked-content property list of the resources or a structure element), as PDF/A-3 requires. Files associated otherwise (property lists inside the page content, document parts) are not found."},
+	{ID: "PDF-40", Severity: rules.Error, Description: "Where the German rules apply, the /AFRelationship of a BASIC, EN 16931, EXTENDED or XRECHNUNG invoice is Alternative: Germany admits no other value (Factur-X 1.09, 5.3 and 6.2.2). They apply to XRECHNUNG invoices; Check also applies them when validate.Options selects the German rule sets (Germany, GermanyProfile, or Auto for a seller in Germany)."},
+}
+
+// countries holds the countries whose usage of the container applies to an
+// invoice. Factur-X 1.09 (5.3 and 6.2.2) lets France and Germany differ on
+// the /AFRelationship of BASIC, EN 16931 and EXTENDED invoices: France
+// admits Alternative, Source and Data, Germany only Alternative.
+type countries uint8
+
+const (
+	inFrance countries = 1 << iota
+	inGermany
+)
+
+// countriesOf returns the countries whose rules the rule sets select.
+func countriesOf(set validate.RuleSet) countries {
+	var c countries
+	if set&validate.France != 0 {
+		c |= inFrance
+	}
+	if set&(validate.Germany|validate.GermanyProfile) != 0 {
+		c |= inGermany
+	}
+	return c
 }
 
 // containerSeverity returns the severity of a rule of ContainerCatalog.
@@ -96,10 +121,22 @@ func (k *containerCheck) add(id, path, format string, args ...any) {
 // information, other attachments, filters). The rules are listed in
 // ContainerCatalog; every finding has Source rules.SourcePDF.
 //
+// The national usage of the /AFRelationship depends on the seller's country,
+// which the container does not tell: CheckContainer applies the German one
+// (PDF-40) to XRECHNUNG invoices only. Check applies the French and German
+// usages whenever validate.Options selects their rule sets.
+//
 // The returned attachment is the one Extract returns, or nil when the PDF is
 // encrypted (finding PDF-01) or has no readable invoice attachment (finding
 // PDF-09). The error is reserved for files that cannot be read as a PDF.
 func CheckContainer(pdfData []byte) (*Attachment, []rules.Finding, error) {
+	return checkContainer(pdfData, nil)
+}
+
+// checkContainer implements CheckContainer. national, when not nil, returns
+// the countries whose rules apply to the invoice XML; the German rules
+// always apply to XRECHNUNG.
+func checkContainer(pdfData []byte, national func(xml []byte) countries) (*Attachment, []rules.Finding, error) {
 	k := &containerCheck{}
 	c, err := openContainer(pdfData)
 	if err != nil {
@@ -134,7 +171,14 @@ func CheckContainer(pdfData []byte) (*Attachment, []rules.Finding, error) {
 	}
 	root, id := specificationID(data)
 	profile, zf1 := xmlProfile(root, id)
-	k.attachment(c, fs, st, a, profile, zf1)
+	var where countries
+	if national != nil {
+		where = national(data)
+	}
+	if profile == invoice.ProfileXRechnung {
+		where |= inGermany
+	}
+	k.attachment(c, fs, st, a, profile, zf1, where)
 	if info != nil {
 		k.metadata(info, a, root, profile, zf1)
 	}
@@ -257,7 +301,7 @@ func isYear(s string) bool {
 }
 
 // attachment checks the file specification and the embedded file stream.
-func (k *containerCheck) attachment(c *container, fs *fileSpec, st *pdf.Stream, a *Attachment, profile invoice.Profile, zf1 bool) {
+func (k *containerCheck) attachment(c *container, fs *fileSpec, st *pdf.Stream, a *Attachment, profile invoice.Profile, zf1 bool, where countries) {
 	path := specPath(fs)
 	name := a.Filename
 	want := "factur-x.xml"
@@ -274,20 +318,11 @@ func (k *containerCheck) attachment(c *container, fs *fileSpec, st *pdf.Stream, 
 		k.add("PDF-10", path, "the invoice attachment is named %q, which is not an invoice file name (expected %q)", name, want)
 	}
 
-	rel := a.Relationship
-	switch rel {
+	switch rel := a.Relationship; rel {
 	case "":
 		k.add("PDF-12", path+" /AFRelationship", "the file specification has no /AFRelationship")
 	case "Data", "Alternative", "Source":
-		switch {
-		case profile == invoice.ProfileUnknown:
-		case profile == invoice.ProfileMinimum || profile == invoice.ProfileBasicWL:
-			if rel != "Data" {
-				k.add("PDF-14", path+" /AFRelationship", "/AFRelationship is %s; profile %s expects Data", rel, profile)
-			}
-		case rel == "Data":
-			k.add("PDF-14", path+" /AFRelationship", "/AFRelationship is Data; profile %s expects Alternative (or Source)", profileLabel(profile, zf1))
-		}
+		k.relationship(path+" /AFRelationship", rel, profile, zf1, where)
 	default:
 		k.add("PDF-13", path+" /AFRelationship", "/AFRelationship is %s, not Data, Alternative or Source", rel)
 	}
@@ -331,6 +366,27 @@ func (k *containerCheck) attachment(c *container, fs *fileSpec, st *pdf.Stream, 
 	}
 	if len(missing) > 0 {
 		k.add("PDF-20", path, "the file specification has no %s entry", strings.Join(missing, " or "))
+	}
+}
+
+// relationship checks the /AFRelationship of the invoice against its profile
+// and the countries whose rules apply, as Factur-X 1.09 (6.2.2) tabulates
+// them: Data for MINIMUM and BASIC WL in France and Germany; for BASIC and
+// above, Alternative in Germany, and Alternative, Source or Data in France.
+// Without national rules, Data is reported for BASIC and above: the XML is
+// a full invoice, which Alternative (or Source) describes.
+func (k *containerCheck) relationship(path, rel string, profile invoice.Profile, zf1 bool, where countries) {
+	switch {
+	case profile == invoice.ProfileUnknown:
+	case profile == invoice.ProfileMinimum || profile == invoice.ProfileBasicWL:
+		if rel != "Data" {
+			k.add("PDF-14", path, "/AFRelationship is %s; profile %s expects Data", rel, profile)
+		}
+	case rel == "Alternative":
+	case where&inGermany != 0:
+		k.add("PDF-40", path, "/AFRelationship is %s; Germany admits only Alternative for profile %s", rel, profileLabel(profile, zf1))
+	case rel == "Data" && where&inFrance == 0:
+		k.add("PDF-14", path, "/AFRelationship is Data; profile %s expects Alternative or Source (France also admits Data)", profileLabel(profile, zf1))
 	}
 }
 
