@@ -255,6 +255,7 @@ func Catalog(set RuleSet) []RuleInfo {
 	add(Schema, schema.Catalog)
 	add(Schema, zugferd1Catalog)
 	add(EN16931, en16931.Catalog)
+	add(EN16931, newRules(en16931.CTCFRCatalog, en16931.Catalog))
 	add(EN16931, ubl.Catalog)
 	add(FacturX, facturx.Catalog)
 	add(France, fr.Catalog)
@@ -271,9 +272,10 @@ func Catalog(set RuleSet) []RuleInfo {
 }
 
 // newRules returns the rules of c whose identifier is not in old: the rules
-// of a UBL schematron that the CII one does not define. A rule of both is
-// listed once, as the CII schematron describes it (the Peppol DK-R-003 is a
-// warning there, an error in the UBL schematron).
+// of a UBL schematron that the CII one does not define, or those of the
+// EXTENDED-CTC-FR schematron that the EN 16931 one does not define. A rule
+// of both is listed once, as the CII (or EN 16931) schematron describes it
+// (the Peppol DK-R-003 is a warning there, an error in the UBL schematron).
 func newRules(c, old []RuleInfo) []RuleInfo {
 	seen := make(map[string]bool, len(old))
 	for _, r := range old {

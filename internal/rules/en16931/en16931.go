@@ -32,7 +32,13 @@
 //     with EN 16931 and its schematron keeps a subset of the CEN rules.
 //     The rules of that subset keep their severity; the other business rules
 //     and code lists are reported as warnings, and the other CII syntax rules
-//     (which restrict CII to the EN 16931 data set) are not reported.
+//     (which restrict CII to the EN 16931 data set) are not reported;
+//   - EXTENDED-CTC-FR, in CII: the CII syntax rules are those of the FNFE-MPE
+//     schematron EXTENDED-CTC-FR-CII.sch (France_RFE CTCFRRelease, see
+//     CTCFRCatalog), with its severities and messages, instead of the CEN
+//     ones: they restrict CII to the EXTENDED-CTC-FR data set, as the CEN
+//     rules restrict it to the EN 16931 one. The business rules and code
+//     lists are those of EXTENDED.
 //
 // For a UBL invoice, Check runs on the CII view built by package
 // internal/rules/ubl (rules.Doc.UBL is set) and applies the UBL artefacts of
@@ -58,6 +64,7 @@ import (
 )
 
 //go:generate go run ./gen -o catalog_gen.go
+//go:generate go run ./gen -ctcfr -o ctcfr_gen.go
 
 // Check runs the rules on c.Doc and records the findings in c.Report.
 func Check(c *rules.Checker) {
@@ -70,7 +77,7 @@ func Check(c *rules.Checker) {
 	}
 	var k checker
 	k.init(c)
-	k.walk(d.Root, trie, 0)
+	k.walk(d.Root, k.syn.trie, 0)
 	k.finish()
 }
 
@@ -83,6 +90,7 @@ const (
 	modeXRechnungExtension
 	modeXRechnungCVD
 	modeExtended
+	modeExtendedCTCFR // modeExtended with the syntax rules of the EXTENDED-CTC-FR schematron
 )
 
 // Category indexes of the VAT category codes of the EN 16931 subset.
@@ -163,6 +171,7 @@ type checker struct {
 	c    *rules.Checker
 	d    *rules.Doc
 	mode mode
+	syn  *syntaxSet         // syntax rules of the profile
 	ubl  bool               // c.Doc is the CII view of a UBL invoice
 	cats *[nCat]vatCategory // VAT category rules of the syntax
 
@@ -209,6 +218,10 @@ func (k *checker) init(c *rules.Checker) {
 		k.cats = &vatCategoriesUBL
 	}
 	k.mode = profileMode(d)
+	k.syn = cenSyntax
+	if k.mode == modeExtendedCTCFR {
+		k.syn = ctcfrSyntax
+	}
 
 	seller := d.Agreement.Elem("SellerTradeParty")
 	for it, r := elems(seller, "SpecifiedTaxRegistration"); r != nil; r = it.next() {
@@ -258,10 +271,14 @@ func profileMode(d *rules.Doc) mode {
 			return modeXRechnungCVD
 		}
 		return modeXRechnung
-	case invoice.ProfileExtended, invoice.ProfileExtendedCTCFR:
+	case invoice.ProfileExtended:
 		// The Factur-X EXTENDED schematron only exists for CII.
 		if d.UBL == nil {
 			return modeExtended
+		}
+	case invoice.ProfileExtendedCTCFR:
+		if d.UBL == nil {
+			return modeExtendedCTCFR
 		}
 	}
 	return modeCEN
@@ -323,6 +340,26 @@ var description = func() map[string]string {
 	return m
 }()
 
+// ctcfrRules maps the rule identifiers of CTCFRCatalog to their entry.
+var ctcfrRules = func() map[string]*rules.RuleInfo {
+	m := make(map[string]*rules.RuleInfo, len(CTCFRCatalog))
+	for i := range CTCFRCatalog {
+		m[CTCFRCatalog[i].ID] = &CTCFRCatalog[i]
+	}
+	return m
+}()
+
+// desc returns the description of rule id: the message of the
+// EXTENDED-CTC-FR schematron for its syntax rules, the CEN one otherwise.
+func (k *checker) desc(id string) string {
+	if k.syn.ctcfr {
+		if r := ctcfrRules[id]; r != nil {
+			return r.Description
+		}
+	}
+	return description[id]
+}
+
 // fail records a finding for rule id located at n, with the severity of the
 // rule adjusted for the profile.
 func (k *checker) fail(id string, n *xmltree.Node, format string, args ...any) {
@@ -339,6 +376,21 @@ func (k *checker) fail(id string, n *xmltree.Node, format string, args ...any) {
 		}
 	}
 	switch k.mode {
+	case modeExtendedCTCFR:
+		if strings.HasPrefix(id, "CII-") {
+			// The syntax rules of the EXTENDED-CTC-FR schematron, with its
+			// severities.
+			r := ctcfrRules[id]
+			if r == nil {
+				return
+			}
+			sev = r.Severity
+			break
+		}
+		if !extendedRules[id] {
+			sev = rules.Warning
+			format += " (not enforced for Factur-X EXTENDED)"
+		}
 	case modeExtended:
 		if !extendedRules[id] {
 			if strings.HasPrefix(id, "CII-") {
@@ -404,7 +456,7 @@ func (k *checker) failOnce(id string, ctx, n *xmltree.Node, format string, args 
 // failDesc records a finding whose message is the official description of the
 // rule.
 func (k *checker) failDesc(id string, n *xmltree.Node) {
-	k.fail(id, n, "%s", description[id])
+	k.fail(id, n, "%s", k.desc(id))
 }
 
 // parentIs reports whether the parent of the visited node is named names[0],
