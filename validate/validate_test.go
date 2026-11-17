@@ -9,6 +9,8 @@ import (
 
 	"github.com/ritoon/factur-x/cii"
 	"github.com/ritoon/factur-x/internal/rules"
+	"github.com/ritoon/factur-x/internal/rules/de"
+	"github.com/ritoon/factur-x/internal/rules/fr"
 	"github.com/ritoon/factur-x/internal/rules/ubl"
 	"github.com/ritoon/factur-x/internal/schema"
 	"github.com/ritoon/factur-x/internal/xmltree"
@@ -303,6 +305,33 @@ func TestCatalogUBL(t *testing.T) {
 	if !has(EN16931, "UBL-CR-001") || !has(EN16931, "UBL-SR-01") || !has(Schema, schema.RuleOrder) || has(Schema, "UBL-CR-001") || has(Schema, "XSD-UBL") ||
 		!has(Peppol, "PEPPOL-EN16931-R008") || !has(Peppol, "GR-R-002") || has(Default, "GR-R-002") {
 		t.Errorf("UBL rules missing from the catalog")
+	}
+	// The national rule sets list the identifiers of both syntaxes, once.
+	for _, c := range []struct {
+		set     RuleSet
+		cii     string
+		ubl     string
+		catalog int
+	}{
+		{France, "BR-FR-31_BT-21", "BR-FR-30_BT-21", len(fr.Catalog) + len(fr.ProfileCatalog)},
+		{Germany, "BR-TMP-7", "BR-TMP-6", len(de.Catalog)},
+	} {
+		if !has(c.set, c.cii) || !has(c.set, c.ubl) {
+			t.Errorf("Catalog(%b): %s or %s missing", c.set, c.cii, c.ubl)
+		}
+		seen := map[string]bool{}
+		for _, r := range Catalog(c.set) {
+			if seen[r.ID] {
+				t.Errorf("Catalog(%b): duplicate %s", c.set, r.ID)
+			}
+			seen[r.ID] = true
+		}
+		if len(seen) <= c.catalog {
+			t.Errorf("Catalog(%b): %d rules, no UBL rule beyond the %d CII ones", c.set, len(seen), c.catalog)
+		}
+	}
+	if !has(Germany, "PEPPOL-EN16931-R043") || has(Default, "PEPPOL-EN16931-R043") {
+		t.Errorf("PEPPOL-EN16931-R043 of the XRechnung UBL schematron is not in Catalog(Germany) only")
 	}
 }
 

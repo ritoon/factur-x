@@ -1,0 +1,75 @@
+package de
+
+import "github.com/ritoon/factur-x/internal/rules"
+
+// UBLCatalog lists the 57 assertions that Check applies to a UBL invoice, in
+// the order of the XRechnung UBL schematron, with the severity of their flag:
+// the 56 assertions of the patterns ubl-pattern, ubl-extension-pattern and
+// ubl-cvd-pattern, and PEPPOL-EN16931-R043. An identifier that is also in
+// Catalog has the same severity and description.
+var UBLCatalog = []rules.RuleInfo{
+	// ubl-pattern: XRechnung CIUS.
+	{ID: "BR-DE-1", Severity: rules.Error, Description: "An invoice must contain information on PAYMENT INSTRUCTIONS (BG-16)."},
+	{ID: "BR-DE-15", Severity: rules.Error, Description: "The element Buyer reference (BT-10) must be transmitted."},
+	{ID: "BR-DE-16", Severity: rules.Error, Description: "If the VAT category codes S, Z, E, AE, K, G, L or M are used, the Seller VAT identifier (BT-31), the Seller tax registration identifier (BT-32) or SELLER TAX REPRESENTATIVE PARTY (BG-11) must be transmitted."},
+	{ID: "BR-DE-17", Severity: rules.Warning, Description: "The Invoice type code (BT-3) should be 326, 380, 384, 389, 381, 875, 876 or 877."},
+	{ID: "BR-DE-18", Severity: rules.Error, Description: "Cash discount lines in Payment terms (BT-20) must match #SKONTO#TAGE=n#PROZENT=n.nn[#BASISBETRAG=n.nn]# and end with a line break."},
+	{ID: "BR-DE-21", Severity: rules.Warning, Description: "The Specification identifier (BT-24) should match the identifier of the XRechnung standard."},
+	{ID: "BR-DE-22", Severity: rules.Error, Description: "The filename attributes of the attached documents (BT-125) must be unique."},
+	{ID: "BR-DE-26", Severity: rules.Warning, Description: "If the Invoice type code (BT-3) is 384 (Corrected invoice), PRECEDING INVOICE REFERENCE (BG-3) should be present."},
+	{ID: "BR-DE-30", Severity: rules.Error, Description: "If DIRECT DEBIT (BG-19) is present, the Bank assigned creditor identifier (BT-90) must be transmitted."},
+	{ID: "BR-DE-31", Severity: rules.Error, Description: "If DIRECT DEBIT (BG-19) is present, the Debited account identifier (BT-91) must be transmitted."},
+	{ID: "BR-DE-TMP-32", Severity: rules.Info, Description: "An invoice should give BT-72, BG-14 or BG-26 on every line as delivery or service date."},
+	{ID: "BR-TMP-2", Severity: rules.Error, Description: "The External document location (BT-124) must contain an absolute URL with a valid scheme."},
+	{ID: "BR-TMP-6", Severity: rules.Warning, Description: "Dates in UBL must have the form YYYY-MM-DD."},
+	{ID: "BR-DE-2", Severity: rules.Error, Description: "The group SELLER CONTACT (BG-6) must be transmitted."},
+	{ID: "BR-DE-3", Severity: rules.Error, Description: "The element Seller city (BT-37) must be transmitted."},
+	{ID: "BR-DE-4", Severity: rules.Error, Description: "The element Seller post code (BT-38) must be transmitted."},
+	{ID: "BR-DE-5", Severity: rules.Error, Description: "The element Seller contact point (BT-41) must be transmitted."},
+	{ID: "BR-DE-6", Severity: rules.Error, Description: "The element Seller contact telephone number (BT-42) must be transmitted."},
+	{ID: "BR-DE-7", Severity: rules.Error, Description: "The element Seller contact email address (BT-43) must be transmitted."},
+	{ID: "BR-DE-27", Severity: rules.Warning, Description: "The Seller contact telephone number (BT-42) should contain at least three digits."},
+	{ID: "BR-DE-28", Severity: rules.Warning, Description: "The Seller contact email address (BT-43) should contain exactly one @ sign, a local part and a domain of at least two labels, without white space."},
+	{ID: "BR-DE-8", Severity: rules.Error, Description: "The element Buyer city (BT-52) must be transmitted."},
+	{ID: "BR-DE-9", Severity: rules.Error, Description: "The element Buyer post code (BT-53) must be transmitted."},
+	{ID: "BR-DE-10", Severity: rules.Error, Description: "The element Deliver to city (BT-77) must be transmitted if DELIVER TO ADDRESS (BG-15) is transmitted."},
+	{ID: "BR-DE-11", Severity: rules.Error, Description: "The element Deliver to post code (BT-78) must be transmitted if DELIVER TO ADDRESS (BG-15) is transmitted."},
+	{ID: "BR-DE-19", Severity: rules.Warning, Description: "The Payment account identifier (BT-84) should be a valid IBAN when the Payment means type code (BT-81) is 58."},
+	{ID: "BR-DE-23-a", Severity: rules.Error, Description: "With a credit transfer code (30, 58) in BT-81, CREDIT TRANSFER (BG-17) must be transmitted."},
+	{ID: "BR-DE-23-b", Severity: rules.Error, Description: "With a credit transfer code (30, 58) in BT-81, BG-18 and BG-19 must not be transmitted."},
+	{ID: "BR-DE-24-a", Severity: rules.Error, Description: "With a payment card code (48, 54, 55) in BT-81, PAYMENT CARD INFORMATION (BG-18) must be transmitted."},
+	{ID: "BR-DE-24-b", Severity: rules.Error, Description: "With a payment card code (48, 54, 55) in BT-81, BG-17 and BG-19 must not be transmitted."},
+	{ID: "BR-DE-20", Severity: rules.Warning, Description: "The Debited account identifier (BT-91) should be a valid IBAN when the Payment means type code (BT-81) is 59."},
+	{ID: "BR-DE-25-a", Severity: rules.Error, Description: "With a direct debit code (59) in BT-81, DIRECT DEBIT (BG-19) must be transmitted."},
+	{ID: "BR-DE-25-b", Severity: rules.Error, Description: "With a direct debit code (59) in BT-81, BG-17 and BG-18 must not be transmitted."},
+	{ID: "BR-DE-14", Severity: rules.Error, Description: "The element VAT category rate (BT-119) must be transmitted."},
+
+	// ubl-extension-pattern: XRechnung extension.
+	{ID: "BR-DEX-01", Severity: rules.Error, Description: "The MIME code of an Attached document (BT-125) must be allowed; application/xml is allowed with the extension."},
+	{ID: "BR-DEX-02", Severity: rules.Warning, Description: "The net amount (BT-131) of an invoice line or a sub invoice line (BG-DEX-01) should be the sum of the net amounts of its direct sub invoice lines."},
+	{ID: "BR-DEX-03", Severity: rules.Error, Description: "A sub invoice line (BG-DEX-01) must contain exactly one SUB INVOICE LINE VAT INFORMATION (BG-DEX-06)."},
+	{ID: "BR-DEX-09", Severity: rules.Error, Description: "Amount due for payment (BT-115) = BT-112 - BT-113 + BT-114 + the Third party payment amounts (BT-DEX-002)."},
+	{ID: "BR-DEX-04", Severity: rules.Error, Description: "Scheme identifiers of party identifiers (global identifiers in CII) must belong to the ISO 6523 ICD list extended with XR01, XR02, XR03; in UBL, SEPA is also allowed for the seller and the payee."},
+	{ID: "BR-DEX-05", Severity: rules.Error, Description: "Scheme identifiers of identifiers (all identifiers but tax registrations in CII, legal registration identifiers in UBL) must belong to the ISO 6523 ICD list extended with XR01, XR02, XR03."},
+	{ID: "BR-DEX-06", Severity: rules.Error, Description: "Scheme identifiers of Item standard identifiers (BT-157) must belong to the ISO 6523 ICD list extended with XR01, XR02, XR03."},
+	{ID: "BR-DEX-07", Severity: rules.Error, Description: "Scheme identifiers of electronic addresses must belong to the CEF EAS list extended with XR01, XR02, XR03."},
+	{ID: "BR-DEX-08", Severity: rules.Error, Description: "Scheme identifiers of Deliver to location identifiers (BT-71) must belong to the ISO 6523 ICD list extended with XR01, XR02, XR03."},
+	{ID: "BR-DEX-10", Severity: rules.Error, Description: "The Third party payment type (BT-DEX-001) must be transmitted in a THIRD PARTY PAYMENT (BG-DEX-09)."},
+	{ID: "BR-DEX-11", Severity: rules.Error, Description: "The Third party payment amount (BT-DEX-002) must be transmitted in a THIRD PARTY PAYMENT (BG-DEX-09)."},
+	{ID: "BR-DEX-12", Severity: rules.Error, Description: "The Third party payment description (BT-DEX-003) must be transmitted in a THIRD PARTY PAYMENT (BG-DEX-09)."},
+	{ID: "BR-DEX-13", Severity: rules.Error, Description: "The Third party payment amount (BT-DEX-002) must have at most 2 decimals."},
+	{ID: "BR-DEX-14", Severity: rules.Error, Description: "The currency of the Third party payment amount (BT-DEX-002) must be the Invoice currency code (BT-5)."},
+
+	// ubl-cvd-pattern: commercial vehicle data.
+	{ID: "BR-DE-CVD-02", Severity: rules.Error, Description: "The element Tender or lot reference (BT-17) must be transmitted."},
+	{ID: "BR-DE-CVD-01", Severity: rules.Error, Description: "The element Contract reference (BT-12) must be transmitted."},
+	{ID: "BR-DE-CVD-03", Severity: rules.Error, Description: "At least one invoice line must have an Item classification identifier (BT-158) of scheme 'CVD' and an Item attribute name (BT-160) 'cva'."},
+	{ID: "BR-DE-CVD-06-a", Severity: rules.Error, Description: "A line with an Item classification identifier of scheme 'CVD' must have exactly one Item attribute name 'cva'."},
+	{ID: "BR-DE-CVD-06-b", Severity: rules.Error, Description: "A line with the Item attribute name 'cva' must have exactly one Item classification identifier of scheme 'CVD'."},
+	{ID: "BR-TMP-CVD-01", Severity: rules.Error, Description: "The scheme identifier of the Item classification identifier (BT-158) must come from UNTDID 7143."},
+	{ID: "BR-DE-CVD-04", Severity: rules.Error, Description: "An Item classification identifier of scheme 'CVD' must be a vehicle category M1, M2, M3, N1, N2 or N3."},
+	{ID: "BR-DE-CVD-05", Severity: rules.Error, Description: "The Item attribute value of the attribute 'cva' must be clean, zero-emission or other."},
+
+	// peppol-ubl-pattern-2.
+	{ID: "PEPPOL-EN16931-R043", Severity: rules.Error, Description: "The allowance or charge indicator must be 'true' or 'false'."},
+}

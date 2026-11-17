@@ -10,11 +10,12 @@
 // UBL extensions is not checked) and against the EN 16931 rules of the UBL
 // artefacts: the business rules and code lists, and the UBL syntax rules
 // UBL-CR, UBL-SR and UBL-DT. The Factur-X profile rules, which are CII
-// rules, do not apply. The French, German and Chorus Pro rules run on a CII
-// view of the UBL document, with the rule identifiers of their CII
-// schematrons; their findings are located in the UBL document. The Peppol
-// rule set applies the UBL schematron of Peppol BIS Billing 3.0 to the UBL
-// document itself, the CII schematron to a CII invoice.
+// rules, do not apply. The French rules implement the UBL schematron of
+// BR-FR (Flux 2), the German rules the XRechnung UBL schematron and the
+// Peppol rules the UBL schematron of Peppol BIS Billing 3.0, on the UBL
+// document itself, with their own rule identifiers, contexts and messages
+// (see the UBLCatalog of each package). The Chorus Pro rules run on a CII
+// view of the UBL document. All findings are located in the UBL document.
 //
 // Validation never stops at the first problem: every finding is collected in
 // a Report. A document that is not well-formed XML, or neither a CII nor a
@@ -225,7 +226,9 @@ func RulesFor(doc *rules.Doc, opts *Options) RuleSet {
 	return set
 }
 
-// Catalog returns the rules implemented by the selected rule sets.
+// Catalog returns the rules implemented by the selected rule sets, for the
+// CII and the UBL syntax. A French or German rule of both syntaxes appears
+// once.
 func Catalog(set RuleSet) []RuleInfo {
 	var out []RuleInfo
 	add := func(s RuleSet, c []RuleInfo) {
@@ -238,8 +241,10 @@ func Catalog(set RuleSet) []RuleInfo {
 	add(EN16931, ubl.Catalog)
 	add(FacturX, facturx.Catalog)
 	add(France, fr.Catalog)
+	add(France, newRules(fr.UBLCatalog, fr.Catalog))
 	add(France, fr.ProfileCatalog)
 	add(Germany, de.Catalog)
+	add(Germany, newRules(de.UBLCatalog, de.Catalog))
 	add(GermanyProfile, de.ProfileCatalog)
 	add(ChorusPro, choruspro.Catalog)
 	add(Peppol, peppol.Catalog)
@@ -248,8 +253,8 @@ func Catalog(set RuleSet) []RuleInfo {
 }
 
 // newRules returns the rules of c whose identifier is not in old: the rules
-// of the UBL schematron of Peppol that the CII one does not define. A rule
-// of both is listed once, as the CII schematron describes it (DK-R-003 is a
+// of a UBL schematron that the CII one does not define. A rule of both is
+// listed once, as the CII schematron describes it (the Peppol DK-R-003 is a
 // warning there, an error in the UBL schematron).
 func newRules(c, old []RuleInfo) []RuleInfo {
 	seen := make(map[string]bool, len(old))

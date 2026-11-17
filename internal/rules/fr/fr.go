@@ -34,6 +34,34 @@
 // billing frames and rely on the line sub-types (EXT-FR-FE-162/163), the line
 // seller (EXT-FR-FE-164 to 177) and the line totals (EXT-FR-FE-181 to 184).
 //
+// # UBL
+//
+// For a UBL invoice (rules.Doc.UBL not nil), Check runs instead the
+// schematron "BR-FR-Flux2-Schematron-UBL" of the same version on the UBL
+// document itself, with the identifiers, contexts and messages of that
+// schematron (UBLCatalog): 175 assertions in 59 patterns, 173 of which can
+// fire. The UBL schematron splits, renames or adds identifiers:
+// BR-FR-01_BT-1-1 (length) and BR-FR-01_BT-1-2 (format) for BR-FR-01_BT-1,
+// BR-FR-05_BT-22-1 to -3 and BR-FR-06_BT-21-1 to -4 for the subject-code
+// variants, BR-FR-15_* per context (with BR-FR-08_BT-151-2 for the items),
+// BR-FR-30_BT-21 for BR-FR-31_BT-21, BR-FR-32-ID for BR-FR-32-GLOBALID,
+// BR-FR-CO-04_BT-3 for BR-FR-CO-04_BT-4, BR-FR-BD-02_BT-30 for
+// BR-FR-BD-02_BT-31, BR-FR-MV-BD_BT-3 for BR-FR-BD-13_BT-3, and
+// BR-FR-03_BT-134/135 for the line invoicing period. In UBL the subject code
+// of a note is written between # at its start (cbc:Note "#PMT#…") and the
+// notes are joined with # before the search; the line sub-type and parent
+// line of the multi-vendor and two-way frames are carried by the line
+// reference to the invoice itself (cac:BillingReference with
+// cbc:DocumentStatusCode and cac:BillingReferenceLine); the line seller is
+// cac:Item/cac:ManufacturerParty and the sub-invoice number the line document
+// reference of type 130 and scheme AFL. A finding is located at the context
+// node of its rule, the root element when the rule has none.
+//
+// Several contexts of the UBL schematron have no leading root ("a/b/c") and
+// match at any depth: BR-FR-10, BR-FR-15, BR-FR-16, BR-FR-17, BR-FR-32,
+// BR-FR-CO-10 and BR-FR-DEC-01 (monetary totals and VAT amounts) apply to
+// such elements wherever they are.
+//
 // # Faithfulness notes
 //
 //   - BR-FR-DEC-01_BT-111 has the same context as BR-FR-DEC-01_BT-110
@@ -49,6 +77,19 @@
 //     given to a single-valued function, such as two SIREN 0002 for one
 //     party), the first value in document order is used. Where it would stop
 //     on a failed xs:decimal cast, the assertion fails.
+//   - UBL: for the same reason as BR-FR-DEC-01_BT-111, BR-FR-16_BT-103
+//     (second rule on cac:AllowanceCharge/cac:TaxCategory in its pattern)
+//     never fires: every allowance or charge rate is reported as
+//     BR-FR-16_BT-96. Neither is in UBLCatalog.
+//   - UBL: BR-FR-27 targets cac:Item directly under the root,
+//     BR-FR-09_EXT-FR-FE-146 looks for the SIRET below the line delivery
+//     location itself (cac:DeliveryLocation/cac:DeliveryLocation/cbc:ID), and
+//     BR-FR-29_BT-18 and BR-FR-30_BT-128 count several cbc:ID in one document
+//     reference: these paths do not exist in the UBL schema, so the
+//     assertions only fire on schema-invalid documents. BR-FR-16_BT-152 only
+//     applies to cac:InvoiceLine, not to cac:CreditNoteLine.
+//   - UBL: a date (BR-FR-03) must be written with ASCII digits; any other
+//     digit makes the cast of the year fail in the reference.
 package fr
 
 import (
@@ -66,6 +107,10 @@ import (
 // Check runs the BR-FR rules on c.Doc and records the findings in c.Report.
 func Check(c *rules.Checker) {
 	if c == nil || c.Doc == nil || c.Doc.Root == nil {
+		return
+	}
+	if c.Doc.UBL != nil {
+		checkUBL(c)
 		return
 	}
 	k := newChecker(c)
