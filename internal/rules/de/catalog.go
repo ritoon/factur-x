@@ -3,7 +3,9 @@ package de
 import "github.com/ritoon/factur-x/internal/rules"
 
 // Catalog lists the 52 assertions of the XRechnung CII schematron, in the
-// order of the schematron, with the severity of their flag.
+// order of the schematron, with the severity of their flag. Check applies
+// them to a CII invoice; UBLCatalog lists the assertions it applies to a UBL
+// invoice.
 var Catalog = []rules.RuleInfo{
 	// cii-pattern: XRechnung CIUS.
 	{ID: "BR-DE-30", Severity: rules.Error, Description: "If DIRECT DEBIT (BG-19) is present, the Bank assigned creditor identifier (BT-90) must be transmitted."},
@@ -46,8 +48,8 @@ var Catalog = []rules.RuleInfo{
 
 	// cii-extension-pattern: XRechnung extension.
 	{ID: "BR-DEX-15", Severity: rules.Warning, Description: "Sub invoice lines (ram:ParentLineID) are not supported by XRechnung."},
-	{ID: "BR-DEX-04", Severity: rules.Error, Description: "Scheme identifiers of global identifiers must belong to the ISO 6523 ICD list extended with XR01, XR02, XR03."},
-	{ID: "BR-DEX-05", Severity: rules.Error, Description: "Scheme identifiers of identifiers (ram:ID) must belong to the ISO 6523 ICD list extended with XR01, XR02, XR03."},
+	{ID: "BR-DEX-04", Severity: rules.Error, Description: "Scheme identifiers of party identifiers (global identifiers in CII) must belong to the ISO 6523 ICD list extended with XR01, XR02, XR03; in UBL, SEPA is also allowed for the seller and the payee."},
+	{ID: "BR-DEX-05", Severity: rules.Error, Description: "Scheme identifiers of identifiers (all identifiers but tax registrations in CII, legal registration identifiers in UBL) must belong to the ISO 6523 ICD list extended with XR01, XR02, XR03."},
 	{ID: "BR-DEX-06", Severity: rules.Error, Description: "Scheme identifiers of Item standard identifiers (BT-157) must belong to the ISO 6523 ICD list extended with XR01, XR02, XR03."},
 	{ID: "BR-DEX-07", Severity: rules.Error, Description: "Scheme identifiers of electronic addresses must belong to the CEF EAS list extended with XR01, XR02, XR03."},
 	{ID: "BR-DEX-08", Severity: rules.Error, Description: "Scheme identifiers of Deliver to location identifiers (BT-71) must belong to the ISO 6523 ICD list extended with XR01, XR02, XR03."},

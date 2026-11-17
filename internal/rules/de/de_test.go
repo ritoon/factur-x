@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ritoon/factur-x/internal/rules"
+	"github.com/ritoon/factur-x/internal/rules/ubl"
 	"github.com/ritoon/factur-x/internal/xmltree"
 	"github.com/ritoon/factur-x/invoice"
 )
@@ -24,11 +25,36 @@ func load(t testing.TB, name string) string {
 	return string(b)
 }
 
-// check runs Check on a parsed document.
-func check(root *xmltree.Node) *rules.Report {
+// newDoc returns the document Check runs on for a parsed root: the CII
+// document, the UBL document with its CII view, or nil for another root.
+func newDoc(root *xmltree.Node) *rules.Doc {
+	switch {
+	case root.Name == "CrossIndustryInvoice":
+		return rules.NewDoc(root, invoice.ProfileUnknown)
+	case ubl.IsUBL(root):
+		return ubl.View(root, invoice.ProfileUnknown)
+	}
+	return nil
+}
+
+// catalogOf returns the catalog of the syntax of doc.
+func catalogOf(doc *rules.Doc) []rules.RuleInfo {
+	if doc.UBL != nil {
+		return UBLCatalog
+	}
+	return Catalog
+}
+
+// checkDoc runs Check on doc.
+func checkDoc(doc *rules.Doc) *rules.Report {
 	r := &rules.Report{}
-	Check(&rules.Checker{Doc: rules.NewDoc(root, invoice.ProfileUnknown), Report: r, Source: rules.SourceDE})
+	Check(&rules.Checker{Doc: doc, Report: r, Source: rules.SourceDE})
 	return r
+}
+
+// check runs Check on a parsed CII document.
+func check(root *xmltree.Node) *rules.Report {
+	return checkDoc(rules.NewDoc(root, invoice.ProfileUnknown))
 }
 
 func run(t testing.TB, data []byte) *rules.Report {
@@ -298,19 +324,19 @@ func TestMutations(t *testing.T) {
 			if !slices.Equal(got, want) {
 				t.Errorf("rules = %q, want %q\n%s", got, want, r)
 			}
-			checkFindings(t, r)
+			checkFindings(t, r, Catalog)
 		})
 	}
 }
 
-// checkFindings verifies that every finding is in Catalog, with its
+// checkFindings verifies that every finding is in catalog, with its
 // severity, and located.
-func checkFindings(t *testing.T, r *rules.Report) {
+func checkFindings(t *testing.T, r *rules.Report, catalog []rules.RuleInfo) {
 	t.Helper()
 	for _, f := range r.Findings {
-		info, ok := catalogEntry(f.Rule)
+		info, ok := catalogEntry(catalog, f.Rule)
 		if !ok {
-			t.Errorf("rule %s is not in Catalog", f.Rule)
+			t.Errorf("rule %s is not in the catalog", f.Rule)
 			continue
 		}
 		if f.Severity != info.Severity || f.Source != rules.SourceDE || f.Message == "" || f.Path == "" {
@@ -319,8 +345,8 @@ func checkFindings(t *testing.T, r *rules.Report) {
 	}
 }
 
-func catalogEntry(id string) (rules.RuleInfo, bool) {
-	for _, r := range Catalog {
+func catalogEntry(catalog []rules.RuleInfo, id string) (rules.RuleInfo, bool) {
+	for _, r := range catalog {
 		if r.ID == id {
 			return r, true
 		}
@@ -405,12 +431,13 @@ func TestEmpty(t *testing.T) {
 		`<rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100"/>`,
 		`<x/>`,
 	} {
-		checkFindings(t, run(t, []byte(doc)))
+		checkFindings(t, run(t, []byte(doc)), Catalog)
 	}
 }
 
-// eachCII calls fn for every XML file below dir whose root is a CII invoice.
-func eachCII(t *testing.T, dir string, fn func(path string, root *xmltree.Node)) {
+// eachInvoice calls fn for every XML file below dir whose root is a CII or a
+// UBL invoice.
+func eachInvoice(t *testing.T, dir string, fn func(path string, doc *rules.Doc)) {
 	t.Helper()
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(strings.ToLower(path), ".xml") {
@@ -421,10 +448,12 @@ func eachCII(t *testing.T, dir string, fn func(path string, root *xmltree.Node))
 			return err
 		}
 		root, err := xmltree.Parse(data)
-		if err != nil || root.Name != "CrossIndustryInvoice" {
+		if err != nil {
 			return nil
 		}
-		fn(path, root)
+		if doc := newDoc(root); doc != nil {
+			fn(path, doc)
+		}
 		return nil
 	})
 	if err != nil {
@@ -444,9 +473,10 @@ var corpusFailures = map[string]struct {
 			"discount keywords: #SKONTO#TAGE=..#PROZENT=..# became #PZYKMU#TNIW=96#IQITDIB=6.71#"},
 }
 
-// TestCorpus runs Check on the CII files of FX_CORPUS and FX_CORPUS_XML: the
-// XRechnung invoices (BT-24 starting with CIUSID) have no error, except
-// those of corpusFailures, and every reported rule is in Catalog.
+// TestCorpus runs Check on the CII and UBL files of FX_CORPUS and
+// FX_CORPUS_XML: the XRechnung invoices (BT-24 starting with CIUSID) have no
+// error, except those of corpusFailures, and every reported rule is in the
+// catalog of the syntax.
 func TestCorpus(t *testing.T) {
 	var dirs []string
 	for _, env := range []string{"FX_CORPUS", "FX_CORPUS_XML"} {
@@ -457,13 +487,16 @@ func TestCorpus(t *testing.T) {
 	if len(dirs) == 0 {
 		t.Skip("FX_CORPUS and FX_CORPUS_XML are not set")
 	}
-	files, xr := 0, 0
+	files, ublFiles, xr := 0, 0, 0
 	for _, dir := range dirs {
-		eachCII(t, dir, func(path string, root *xmltree.Node) {
+		eachInvoice(t, dir, func(path string, doc *rules.Doc) {
 			files++
-			r := check(root)
-			checkFindings(t, r)
-			if !strings.HasPrefix(rules.NewDoc(root, invoice.ProfileUnknown).SpecificationID(), CIUSID) {
+			if doc.UBL != nil {
+				ublFiles++
+			}
+			r := checkDoc(doc)
+			checkFindings(t, r, catalogOf(doc))
+			if !strings.HasPrefix(doc.SpecificationID(), CIUSID) {
 				return
 			}
 			xr++
@@ -486,24 +519,27 @@ func TestCorpus(t *testing.T) {
 			}
 		})
 	}
-	t.Logf("%d CII files, %d XRechnung invoices", files, xr)
+	t.Logf("%d files (%d UBL), %d XRechnung invoices", files, ublFiles, xr)
 	if xr == 0 {
 		t.Error("no XRechnung invoice in the corpus")
 	}
 }
 
-// TestKoSIT runs Check on the CII instances of the KoSIT XRechnung test
-// suite (FX_KOSIT, the root of xrechnung-testsuite): all are valid.
+// TestKoSIT runs Check on the CII and UBL instances of the KoSIT XRechnung
+// test suite (FX_KOSIT, the root of xrechnung-testsuite): all are valid.
 func TestKoSIT(t *testing.T) {
 	dir := os.Getenv("FX_KOSIT")
 	if dir == "" {
 		t.Skip("FX_KOSIT is not set")
 	}
-	n := 0
-	eachCII(t, dir, func(path string, root *xmltree.Node) {
+	n, ublFiles := 0, 0
+	eachInvoice(t, dir, func(path string, doc *rules.Doc) {
 		n++
-		r := check(root)
-		checkFindings(t, r)
+		if doc.UBL != nil {
+			ublFiles++
+		}
+		r := checkDoc(doc)
+		checkFindings(t, r, catalogOf(doc))
 		if !r.Valid() {
 			t.Errorf("%s: %v", path, r.Errors())
 		}
@@ -511,9 +547,9 @@ func TestKoSIT(t *testing.T) {
 			t.Logf("%s: %v", filepath.Base(path), r.Rules())
 		}
 	})
-	t.Logf("%d CII instances", n)
-	if n == 0 {
-		t.Error("no CII instance in FX_KOSIT")
+	t.Logf("%d instances (%d UBL)", n, ublFiles)
+	if n == 0 || ublFiles == 0 {
+		t.Error("no CII or no UBL instance in FX_KOSIT")
 	}
 }
 

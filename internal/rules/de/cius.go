@@ -49,7 +49,14 @@ func (k *checker) document() {
 		k.fail("BR-DE-17", rules.Warning, typeNode, "[BR-DE-17] The Invoice type code (BT-3) should only be one of the UNTDID 1001 codes 326 (Partial invoice), 380 (Commercial invoice), 384 (Corrected invoice), 389 (Self-billed invoice), 381 (Credit note), 875 (Partial construction invoice), 876 (Partial final construction invoice) and 877 (Final construction invoice); value: %q.", typeCode)
 	}
 
-	k.skonto()    // BR-DE-18
+	// BR-DE-18: first BT-20 of each ram:SpecifiedTradePaymentTerms.
+	var descs []*xmltree.Node
+	for terms := range all(r, pSettlement+"/SpecifiedTradePaymentTerms") {
+		if d := first(terms, "Description"); d != nil {
+			descs = append(descs, d)
+		}
+	}
+	k.skonto(descs)
 	k.fileNames() // BR-DE-22
 
 	if typeCode == "384" && !exists(r, pSettlement+"/InvoiceReferencedDocument") {
@@ -68,17 +75,11 @@ func (k *checker) sellerTaxID() bool {
 	return false
 }
 
-// skonto checks BR-DE-18: the lines of the payment terms (first BT-20 of each
-// ram:SpecifiedTradePaymentTerms) that start with # are cash discount lines
+// skonto checks BR-DE-18 on descs, the first payment terms (BT-20) of each
+// payment terms group: their lines that start with # are cash discount lines
 // #SKONTO#TAGE=n#PROZENT=n.nn[#BASISBETRAG=n.nn]#, and the last one is
 // followed by a line break.
-func (k *checker) skonto() {
-	var descs []*xmltree.Node
-	for terms := range all(k.root, pSettlement+"/SpecifiedTradePaymentTerms") {
-		if d := first(terms, "Description"); d != nil {
-			descs = append(descs, d)
-		}
-	}
+func (k *checker) skonto(descs []*xmltree.Node) {
 	var lastTokens []string // tokenize(Description[1], '#.+#')[last()]
 	for _, d := range descs {
 		if s := sv(d); s != "" {
