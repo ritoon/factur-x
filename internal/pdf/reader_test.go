@@ -459,3 +459,49 @@ func FuzzOpen(f *testing.F) {
 		walk(r.Trailer(), 0)
 	})
 }
+
+func TestDictSkipArrays(t *testing.T) {
+	font := "<< /Type /Font /Subtype /TrueType /Widths [506 226 1038] /BaseFont /Calibri /Encoding << /Differences [32 /space] >> /DescendantFonts [3 0 R] /FontDescriptor 3 0 R >>"
+	for _, o := range []pdftest.Options{{}, {Layout: pdftest.XrefStream, ObjStm: true}, {Layout: pdftest.NoXref}} {
+		b := &pdftest.Builder{Trailer: "/Root 1 0 R"}
+		b.Add("<< /Type /Catalog /F 2 0 R >>")
+		b.Add(font)
+		b.Add("<< /Type /FontDescriptor /FontBBox [0 0 1 1] >>")
+		r := open(t, b.Bytes(o))
+		ref := r.Catalog().Get("F")
+
+		d, ok := r.DictSkipArrays(ref, "DescendantFonts")
+		if !ok {
+			t.Fatalf("%+v: no dictionary", o)
+		}
+		if d.Has("Widths") {
+			t.Errorf("%+v: /Widths read", o)
+		}
+		if n, _ := d.Name("BaseFont"); n != "Calibri" {
+			t.Errorf("%+v: /BaseFont %q", o, n)
+		}
+		if list, ok := d.Get("DescendantFonts").(pdf.Array); !ok || len(list) != 1 {
+			t.Errorf("%+v: /DescendantFonts %#v", o, d.Get("DescendantFonts"))
+		}
+		if enc, ok := d.Get("Encoding").(pdf.Dict); !ok || !enc.Has("Differences") {
+			t.Errorf("%+v: nested arrays must be read: /Encoding %#v", o, d.Get("Encoding"))
+		}
+		if d.Get("FontDescriptor") != (pdf.Ref{Num: 3}) {
+			t.Errorf("%+v: /FontDescriptor %#v", o, d.Get("FontDescriptor"))
+		}
+
+		// Not cached: the whole dictionary is still read in full.
+		whole, _ := r.Dict(ref)
+		if w, ok := whole.Get("Widths").(pdf.Array); !ok || len(w) != 3 {
+			t.Fatalf("%+v: /Widths %#v after DictSkipArrays", o, whole.Get("Widths"))
+		}
+		// Once cached, the whole dictionary is returned.
+		if d, _ := r.DictSkipArrays(ref); !d.Has("Widths") {
+			t.Errorf("%+v: cached dictionary not returned whole", o)
+		}
+		// Direct objects are returned as they are.
+		if d, _ := r.DictSkipArrays(whole); !d.Has("Widths") {
+			t.Errorf("%+v: direct dictionary changed", o)
+		}
+	}
+}

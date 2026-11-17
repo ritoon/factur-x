@@ -273,13 +273,17 @@ func DetectProfile(urn string) Profile {
 	return ProfileUnknown
 }
 
+// levelSeparators removes the separators ProfileFromConformanceLevel ignores.
+// A Replacer is safe for concurrent use; building one per call cost more
+// than the rest of the function.
+var levelSeparators = strings.NewReplacer(" ", "", "-", "", "_", "")
+
 // ProfileFromConformanceLevel returns the profile named by an XMP
 // ConformanceLevel value. Case, spaces, dashes and underscores are ignored, so
 // "BASIC WL", "basicwl" and "EN16931" are recognized, as is the legacy
 // ZUGFeRD 1 value "COMFORT" (EN 16931).
 func ProfileFromConformanceLevel(level string) Profile {
-	r := strings.NewReplacer(" ", "", "-", "", "_", "")
-	switch strings.ToUpper(r.Replace(strings.TrimSpace(level))) {
+	switch strings.ToUpper(levelSeparators.Replace(strings.TrimSpace(level))) {
 	case "MINIMUM":
 		return ProfileMinimum
 	case "BASICWL":

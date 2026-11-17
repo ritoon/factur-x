@@ -36,6 +36,7 @@ type Reader struct {
 	cache map[uint32]Object
 	stms  map[uint32]*objStm
 	depth int
+	kvs   []KV // scratch space of the parsers (see parser.scratch)
 }
 
 // entry is a cross-reference entry.
@@ -173,7 +174,7 @@ func (r *Reader) Object(num uint32) Object {
 		return nil
 	}
 	r.depth++
-	o := r.load(num)
+	o := r.load(num, nil)
 	r.depth--
 	if r.cache == nil {
 		r.cache = make(map[uint32]Object, 16)
@@ -182,7 +183,33 @@ func (r *Reader) Object(num uint32) Object {
 	return o
 }
 
-func (r *Reader) load(num uint32) Object {
+// DictSkipArrays returns the dictionary o resolves to, as Dict does, but
+// without the arrays of its entries other than keep, which are skipped
+// rather than read: a font dictionary is read without its glyph widths,
+// hundreds of numbers that a reader of the font descriptor does not need.
+// Only the arrays of the outermost dictionary are left out. A dictionary
+// read that way is not cached; one already read in full is returned whole.
+func (r *Reader) DictSkipArrays(o Object, keep ...Name) (Dict, bool) {
+	ref, ok := o.(Ref)
+	if !ok {
+		return r.Dict(o)
+	}
+	if _, cached := r.cache[ref.Num]; cached || r.depth > 64 {
+		return r.Dict(o)
+	}
+	r.depth++
+	v := r.load(ref.Num, &selection{keep: keep})
+	r.depth--
+	return r.Dict(v)
+}
+
+// selection restricts what a parser reads (see DictSkipArrays).
+type selection struct {
+	keep []Name // keys whose arrays are read
+}
+
+// load reads object num; sel, when not nil, restricts what is read.
+func (r *Reader) load(num uint32, sel *selection) Object {
 	if !r.recOnly {
 		e, found := r.lookup(num)
 		if found {
@@ -190,18 +217,18 @@ func (r *Reader) load(num uint32) Object {
 			case 0:
 				return nil
 			case 1:
-				if o, err := r.parseAt(e.off, num); err == nil {
+				if o, err := r.parseAt(e.off, num, sel); err == nil {
 					return o
 				}
 				if r.base > 0 {
-					if o, err := r.parseAt(e.off+int64(r.base), num); err == nil {
+					if o, err := r.parseAt(e.off+int64(r.base), num, sel); err == nil {
 						r.repaired = true
 						return o
 					}
 				}
 			case 2:
 				if e.off <= math.MaxUint32 {
-					if o, err := r.fromStm(uint32(e.off), e.idx, num); err == nil {
+					if o, err := r.fromStm(uint32(e.off), e.idx, num, sel); err == nil {
 						return o
 					}
 				}
@@ -217,10 +244,10 @@ func (r *Reader) load(num uint32) Object {
 		return nil
 	}
 	if re.inStm {
-		o, _ := r.fromStm(re.stm, re.idx, num)
+		o, _ := r.fromStm(re.stm, re.idx, num, sel)
 		return o
 	}
-	o, _ := r.parseAt(re.off, num)
+	o, _ := r.parseAt(re.off, num, sel)
 	return o
 }
 
@@ -432,12 +459,12 @@ func (r *Reader) loadSection(off int64, streamOnly bool) (*section, error) {
 	if off < 0 || off >= int64(len(r.data)) {
 		return nil, fmt.Errorf("pdf: cross-reference offset %d out of range", off)
 	}
-	p := parser{b: r.data, pos: int(off)}
+	p := parser{b: r.data, pos: int(off), r: r}
 	p.skip()
 	if !streamOnly && bytes.HasPrefix(r.data[p.pos:], []byte("xref")) {
 		return r.loadTable(off, p.pos+4)
 	}
-	o, err := r.parseAt(off, 0)
+	o, err := r.parseAt(off, 0, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -499,7 +526,7 @@ func (r *Reader) readXrefStream(st *Stream) (*xrefStream, error) {
 // "xref" keyword.
 func (r *Reader) loadTable(off int64, pos int) (*section, error) {
 	b := r.data
-	p := parser{b: b, pos: pos}
+	p := parser{b: b, pos: pos, r: r}
 	s := &section{off: off}
 	for {
 		p.skip()
@@ -575,7 +602,7 @@ func (r *Reader) lenientSection(off int64) (*section, error) {
 	if i < 0 {
 		return nil, errors.New("pdf: no trailer after the cross-reference table")
 	}
-	p := parser{b: r.data, pos: int(off) + i + 7}
+	p := parser{b: r.data, pos: int(off) + i + 7, r: r}
 	t, err := p.object()
 	if err != nil {
 		return nil, err
@@ -591,7 +618,7 @@ func (r *Reader) lenientSection(off int64) (*section, error) {
 // readTableLenient reads the entries of a classic table token by token.
 func (r *Reader) readTableLenient(off int64) map[uint32]entry {
 	m := map[uint32]entry{}
-	p := parser{b: r.data, pos: int(off)}
+	p := parser{b: r.data, pos: int(off), r: r}
 	p.skip()
 	if !bytes.HasPrefix(r.data[p.pos:], []byte("xref")) {
 		return m
@@ -642,12 +669,12 @@ func (r *Reader) readTableLenient(off int64) map[uint32]entry {
 }
 
 // parseAt reads the indirect object at off. When num is not 0, the object
-// header must carry that number.
-func (r *Reader) parseAt(off int64, num uint32) (Object, error) {
+// header must carry that number. sel, when not nil, restricts what is read.
+func (r *Reader) parseAt(off int64, num uint32, sel *selection) (Object, error) {
 	if off < 0 || off >= int64(len(r.data)) {
 		return nil, errNotObject
 	}
-	p := parser{b: r.data, pos: int(off), r: r}
+	p := parser{b: r.data, pos: int(off), r: r, sel: sel}
 	p.skip()
 	n, ok := p.uint()
 	if !ok {
@@ -778,7 +805,7 @@ func (r *Reader) decodeObjStm(st *Stream) *objStm {
 		return nil
 	}
 	os := &objStm{data: data, first: int(first)}
-	p := parser{b: data[:first]}
+	p := parser{b: data[:first], r: r}
 	for i := int64(0); i < n; i++ {
 		p.skip()
 		num, ok1 := p.uint()
@@ -794,7 +821,7 @@ func (r *Reader) decodeObjStm(st *Stream) *objStm {
 }
 
 // fromStm reads object num, stored at index idx of object stream stm.
-func (r *Reader) fromStm(stm, idx, num uint32) (Object, error) {
+func (r *Reader) fromStm(stm, idx, num uint32, sel *selection) (Object, error) {
 	os := r.objStm(stm)
 	if os == nil {
 		return nil, errNotObject
@@ -812,7 +839,7 @@ func (r *Reader) fromStm(stm, idx, num uint32) (Object, error) {
 			return nil, errNotObject
 		}
 	}
-	p := parser{b: os.data, pos: os.first + os.offs[i], r: r}
+	p := parser{b: os.data, pos: os.first + os.offs[i], r: r, sel: sel}
 	o, err := p.object()
 	if err != nil {
 		return nil, err

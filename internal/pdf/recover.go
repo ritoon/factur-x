@@ -88,7 +88,7 @@ func (r *Reader) recovery() *recovery {
 		}
 		at := i + k
 		i = at + 7
-		p := parser{b: data, pos: i}
+		p := parser{b: data, pos: i, r: r}
 		if o, err := p.object(); err == nil {
 			if d, ok := o.(Dict); ok {
 				trailers = append(trailers, dictAt{int64(at), d})
