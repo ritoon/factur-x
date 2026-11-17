@@ -106,9 +106,10 @@ func Create(pdf []byte, inv *invoice.Invoice, opts *CreateOptions) ([]byte, erro
 // and the embedded XML. The returned attachment is nil when no invoice was
 // found. The error is reserved for PDFs that cannot be read at all.
 //
-// The national rule sets that opts selects for the XML (France, Germany,
-// GermanyProfile, explicitly or through Auto) also select the national
-// usage of the container: with the German rules, the /AFRelationship of a
+// The national rule sets that apply to the XML (France, Germany,
+// GermanyProfile, selected explicitly or through Auto, and Germany for an
+// XRECHNUNG invoice, see validate.RulesFor) also select the national usage
+// of the container: with the German rules, the /AFRelationship of a
 // BASIC invoice or above must be Alternative (PDF-40); with the French
 // rules, Data is admitted besides Alternative and Source (no PDF-14).
 func Check(pdf []byte, opts *validate.Options) (*validate.Report, *Attachment, error) {

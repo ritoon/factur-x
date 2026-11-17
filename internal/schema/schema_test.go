@@ -531,27 +531,34 @@ func TestCatalog(t *testing.T) {
 }
 
 // knownStructureErrors lists the corpus files that do not match the
-// Factur-X 1.09.2 schema of their profile: the rules they break and why. Each
-// of them comes from an older kit (ZUGFeRD 2.0 / 2.1, Factur-X 1.0) whose
-// schemas differ from 1.09.2.
+// Factur-X 1.09.2 schema of their profile: the rules they break and why. Most
+// of them come from an older kit (ZUGFeRD 2.0 / 2.1, Factur-X 1.0) whose
+// schemas differ from 1.09.2. Those marked fail are in a fail directory of
+// the corpus: their errors are the point of the sample, so each listed rule
+// must still be reported.
 var knownStructureErrors = map[string]struct {
 	rules []string
 	why   string
+	fail  bool
 }{
-	"MustangGnuaccountingBeispielRE-20190610_507.xml": {[]string{RuleUnexpected},
-		"ZUGFeRD 2.0 sample: ram:GermanBankleitzahlID (D16B) was dropped from the Factur-X schemas"},
-	"zugferd_2p0_EN16931_1_Teilrechnung.xml": {[]string{RuleMissing},
-		"ZUGFeRD 2.0 kit: line price allowance without ram:ChargeIndicator, required by the 1.09.2 schema"},
-	"zugferd_2p0_EN16931_Rabatte.xml": {[]string{RuleMissing},
-		"ZUGFeRD 2.0 kit: line price allowance without ram:ChargeIndicator, required by the 1.09.2 schema"},
-	"zugferd_2p0_EN16931_Rechnungskorrektur.xml": {[]string{RuleMissing},
-		"ZUGFeRD 2.0 kit: line price allowance without ram:ChargeIndicator, required by the 1.09.2 schema"},
-	"zugferd_2p0_MINIMUM.xml": {[]string{RuleUnexpected},
-		"ZUGFeRD 2.0 kit: buyer street address in MINIMUM, where the schema (1.0.07 to 1.09.2) only allows ram:CountryID"},
-	"zugferd_2p1_MINIMUM_Buchungshilfe.xml": {[]string{RuleUnexpected},
-		"ZUGFeRD 2.1 kit: street addresses and ram:LineTotalAmount in MINIMUM, not in the MINIMUM schema"},
-	"zugferd_2p1_MINIMUM_Rechnung.xml": {[]string{RuleUnexpected},
-		"ZUGFeRD 2.1 kit: street addresses in MINIMUM, where the schema only allows ram:CountryID"},
+	"MustangGnuaccountingBeispielRE-20190610_507.xml": {rules: []string{RuleUnexpected},
+		why: "ZUGFeRD 2.0 sample: ram:GermanBankleitzahlID (D16B) was dropped from the Factur-X schemas"},
+	"zugferd_2p0_EN16931_1_Teilrechnung.xml": {rules: []string{RuleMissing},
+		why: "ZUGFeRD 2.0 kit: line price allowance without ram:ChargeIndicator, required by the 1.09.2 schema"},
+	"zugferd_2p0_EN16931_Rabatte.xml": {rules: []string{RuleMissing},
+		why: "ZUGFeRD 2.0 kit: line price allowance without ram:ChargeIndicator, required by the 1.09.2 schema"},
+	"zugferd_2p0_EN16931_Rechnungskorrektur.xml": {rules: []string{RuleMissing},
+		why: "ZUGFeRD 2.0 kit: line price allowance without ram:ChargeIndicator, required by the 1.09.2 schema"},
+	"zugferd_2p0_MINIMUM.xml": {rules: []string{RuleUnexpected},
+		why: "ZUGFeRD 2.0 kit: buyer street address in MINIMUM, where the schema (1.0.07 to 1.09.2) only allows ram:CountryID"},
+	"zugferd_2p1_MINIMUM_Buchungshilfe.xml": {rules: []string{RuleUnexpected},
+		why: "ZUGFeRD 2.1 kit: street addresses and ram:LineTotalAmount in MINIMUM, not in the MINIMUM schema"},
+	"zugferd_2p1_MINIMUM_Rechnung.xml": {rules: []string{RuleUnexpected},
+		why: "ZUGFeRD 2.1 kit: street addresses in MINIMUM, where the schema only allows ram:CountryID"},
+	"XRechnung 722825203.XML": {rules: []string{RuleUnexpected}, fail: true,
+		why: "corpus fail sample (ZUGFeRD/corpus 82e886f, \"there is no DeliveryNoteReferencedDocument in the norm\"): " +
+			"ram:DeliveryNoteReferencedDocument on the lines and ram:PostalTradeAddress in the buyer's " +
+			"ram:SpecifiedLegalOrganization, both outside EN 16931 (EXTENDED only)"},
 }
 
 // corpusFiles returns the CII invoices (root rsm:CrossIndustryInvoice) found
@@ -616,7 +623,14 @@ func TestCorpus(t *testing.T) {
 					t.Errorf("%s: unexpected %v (known exception: %s)", path, f, known.why)
 				}
 			}
-			if r.Valid() {
+			switch {
+			case known.fail:
+				for _, id := range known.rules {
+					if !contains(r.Rules(), id) {
+						t.Errorf("%s: %s not reported (expected failure: %s)", path, id, known.why)
+					}
+				}
+			case r.Valid():
 				t.Logf("%s: listed as a known exception but now valid", path)
 			}
 		default:

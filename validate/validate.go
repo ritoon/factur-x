@@ -83,9 +83,9 @@ const (
 	Peppol                             // Peppol BIS Billing 3.0 rules (PEPPOL-*) and their national rules (NO, DK, IT, SE, NL)
 
 	// Default is the set used when Options.Rules is zero: schema, EN 16931
-	// and profile rules, plus the German rules for XRECHNUNG invoices and
-	// the Peppol rules for invoices whose BT-24 is the Peppol BIS Billing
-	// 3.0 identifier.
+	// and profile rules. Whatever the rule sets, the German rules apply to
+	// XRECHNUNG invoices and the Peppol rules to invoices whose BT-24 is the
+	// Peppol BIS Billing 3.0 identifier (see RulesFor).
 	Default = Schema | EN16931 | FacturX
 )
 
@@ -93,7 +93,10 @@ const (
 type Options struct {
 	// Profile overrides the profile read from BT-24.
 	Profile invoice.Profile
-	// Rules selects the rule sets; zero means Default.
+	// Rules selects the rule sets; zero means Default. The German rules for
+	// an XRECHNUNG invoice and the Peppol rules for a Peppol invoice are
+	// added whatever Rules: selecting other sets, such as Default | France,
+	// never drops them.
 	Rules RuleSet
 	// Auto adds the national rules of the seller's country (BT-40): the
 	// French rules (France) for a seller in France, the BMF profile check
@@ -210,17 +213,21 @@ func Tree(root *xmltree.Node, opts *Options) *Report {
 	return r
 }
 
-// RulesFor returns the rule sets that apply to doc with opts.
+// RulesFor returns the rule sets that apply to doc with opts: opts.Rules
+// (Default when zero), plus the German rules for an XRECHNUNG invoice and
+// the Peppol rules for a Peppol invoice whatever opts.Rules, plus the
+// national rules of the seller's country with opts.Auto. The profile is the
+// one of doc, which Options.Profile overrides.
 func RulesFor(doc *rules.Doc, opts *Options) RuleSet {
 	set := opts.Rules
 	if set == 0 {
 		set = Default
-		switch doc.Profile {
-		case invoice.ProfileXRechnung:
-			set |= Germany
-		case invoice.ProfilePeppol:
-			set |= Peppol
-		}
+	}
+	switch doc.Profile {
+	case invoice.ProfileXRechnung:
+		set |= Germany
+	case invoice.ProfilePeppol:
+		set |= Peppol
 	}
 	if opts.Auto {
 		switch doc.Agreement.Value("SellerTradeParty/PostalTradeAddress/CountryID") {

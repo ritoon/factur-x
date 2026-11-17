@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -233,6 +234,7 @@ func TestCheckRelationship(t *testing.T) {
 		{"Source for XRECHNUNG, no option", invoice.URNXRechnung, "DE", "Source", nil, "PDF-40"},
 		{"Source for XRECHNUNG, rules without Germany", invoice.URNXRechnung, "DE", "Source", &validate.Options{Rules: validate.Schema}, "PDF-40"},
 		{"Source, profile forced to XRECHNUNG", invoice.URNEN16931, "FR", "Source", &validate.Options{Profile: invoice.ProfileXRechnung}, "PDF-40"},
+		{"Source, profile forced to XRECHNUNG, French rules", invoice.URNEN16931, "FR", "Source", &validate.Options{Profile: invoice.ProfileXRechnung, Rules: validate.Default | validate.France}, "PDF-40"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := invoice.ProfileFromURN(tc.urn)
@@ -572,8 +574,9 @@ func TestStrictDate(t *testing.T) {
 }
 
 // TestCheckContainerCorpus checks every PDF of FX_CORPUS: all of them must
-// be readable and have an invoice attachment. The findings are logged by
-// rule.
+// be readable and have an invoice attachment, except those of the
+// unstructured directory, which must be reported as having none (PDF-09).
+// The findings are logged by rule.
 func TestCheckContainerCorpus(t *testing.T) {
 	root := os.Getenv("FX_CORPUS")
 	if root == "" {
@@ -592,6 +595,15 @@ func TestCheckContainerCorpus(t *testing.T) {
 		}
 		files++
 		a, findings, err := CheckContainer(data)
+		if unstructuredPDF(rel) {
+			noInvoice := slices.ContainsFunc(findings, func(f rules.Finding) bool {
+				return f.Rule == "PDF-09" && f.Path == "catalog /Names /EmbeddedFiles"
+			})
+			if err != nil || a != nil || !noInvoice {
+				t.Errorf("%s: unstructured PDF, want no attachment and PDF-09, got %v %v", rel, err, findings)
+			}
+			return nil
+		}
 		if err != nil || a == nil {
 			t.Errorf("%s: %v %v", rel, err, findings)
 			return nil

@@ -153,7 +153,7 @@ if !report.Valid() { /* au moins une erreur */ }
 |---|---|
 | `nil` ou `&validate.Options{}` | Schéma (du profil, ou UBL 2.1), règles EN 16931, règles de profil Factur-X ; règles BR-DE en plus pour une facture XRECHNUNG, règles Peppol pour une facture CII Peppol BIS Billing 3.0 |
 | `Auto: true` | Ajoute les règles du pays du vendeur (BT-40) : BR-FR et profils admis en France pour un vendeur en France, profils acceptés par le BMF pour un vendeur en Allemagne ; `Check` y ajoute l'`/AFRelationship` admise dans ce pays (voir plus bas) |
-| `Rules: validate.Default \| validate.France` | Choix explicite des jeux de règles (`France`, `Germany`, `GermanyProfile`, `ChorusPro`, `Peppol`) |
+| `Rules: validate.Default \| validate.France` | Choix explicite des jeux de règles (`France`, `Germany`, `GermanyProfile`, `ChorusPro`, `Peppol`) ; les règles BR-DE d'une facture XRECHNUNG et les règles Peppol d'une facture Peppol s'y ajoutent toujours |
 | `RejectBasicWL: true` | Avec les règles françaises, signale BASIC WL en erreur (FR-PROFILE-03) |
 | `Rules: … \| validate.ChorusPro` | Ajoute les contrôles B2G de Chorus Pro (voir ci-dessous) |
 | `Rules: … \| validate.Peppol` | Ajoute les règles Peppol BIS Billing 3.0 à une facture qui ne se déclare pas Peppol (voir ci-dessous) |
@@ -172,7 +172,7 @@ Les schematrons officiels ne contrôlent pas le profil ; ces contrôles ont des 
 | FR-PROFILE-03 | erreur | `France` avec `RejectBasicWL` | BASIC WL, admis aujourd'hui sans date de fin publiée : l'option permet de le refuser dès maintenant ou quand il ne sera plus admis |
 | DE-PROFILE-01 | erreur | `GermanyProfile` | MINIMUM et BASIC WL, que le BMF n'accepte pas comme factures électroniques (BMF-Schreiben du 15/10/2024 : ZUGFeRD à partir de 2.0.1, sauf ces deux profils) |
 
-En France, EN 16931 et EXTENDED-CTC-FR forment le socle et EXTENDED est admis ; en Allemagne, BASIC, EN 16931, EXTENDED et XRECHNUNG sont acceptés. `Auto` n'applique pas les règles BR-DE à une facture ZUGFeRD : elles ne concernent que XRECHNUNG.
+En France, EN 16931 et EXTENDED-CTC-FR forment le socle et EXTENDED est admis ; en Allemagne, BASIC, EN 16931, EXTENDED et XRECHNUNG sont acceptés. `Auto` n'applique pas les règles BR-DE à une facture ZUGFeRD : elles ne concernent que XRECHNUNG, à qui elles s'appliquent quels que soient les jeux choisis.
 
 #### Relation du XML au PDF (`/AFRelationship`) par pays
 
@@ -217,7 +217,7 @@ Sources : annexe EDI des spécifications externes Chorus Pro V4.23 (règles G1.0
 
 Le jeu `Peppol` applique à une facture CII les 90 assertions du schematron Peppol BIS Billing 3.0 : règles PEPPOL-EN16931-R (processus métier BT-23, identifiant de spécification BT-24, référence acheteur ou de commande, adresses électroniques du vendeur et de l'acheteur, une seule note, totaux de TVA, remises et charges, montant net des lignes, périodes de ligne), formats des identifiants selon leur schéma ICD (PEPPOL-COMMON-R : GLN, numéros d'organisation norvégien, suédois, danois, belge, néerlandais, codes italiens, ABN australien…), listes de codes restreintes, et règles nationales norvégiennes, danoises, italiennes, suédoises et néerlandaises, appliquées selon le pays du vendeur.
 
-Il s'applique d'office quand BT-24 est l'identifiant Peppol (`urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0`, profil `invoice.ProfilePeppol`), sinon seulement sur demande (`Rules: validate.Default | validate.Peppol`, `facturx validate -peppol`). `Auto` ne l'ajoute jamais : la plupart des factures Factur-X et ZUGFeRD valides ne respectent pas ces règles (pas de BT-23 Peppol, pas d'adresse électronique, pas de référence acheteur), et les appliquer sans condition les signalerait à tort. Il n'est pas appliqué à une facture UBL, dont le schematron Peppol est différent : le rapport porte alors une information (PEPPOL-UBL).
+Il s'applique d'office quand BT-24 est l'identifiant Peppol (`urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0`, profil `invoice.ProfilePeppol`), quels que soient les jeux choisis dans `Rules`, sinon seulement sur demande (`Rules: validate.Default | validate.Peppol`, `facturx validate -peppol`). `Auto` ne l'ajoute jamais : la plupart des factures Factur-X et ZUGFeRD valides ne respectent pas ces règles (pas de BT-23 Peppol, pas d'adresse électronique, pas de référence acheteur), et les appliquer sans condition les signalerait à tort. Il n'est pas appliqué à une facture UBL, dont le schematron Peppol est différent : le rapport porte alors une information (PEPPOL-UBL).
 
 Les règles reproduisent le schematron tel qu'il est écrit, y compris là où il vise l'UBL plus que le CII :
 
@@ -240,7 +240,7 @@ facturx json facture.pdf|facture.xml
 facturx rules [-fr] [-de] [-choruspro] [-peppol]
 ```
 
-`validate` et `json` acceptent un XML CII ou UBL. `validate` sort avec le code 1 quand la facture a des erreurs, ce qui permet de l'utiliser en intégration continue. `embed -attach` ajoute une pièce jointe complémentaire (`/AFRelationship /Supplement`, type MIME d'après l'extension) ; l'option se répète.
+`validate` et `json` acceptent un XML CII ou UBL. `validate` sort avec le code 1 quand la facture a des erreurs, ce qui permet de l'utiliser en intégration continue. Ses options de règles (`-fr`, `-de`, `-choruspro`, `-peppol`) s'ajoutent aux règles par défaut : elles ne retirent jamais les règles BR-DE d'une facture XRECHNUNG ni les règles Peppol d'une facture Peppol. `embed -attach` ajoute une pièce jointe complémentaire (`/AFRelationship /Supplement`, type MIME d'après l'extension) ; l'option se répète.
 
 ```text
 $ facturx validate testdata/EN16931_Einfach.pdf
