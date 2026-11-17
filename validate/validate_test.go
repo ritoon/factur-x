@@ -16,6 +16,8 @@ const (
 	germanInvoice = "../testdata/EN16931_Einfach.cii.xml"          // seller in Germany, EN 16931
 	peppolInvoice = "../internal/rules/peppol/testdata/peppol.xml" // Peppol BIS Billing 3.0, seller in the United Kingdom
 	bt24EN16931   = "<ram:ID>urn:cen.eu:en16931:2017</ram:ID>"
+
+	xrechnungInvoice = "../testdata/XRECHNUNG_Einfach.cii.xml" // XRECHNUNG, seller in Germany
 )
 
 func readXML(t *testing.T, name string) string {
@@ -38,6 +40,7 @@ func withProfile(t *testing.T, doc string, p invoice.Profile) []byte {
 
 func TestRulesForAuto(t *testing.T) {
 	german := readXML(t, germanInvoice)
+	xrechnung := readXML(t, xrechnungInvoice)
 	for _, c := range []struct {
 		name, doc string
 		opts      Options
@@ -48,11 +51,19 @@ func TestRulesForAuto(t *testing.T) {
 		{"Belgian seller", strings.Replace(german, "<ram:CountryID>DE</ram:CountryID>", "<ram:CountryID>BE</ram:CountryID>", 1), Options{Auto: true}, Default},
 		{"German seller without Auto", german, Options{}, Default},
 		{"explicit rules", german, Options{Auto: true, Rules: Schema}, Schema | GermanyProfile},
-		{"XRECHNUNG", readXML(t, "../testdata/XRECHNUNG_Einfach.cii.xml"), Options{Auto: true}, Default | Germany | GermanyProfile},
+		{"XRECHNUNG", xrechnung, Options{Auto: true}, Default | Germany | GermanyProfile},
+		{"XRECHNUNG without Auto", xrechnung, Options{}, Default | Germany},
+		// The German rules of XRECHNUNG and the Peppol rules are not lost
+		// when other rule sets are selected.
+		{"XRECHNUNG with French rules", xrechnung, Options{Rules: Default | France}, Default | France | Germany},
+		{"XRECHNUNG explicit rules", xrechnung, Options{Rules: Schema}, Schema | Germany},
+		{"XRECHNUNG profile option, explicit rules", german, Options{Profile: invoice.ProfileXRechnung, Rules: Default | France}, Default | France | Germany},
 		{"Peppol", readXML(t, peppolInvoice), Options{}, Default | Peppol},
 		{"Peppol with Auto", readXML(t, peppolInvoice), Options{Auto: true}, Default | Peppol},
-		{"Peppol explicit rules", readXML(t, peppolInvoice), Options{Rules: Schema}, Schema},
+		{"Peppol with French rules", readXML(t, peppolInvoice), Options{Rules: Default | France}, Default | France | Peppol},
+		{"Peppol explicit rules", readXML(t, peppolInvoice), Options{Rules: Schema}, Schema | Peppol},
 		{"Peppol profile option", german, Options{Profile: invoice.ProfilePeppol}, Default | Peppol},
+		{"Peppol profile option, explicit rules", german, Options{Profile: invoice.ProfilePeppol, Rules: Default | ChorusPro}, Default | ChorusPro | Peppol},
 		{"French seller with Peppol", readXML(t, frenchInvoice), Options{Auto: true, Rules: Default | Peppol}, Default | Peppol | France},
 	} {
 		root, err := xmltree.Parse([]byte(c.doc))
@@ -214,6 +225,34 @@ func TestPeppol(t *testing.T) {
 	r = XML(french, &Options{Rules: Default | Peppol})
 	if findings(r, "PEPPOL-EN16931-R004") == nil {
 		t.Errorf("Rules: Default | Peppol did not apply the Peppol rules:\n%s", r)
+	}
+}
+
+// TestDeclaredRulesKept checks that the rules an invoice declares in BT-24
+// (BR-DE for XRECHNUNG, Peppol for a Peppol invoice) are applied whatever
+// rule sets are selected.
+func TestDeclaredRulesKept(t *testing.T) {
+	xrechnung := readXML(t, xrechnungInvoice)
+	const buyerRef = "<ram:BuyerReference>04011000-12345-34</ram:BuyerReference>"
+	if !strings.Contains(xrechnung, buyerRef) {
+		t.Fatal("BT-10 not found")
+	}
+	noBuyerRef := []byte(strings.Replace(xrechnung, buyerRef, "", 1))
+	// A Peppol invoice without electronic addresses.
+	noAddress := []byte(strings.ReplaceAll(readXML(t, peppolInvoice), "URIUniversalCommunication>", "X>"))
+	for _, opts := range []*Options{
+		nil,
+		{Auto: true},
+		{Rules: Default | France},
+		{Rules: Default | France | ChorusPro, Auto: true},
+		{Rules: Schema | EN16931},
+	} {
+		if r := XML(noBuyerRef, opts); len(findings(r, "BR-DE-15")) != 1 {
+			t.Errorf("XRECHNUNG without BT-10 (%+v): BR-DE-15 not reported:\n%s", opts, r)
+		}
+		if r := XML(noAddress, opts); len(findings(r, "PEPPOL-EN16931-R010")) != 1 {
+			t.Errorf("Peppol invoice without electronic address (%+v): PEPPOL-EN16931-R010 not reported:\n%s", opts, r)
+		}
 	}
 }
 

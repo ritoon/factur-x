@@ -234,6 +234,7 @@ func TestCheckRelationship(t *testing.T) {
 		{"Source for XRECHNUNG, no option", invoice.URNXRechnung, "DE", "Source", nil, "PDF-40"},
 		{"Source for XRECHNUNG, rules without Germany", invoice.URNXRechnung, "DE", "Source", &validate.Options{Rules: validate.Schema}, "PDF-40"},
 		{"Source, profile forced to XRECHNUNG", invoice.URNEN16931, "FR", "Source", &validate.Options{Profile: invoice.ProfileXRechnung}, "PDF-40"},
+		{"Source, profile forced to XRECHNUNG, French rules", invoice.URNEN16931, "FR", "Source", &validate.Options{Profile: invoice.ProfileXRechnung, Rules: validate.Default | validate.France}, "PDF-40"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := invoice.ProfileFromURN(tc.urn)
