@@ -9,7 +9,7 @@
 [![Licence MIT](https://img.shields.io/github/license/ritoon/zerechnung)](LICENSE)
 
 <p align="center">
-  <img src="docs/gopher.webp" alt="Le gopher Go en chapeau de papier et nœud papillon, tapant des factures à la machine à écrire entre des piles de factures" width="360">
+  <img src="docs/logo.png" alt="ZeRechnung, Go Package for Factur-X &amp; ZUGFeRD : le gopher Go lit une facture à côté d'une machine à écrire, un bateau en papier coiffe le n, une pile de factures marquée FR et DE">
 </p>
 
 Package Go pour les factures électroniques hybrides **Factur-X**, **ZUGFeRD** et **XRechnung**. Il prend un PDF déjà produit par votre application et y ajoute ce que la norme exige ; il relit et valide n'importe quelle facture de ces formats, quel que soit son profil. Il lit, écrit et valide aussi les factures XML en syntaxe **UBL 2.1**.
