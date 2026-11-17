@@ -107,7 +107,7 @@ const minimal = `<?xml version="1.0" encoding="UTF-8"?>
 // mutation is a change to a valid invoice and the findings it must produce.
 type mutation struct {
 	name     string
-	base     string // "en16931" (testdata/EN16931_Einfach.cii.xml), "minimum" (minimal), "ubl" or "ubl-cn" (see ublMutations)
+	base     string // "en16931" (testdata/EN16931_Einfach.cii.xml), "xrechnung" (testdata/XRECHNUNG_Einfach.cii.xml), "minimum" (minimal), "ubl" or "ubl-cn" (see ublMutations)
 	old, new string
 	more     []string // further old, new pairs
 	rules    []string // expected rule of each finding, in order
@@ -291,9 +291,62 @@ var mutations = []mutation{
 		msg:   `^unknown profile \(BT-24 "urn:example:profile"\): the structure is checked against the EXTENDED schema`,
 	},
 	{
-		name: "XRECHNUNG uses EN 16931", base: "en16931",
+		name: "XRECHNUNG accepts EN 16931", base: "en16931",
 		old: "<ram:ID>urn:cen.eu:en16931:2017</ram:ID>",
 		new: "<ram:ID>urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0</ram:ID>",
+	},
+	{
+		name: "XRECHNUNG accepts D16B", base: "xrechnung",
+		old: "<ram:ID>471102</ram:ID>",
+		new: "<ram:ID>471102</ram:ID><ram:Name>Rechnung</ram:Name>",
+		more: []string{
+			"<ram:TypeCode>380</ram:TypeCode>", `<ram:TypeCode listID="1001" listAgencyID="6">380</ram:TypeCode>`,
+			"</ram:IssueDateTime>", "</ram:IssueDateTime><ram:CopyIndicator><udt:Indicator>false</udt:Indicator></ram:CopyIndicator><ram:LanguageID>de</ram:LanguageID>",
+			"</ram:SpecifiedTradeSettlementHeaderMonetarySummation>", "</ram:SpecifiedTradeSettlementHeaderMonetarySummation>" + invoiceReference,
+		},
+	},
+	{
+		name: "D16B element in EN 16931", base: "en16931",
+		old:   "<ram:TypeCode>380</ram:TypeCode>",
+		new:   "<ram:TypeCode>380</ram:TypeCode><ram:LanguageID>de</ram:LanguageID>",
+		rules: []string{RuleUnexpected},
+	},
+	{
+		name: "XRECHNUNG date and time", base: "xrechnung",
+		old: `<udt:DateTimeString format="102">20241115</udt:DateTimeString>`,
+		new: "<udt:DateTime>2024-11-15T10:30:00+01:00</udt:DateTime>",
+	},
+	{
+		name: "XRECHNUNG bad date and time", base: "xrechnung",
+		old:   `<udt:DateTimeString format="102">20241115</udt:DateTimeString>`,
+		new:   "<udt:DateTime>2024-11-15</udt:DateTime>",
+		rules: []string{RuleType},
+		msg:   `^udt:DateTime: value "2024-11-15" .* xs:dateTime$`,
+	},
+	{
+		name: "XRECHNUNG fixed attribute", base: "xrechnung",
+		old:   "<ram:TypeCode>380</ram:TypeCode>",
+		new:   `<ram:TypeCode listID="UNTDID 1001">380</ram:TypeCode>`,
+		rules: []string{RuleType},
+		msg:   `^attribute listID of ram:TypeCode: value "UNTDID 1001" .*1001`,
+	},
+	{
+		name: "XRECHNUNG one preceding invoice", base: "xrechnung",
+		old:   "</ram:SpecifiedTradeSettlementHeaderMonetarySummation>",
+		new:   "</ram:SpecifiedTradeSettlementHeaderMonetarySummation>" + invoiceReference + invoiceReference,
+		rules: []string{RuleCount},
+	},
+	{
+		name: "EN 16931 several preceding invoices", base: "en16931",
+		old: "</ram:SpecifiedTradeSettlementHeaderMonetarySummation>",
+		new: "</ram:SpecifiedTradeSettlementHeaderMonetarySummation>" + invoiceReference + invoiceReference,
+	},
+	{
+		name: "EXTENDED-CTC-FR uses EXTENDED", base: "en16931",
+		old:   "<ram:ID>urn:cen.eu:en16931:2017</ram:ID>",
+		new:   "<ram:ID>urn:cen.eu:en16931:2017#conformant#urn.cpro.gouv.fr:1p0:extended-ctc-fr</ram:ID>",
+		more:  []string{"</ram:IssueDateTime>", "</ram:IssueDateTime><ram:Purpose>D22B only</ram:Purpose>"},
+		rules: []string{RuleUnexpected},
 	},
 	{
 		name: "root", base: "minimum",
@@ -309,6 +362,9 @@ var mutations = []mutation{
 		rules: []string{RuleNamespace, RuleNamespace, RuleNamespace, RuleNamespace},
 	},
 }
+
+// invoiceReference is a preceding invoice reference (BG-3).
+const invoiceReference = "<ram:InvoiceReferencedDocument><ram:IssuerAssignedID>471101</ram:IssuerAssignedID></ram:InvoiceReferencedDocument>"
 
 // apply returns the mutated document.
 func (m *mutation) apply(t testing.TB) []byte {
@@ -328,6 +384,8 @@ func mutationBase(t testing.TB, base string) []byte {
 		return readFile(t, filepath.Join("..", "..", "testdata", "EN16931_Einfach.cii.xml"))
 	case "rabatte":
 		return readFile(t, filepath.Join("..", "..", "testdata", "EN16931_Rabatte.cii.xml"))
+	case "xrechnung":
+		return readFile(t, filepath.Join("..", "..", "testdata", "XRECHNUNG_Einfach.cii.xml"))
 	case "ubl":
 		return readFile(t, filepath.Join("..", "..", "testdata", "EN16931_Einfach.ubl.xml"))
 	case "ubl-cn":
@@ -424,6 +482,11 @@ func TestValues(t *testing.T) {
 		{kTime, "24:00:00.000", true}, {kTime, "24:00:01", false}, {kTime, "24:00:00.1", false}, {kTime, "12:60:00", false},
 		{kTime, "12:00:60", false}, {kTime, "12:00", false}, {kTime, "12:00:00.", false}, {kTime, "12:00:00+0200", false},
 		{kTime, "1:00:00", false}, {kTime, "2024-02-29T12:00:00", false},
+		{kDateTime, "2024-02-29T12:30:00", true}, {kDateTime, " 2024-02-29T12:30:00.25Z ", true}, {kDateTime, "2024-02-29T12:30:00-05:00", true},
+		{kDateTime, "-0044-03-15T00:00:00", true}, {kDateTime, "2024-12-31T24:00:00", true},
+		{kDateTime, "2024-02-29", false}, {kDateTime, "2024-02-29T12:30", false}, {kDateTime, "2024-02-29 12:30:00", false},
+		{kDateTime, "2023-02-29T12:30:00", false}, {kDateTime, "2024-02-29ZT12:30:00", false}, {kDateTime, "2024-02-29T25:00:00", false},
+		{kDateTime, "20240229T123000", false}, {kDateTime, "2024-02-29T12:30:00+15:00", false}, {kDateTime, "", false},
 		{kString, "anything", true},
 	} {
 		if got := ciiTables.checkValue(tc.s, tc.k, 0) == ""; got != tc.want {
@@ -535,7 +598,11 @@ func TestCatalog(t *testing.T) {
 // of them come from an older kit (ZUGFeRD 2.0 / 2.1, Factur-X 1.0) whose
 // schemas differ from 1.09.2. Those marked fail are in a fail directory of
 // the corpus: their errors are the point of the sample, so each listed rule
-// must still be reported.
+// must still be reported. The fail sample "XRechnung 722825203.XML" is not
+// listed: its elements outside EN 16931 (ram:DeliveryNoteReferencedDocument
+// on the lines, an address in the buyer's legal organization) are in the CII
+// D16B schema of XRECHNUNG, which KoSIT applies too; it fails BR-DE-18 (see
+// internal/rules/de).
 var knownStructureErrors = map[string]struct {
 	rules []string
 	why   string
@@ -555,10 +622,6 @@ var knownStructureErrors = map[string]struct {
 		why: "ZUGFeRD 2.1 kit: street addresses and ram:LineTotalAmount in MINIMUM, not in the MINIMUM schema"},
 	"zugferd_2p1_MINIMUM_Rechnung.xml": {rules: []string{RuleUnexpected},
 		why: "ZUGFeRD 2.1 kit: street addresses in MINIMUM, where the schema only allows ram:CountryID"},
-	"XRechnung 722825203.XML": {rules: []string{RuleUnexpected}, fail: true,
-		why: "corpus fail sample (ZUGFeRD/corpus 82e886f, \"there is no DeliveryNoteReferencedDocument in the norm\"): " +
-			"ram:DeliveryNoteReferencedDocument on the lines and ram:PostalTradeAddress in the buyer's " +
-			"ram:SpecifiedLegalOrganization, both outside EN 16931 (EXTENDED only)"},
 }
 
 // corpusFiles returns the CII invoices (root rsm:CrossIndustryInvoice) found

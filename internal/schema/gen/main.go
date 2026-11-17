@@ -1,10 +1,13 @@
 // Command gen compiles XML schemas into the compact Go tables used by package
-// schema: the schemas of the Factur-X profiles (CII) and the OASIS UBL 2.1
-// schemas of the Invoice and CreditNote documents.
+// schema: the schemas of the Factur-X profiles (CII), the complete UN/CEFACT
+// CII schemas used by the reference validators of XRechnung (D16B) and of
+// the French EXTENDED-CTC-FR profile (D22B), and the OASIS UBL 2.1 schemas
+// of the Invoice and CreditNote documents.
 //
 // Usage:
 //
 //	go run ./gen [-o tables_gen.go] <dir>
+//	go run ./gen -cii D16B|D22B [-src path] [-o cii_d16b_tables_gen.go]
 //	go run ./gen -ubl [-zip UBL-2.1.zip] [-o ubl_tables_gen.go]
 //
 // In the first form, dir is searched recursively for the main schema of each
@@ -14,6 +17,23 @@
 // it imports are read from the paths given by their schemaLocation. Complex
 // types that are structurally identical in several profiles are emitted once
 // and shared.
+//
+// With -cii, gen compiles one complete UN/CEFACT Cross Industry Invoice
+// schema (uncoupled: without the code list schemas), as a single schema set
+// like the UBL one below:
+//
+//   - D16B: the schema of the KoSIT validator configuration for XRechnung
+//     3.0.2 (resources/cii/16b/xsd), against which KoSIT validates XRechnung
+//     CII invoices;
+//   - D22B: the schema of the FNFE-MPE France_RFE package 1.4.0.04
+//     (FNFE_RFE_INVOICE/CII/1xsd-CII_D22B_uncoupled), against which the
+//     package validates CII invoices of the EN 16931 and EXTENDED-CTC-FR
+//     profiles.
+//
+// The schema files are downloaded from their publisher (the KoSIT release
+// archive, or the files of the France_RFE repository at the commit of the
+// release tag) or read from -src: the KoSIT archive or a directory holding
+// the files. Every file read must have the SHA-256 recorded in ciiSets.
 //
 // With -ubl, gen reads the OASIS UBL 2.1 package UBL-2.1.zip, from a local
 // file (-zip) or downloaded from docs.oasis-open.org, checks its SHA-256 and
@@ -41,9 +61,10 @@
 // particles (local elements or references to global elements), simple
 // content extensions and restrictions with attributes, simple types
 // restricting a built-in type with enumeration, pattern and length facets,
-// and a sequence made of a single xsd:any of namespace ##other. Anything else
-// stops the generator with an error, so that a new version of the schemas
-// never compiles silently into wrong tables.
+// attributes of a string type with a fixed value, and a sequence made of a
+// single xsd:any of namespace ##other. Anything else stops the generator
+// with an error, so that a new version of the schemas never compiles
+// silently into wrong tables.
 package main
 
 import (
@@ -61,10 +82,13 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"testing/fstest"
 	"time"
 )
 
@@ -91,12 +115,64 @@ const (
 	ublVersion = "2.1"
 )
 
+// rootDoc is a document of a single schema set: its main schema and its
+// root element.
+type rootDoc struct{ file, ns, root string }
+
 // ublDocs lists the UBL documents compiled, in the order of the generated
 // roots: their main schema in the package and their root element.
-var ublDocs = []struct{ file, ns, root string }{
+var ublDocs = []rootDoc{
 	{"xsdrt/maindoc/UBL-Invoice-2.1.xsd", "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2", "Invoice"},
 	{"xsdrt/maindoc/UBL-CreditNote-2.1.xsd", "urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2", "CreditNote"},
 }
+
+// ciiSet describes a complete UN/CEFACT CII schema compiled with -cii.
+type ciiSet struct {
+	prefix string // prefix of the generated identifiers
+	origin string // publisher and release, for the generated comments
+	// The files are in the zip archive at archive (SHA-256 archiveSum),
+	// under dir; or, when archive is empty, at the URL dir + name.
+	archive, archiveSum string
+	dir                 string
+	files               []pinnedFile // every schema file, the main one first
+}
+
+// pinnedFile is a schema file and its SHA-256.
+type pinnedFile struct{ name, sum string }
+
+// ciiSets lists the schemas -cii compiles, by version.
+var ciiSets = map[string]ciiSet{
+	"D16B": {
+		prefix:     "d16b",
+		origin:     "KoSIT validator configuration for XRechnung 3.0.2, release 2026-08-31",
+		archive:    "https://github.com/itplr-kosit/validator-configuration-xrechnung/releases/download/v2026-08-31/xrechnung-3.0.2-validator-configuration-2026-08-31.zip",
+		archiveSum: "2530cd107c414511c5d0462ec10f886910395abfca820db82e83d70bf01221a8",
+		dir:        "resources/cii/16b/xsd/",
+		files: []pinnedFile{
+			{"CrossIndustryInvoice_100pD16B.xsd", "3baf143b90f289d62c5dfb086aa51fa183490a2d0b38a40c6b31dcae0760f2ba"},
+			{"CrossIndustryInvoice_QualifiedDataType_100pD16B.xsd", "6649215914728652e883662bec1d3eab008c215e86a59f3bb417db9723ee8c5c"},
+			{"CrossIndustryInvoice_ReusableAggregateBusinessInformationEntity_100pD16B.xsd", "1c42244298a863bcc0b5196983ff0a5d084fcabe58aea77ef82b242e7cd0ddfd"},
+			{"CrossIndustryInvoice_UnqualifiedDataType_100pD16B.xsd", "04fce6f6f28521886731294be18a4e6bb5cb3003456457d99ad5c4d3e652f497"},
+		},
+	},
+	"D22B": {
+		prefix: "d22b",
+		origin: "FNFE-MPE France_RFE 1.4.0.04 (tag v1.4.0.04, commit 97ba0f3d4ef2abed5780e9490d5c3a2be832ab1d)",
+		dir:    "https://raw.githubusercontent.com/fnfempe/France_RFE/97ba0f3d4ef2abed5780e9490d5c3a2be832ab1d/FNFE_RFE_INVOICE/CII/1xsd-CII_D22B_uncoupled/",
+		files: []pinnedFile{
+			{"CrossIndustryInvoice_100pD22B.xsd", "7be4b747f29e12634d269e5b456e1d58d7aece2817e23a2ea656bbf78afed80f"},
+			{"CrossIndustryInvoice_100pD22B_urn_un_unece_uncefact_data_standard_QualifiedDataType_100.xsd", "bc85893ae92561a9a9a760d1d624f340694858ea9b760c9167598da8cc2abe39"},
+			{"CrossIndustryInvoice_100pD22B_urn_un_unece_uncefact_data_standard_ReusableAggregateBusinessInformationEntity_100.xsd", "da59380415e1efe1032e0f787986961efd69c6689906747ed56fd4d17c4dfe61"},
+			{"CrossIndustryInvoice_100pD22B_urn_un_unece_uncefact_data_standard_UnqualifiedDataType_100.xsd", "58acb786f7cab1d70bb179ec6ff3add2e57fdb55f1c3995d3e05887bd2d717a9"},
+		},
+	},
+}
+
+// Namespace and root element of a CII invoice.
+const (
+	nsRSM   = "urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100"
+	ciiRoot = "CrossIndustryInvoice"
+)
 
 // Conventional prefixes of the namespaces, used in display names.
 var prefixes = map[string]string{
@@ -116,11 +192,14 @@ var prefixes = map[string]string{
 }
 
 func main() {
-	out := flag.String("o", "", "output file (default tables_gen.go, or ubl_tables_gen.go with -ubl)")
+	out := flag.String("o", "", "output file (default tables_gen.go, cii_d16b_tables_gen.go with -cii D16B, ubl_tables_gen.go with -ubl)")
 	ubl := flag.Bool("ubl", false, "compile the OASIS UBL 2.1 schemas of Invoice and CreditNote")
 	zipPath := flag.String("zip", "", "with -ubl: path of "+ublArchive+" (downloaded from "+ublURL+" when empty)")
+	cii := flag.String("cii", "", "compile the complete UN/CEFACT CII schema of this version (D16B or D22B)")
+	srcPath := flag.String("src", "", "with -cii: the KoSIT archive (D16B) or a directory holding the schema files (downloaded when empty)")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: gen [-o tables_gen.go] <directory of the Factur-X XSD files>")
+		fmt.Fprintln(os.Stderr, "       gen -cii D16B|D22B [-src path] [-o cii_d16b_tables_gen.go]")
 		fmt.Fprintln(os.Stderr, "       gen -ubl [-zip "+ublArchive+"] [-o ubl_tables_gen.go]")
 		flag.PrintDefaults()
 	}
@@ -130,12 +209,17 @@ func main() {
 		err error
 	)
 	switch {
-	case *ubl && flag.NArg() == 0:
+	case *cii != "" && !*ubl && *zipPath == "" && flag.NArg() == 0:
+		if *out == "" {
+			*out = "cii_" + strings.ToLower(*cii) + "_tables_gen.go"
+		}
+		src, err = generateCII(*cii, *srcPath)
+	case *ubl && *cii == "" && *srcPath == "" && flag.NArg() == 0:
 		if *out == "" {
 			*out = "ubl_tables_gen.go"
 		}
 		src, err = generateUBLArchive(*zipPath)
-	case !*ubl && flag.NArg() == 1 && flag.Arg(0) != "" && *zipPath == "":
+	case !*ubl && *cii == "" && *srcPath == "" && flag.NArg() == 1 && flag.Arg(0) != "" && *zipPath == "":
 		if *out == "" {
 			*out = "tables_gen.go"
 		}
@@ -168,51 +252,136 @@ func generate(dir string) ([]byte, error) {
 			return nil, fmt.Errorf("%s: %w", profiles[i].name, err)
 		}
 	}
-	return c.emit(version)
+	return c.emit(version, nil)
 }
 
 // generateUBLArchive reads the UBL 2.1 package from path, or downloads it
 // when path is empty, checks its SHA-256 and compiles it.
 func generateUBLArchive(path string) ([]byte, error) {
-	data, err := loadArchive(path)
-	if err != nil {
-		return nil, err
-	}
-	h := sha256.Sum256(data)
-	if got := hex.EncodeToString(h[:]); got != ublSum {
-		return nil, fmt.Errorf("%s: SHA-256 %s, want %s", ublArchive, got, ublSum)
-	}
-	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	zr, err := openArchive(path, ublURL, ublSum)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", ublArchive, err)
 	}
 	return generateUBL(zr)
 }
 
-func loadArchive(path string) ([]byte, error) {
+// openArchive reads the zip archive at path, or downloads it from url when
+// path is empty, and checks its SHA-256.
+func openArchive(path, url, sum string) (*zip.Reader, error) {
+	var (
+		data []byte
+		err  error
+	)
 	if path != "" {
-		return os.ReadFile(path)
+		data, err = os.ReadFile(path)
+	} else {
+		data, err = download(url)
 	}
+	if err != nil {
+		return nil, err
+	}
+	h := sha256.Sum256(data)
+	if got := hex.EncodeToString(h[:]); got != sum {
+		return nil, fmt.Errorf("SHA-256 %s, want %s", got, sum)
+	}
+	return zip.NewReader(bytes.NewReader(data), int64(len(data)))
+}
+
+func download(url string) ([]byte, error) {
 	client := &http.Client{Timeout: 10 * time.Minute}
-	resp, err := client.Get(ublURL)
+	resp, err := client.Get(url)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GET %s: %s", ublURL, resp.Status)
+		return nil, fmt.Errorf("GET %s: %s", url, resp.Status)
 	}
 	return io.ReadAll(io.LimitReader(resp.Body, 256<<20))
+}
+
+// generateCII compiles the complete CII schema of version v, read from src
+// (see ciiFiles), and returns the Go source.
+func generateCII(v, src string) ([]byte, error) {
+	set, ok := ciiSets[v]
+	if !ok {
+		return nil, fmt.Errorf("unknown CII schema version %q (known: D16B, D22B)", v)
+	}
+	fsys, err := ciiFiles(set, src)
+	if err != nil {
+		return nil, fmt.Errorf("CII %s: %w", v, err)
+	}
+	return compileCII(v, set, fsys)
+}
+
+// compileCII compiles the CII schema set whose files are in fsys.
+func compileCII(v string, set ciiSet, fsys fs.FS) ([]byte, error) {
+	c := newCompiler(true)
+	if err := c.compileSingle(fsys, []rootDoc{{set.files[0].name, nsRSM, ciiRoot}}); err != nil {
+		return nil, fmt.Errorf("CII %s: %w", v, err)
+	}
+	source := "Source: " + set.origin + ","
+	if set.archive != "" {
+		source += "\n// " + set.archive + " (SHA-256 " + set.archiveSum + "),\n// directory " + set.dir
+	} else {
+		source += "\n// " + set.dir
+	}
+	return c.emit(v, &setInfo{
+		prefix:  set.prefix,
+		title:   "UN/CEFACT CII " + v,
+		source:  source + " (SHA-256 of each file):",
+		schemas: "CII schema",
+		roots:   "the root element of the CII invoice",
+	})
+}
+
+// ciiFiles returns the schema files of set, each checked against its
+// SHA-256. src is the zip archive of set (when set.archive is not empty) or
+// a directory holding the files; when it is empty, the files are
+// downloaded.
+func ciiFiles(set ciiSet, src string) (fs.FS, error) {
+	var read func(name string) ([]byte, error)
+	switch {
+	case set.archive != "" && (src == "" || strings.EqualFold(path.Ext(src), ".zip")):
+		zr, err := openArchive(src, set.archive, set.archiveSum)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", path.Base(set.archive), err)
+		}
+		read = func(name string) ([]byte, error) { return fs.ReadFile(zr, set.dir+name) }
+	case src != "":
+		read = func(name string) ([]byte, error) { return os.ReadFile(filepath.Join(src, name)) }
+	default:
+		read = func(name string) ([]byte, error) { return download(set.dir + name) }
+	}
+	fsys := fstest.MapFS{}
+	for _, f := range set.files {
+		data, err := read(f.name)
+		if err != nil {
+			return nil, err
+		}
+		h := sha256.Sum256(data)
+		if got := hex.EncodeToString(h[:]); got != f.sum {
+			return nil, fmt.Errorf("%s: SHA-256 %s, want %s", f.name, got, f.sum)
+		}
+		fsys[f.name] = &fstest.MapFile{Data: data}
+	}
+	return fsys, nil
 }
 
 // generateUBL compiles the UBL schemas of fsys, laid out as in the UBL 2.1
 // package, and returns the Go source.
 func generateUBL(fsys fs.FS) ([]byte, error) {
 	c := newCompiler(true)
-	if err := c.compileUBL(fsys); err != nil {
+	if err := c.compileSingle(fsys, ublDocs); err != nil {
 		return nil, fmt.Errorf("UBL: %w", err)
 	}
-	return c.emit(ublVersion)
+	return c.emit(ublVersion, &setInfo{
+		prefix:  "ubl",
+		title:   "OASIS UBL " + ublVersion,
+		source:  fmt.Sprintf("Source: %s (SHA-256 %s),\n// the runtime schemas of Invoice and CreditNote (SHA-256 of each file):", ublURL, ublSum),
+		schemas: "UBL schemas",
+		roots:   "the root element of each UBL document",
+	})
 }
 
 // findMains returns the main schema of each profile.
@@ -289,12 +458,19 @@ type xnode struct {
 }
 
 func (n *xnode) attr(name string) string {
+	v, _ := n.lookupAttr(name)
+	return v
+}
+
+// lookupAttr returns the value of the unqualified attribute name and whether
+// it is present.
+func (n *xnode) lookupAttr(name string) (string, bool) {
 	for _, a := range n.Attrs {
 		if a.Name.Space == "" && a.Name.Local == name {
-			return a.Value
+			return a.Value, true
 		}
 	}
-	return ""
+	return "", false
 }
 
 // is reports whether n is the XML Schema element local.
@@ -485,13 +661,14 @@ func (doc *schemaDoc) resolve(s string) (qname, error) {
 
 // Simple type kinds, as named in package schema.
 const (
-	kString  = "kString"
-	kDecimal = "kDecimal"
-	kInteger = "kInteger"
-	kBoolean = "kBoolean"
-	kBase64  = "kBase64"
-	kDate    = "kDate"
-	kTime    = "kTime"
+	kString   = "kString"
+	kDecimal  = "kDecimal"
+	kInteger  = "kInteger"
+	kBoolean  = "kBoolean"
+	kBase64   = "kBase64"
+	kDate     = "kDate"
+	kTime     = "kTime"
+	kDateTime = "kDateTime"
 )
 
 // builtins maps the supported built-in types to their kind. The string-like
@@ -507,6 +684,7 @@ var builtins = map[string]string{
 	"base64Binary": kBase64,
 	"date":         kDate,
 	"time":         kTime,
+	"dateTime":     kDateTime,
 }
 
 // builtinPatterns gives the pattern facet of the built-in string types whose
@@ -605,7 +783,7 @@ func (c *compiler) compileProfile(fsys fs.FS, p int, name string) error {
 	}
 	c.files = append(c.files, ps.files)
 	pc := &profileCompiler{c: c, ps: ps, p: p, memo: map[qname]*gType{}}
-	root, ok := ps.elements[qname{"urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100", "CrossIndustryInvoice"}]
+	root, ok := ps.elements[qname{nsRSM, ciiRoot}]
 	if !ok {
 		return errors.New("no global element rsm:CrossIndustryInvoice")
 	}
@@ -617,11 +795,12 @@ func (c *compiler) compileProfile(fsys fs.FS, p int, name string) error {
 	return nil
 }
 
-// compileUBL compiles the UBL documents of ublDocs into one schema set.
-func (c *compiler) compileUBL(fsys fs.FS) error {
+// compileSingle compiles the documents docs into one schema set (the UBL
+// documents, or a complete CII schema).
+func (c *compiler) compileSingle(fsys fs.FS, docs []rootDoc) error {
 	ps := newSchemas(fsys, true)
 	pc := &profileCompiler{c: c, ps: ps, memo: map[qname]*gType{}}
-	for _, d := range ublDocs {
+	for _, d := range docs {
 		if _, err := ps.load(d.file); err != nil {
 			return err
 		}
@@ -1158,8 +1337,8 @@ func (pc *profileCompiler) attribute(doc *schemaDoc, n *xnode) (*gAttr, error) {
 	if name == "" {
 		return nil, errors.New("attribute without name")
 	}
-	// default does not change validation; fixed would restrict the value.
-	if err := n.checkAttrs("name", "type", "use", "default"); err != nil {
+	// default does not change validation; fixed restricts the value.
+	if err := n.checkAttrs("name", "type", "use", "default", "fixed"); err != nil {
 		return nil, fmt.Errorf("attribute %s: %w", name, err)
 	}
 	a := &gAttr{name: name, simple: gSimple{name: "xs:anySimpleType", kind: kString}}
@@ -1194,7 +1373,37 @@ func (pc *profileCompiler) attribute(doc *schemaDoc, n *xnode) (*gAttr, error) {
 			return nil, fmt.Errorf("attribute %s: unsupported xs:%s", name, c.XMLName.Local)
 		}
 	}
+	if fixed, ok := n.lookupAttr("fixed"); ok {
+		if err := fix(&a.simple, fixed); err != nil {
+			return nil, fmt.Errorf("attribute %s: %w", name, err)
+		}
+	}
 	return a, nil
+}
+
+// fix restricts s to the value fixed by a fixed attribute declaration: an
+// enumeration of that single value. Only string types are supported: they
+// compare values by their lexical form, after white space collapsing for
+// the collapsing types, which is what an enumeration checks.
+func fix(s *gSimple, fixed string) error {
+	if s.kind != kString {
+		return fmt.Errorf("fixed value %q on %s, which is not a string type, is not supported", fixed, s.name)
+	}
+	f := &gFacets{min: -1, max: -1}
+	if s.facets != nil {
+		g := *s.facets
+		g.pattern = append([]string(nil), g.pattern...)
+		f = &g
+	}
+	if f.collapse {
+		fixed = strings.Join(strings.Fields(fixed), " ")
+	}
+	if len(f.enum) > 0 && !slices.Contains(f.enum, fixed) {
+		return fmt.Errorf("fixed value %q is not in the enumeration of %s", fixed, s.name)
+	}
+	f.enum = []string{fixed}
+	s.facets = f
+	return nil
 }
 
 // simpleByName resolves a named simple type or a built-in type.
@@ -1285,12 +1494,21 @@ func (pc *profileCompiler) simpleType(doc *schemaDoc, n *xnode, name string) (gS
 	return gSimple{}, fmt.Errorf("%s: simple type without restriction", name)
 }
 
-// emit writes the Go source of the tables: the Factur-X tables, or the UBL
-// ones when c.single is set.
-func (c *compiler) emit(version string) ([]byte, error) {
+// setInfo describes a single schema set for emit.
+type setInfo struct {
+	prefix  string // prefix of the generated identifiers ("ubl": ublTypes)
+	title   string // name of the schemas, in the first line
+	source  string // comment lines on the source of the files, without the first "// "
+	schemas string // what the version is the version of ("UBL schemas")
+	roots   string // what the roots are
+}
+
+// emit writes the Go source of the tables: the Factur-X tables when info is
+// nil, the tables of the single schema set info otherwise.
+func (c *compiler) emit(version string, info *setInfo) ([]byte, error) {
 	// Stable order: by name, then by the lowest profile using the type.
 	order := append([]*gType(nil), c.types...)
-	if c.single {
+	if info != nil {
 		order = c.reachable()
 	}
 	sort.SliceStable(order, func(i, j int) bool {
@@ -1324,8 +1542,8 @@ func (c *compiler) emit(version string) ([]byte, error) {
 
 	// Names of the generated declarations.
 	v := func(s string) string { return s }
-	if c.single {
-		v = func(s string) string { return "ubl" + strings.ToUpper(s[:1]) + s[1:] }
+	if info != nil {
+		v = func(s string) string { return info.prefix + strings.ToUpper(s[:1]) + s[1:] }
 	}
 
 	var (
@@ -1341,30 +1559,30 @@ func (c *compiler) emit(version string) ([]byte, error) {
 			return strconv.Itoa(m)
 		}
 	)
-	if c.single {
-		fmt.Fprintf(&b, "// Code generated by internal/schema/gen from the OASIS UBL %s XML schemas; DO NOT EDIT.\n\n", version)
+	if info != nil {
+		fmt.Fprintf(&b, "// Code generated by internal/schema/gen from the %s XML schemas; DO NOT EDIT.\n\n", info.title)
 		b.WriteString("package schema\n\n")
-		fmt.Fprintf(&b, "// Source: %s (SHA-256 %s),\n// the runtime schemas of Invoice and CreditNote (SHA-256 of each file):\n//\n", ublURL, ublSum)
+		fmt.Fprintf(&b, "// %s\n//\n", info.source)
 	} else {
 		fmt.Fprintf(&b, "// Code generated by internal/schema/gen from the Factur-X %s XML schemas; DO NOT EDIT.\n\n", version)
 		b.WriteString("package schema\n\n")
 		b.WriteString("// Source schemas (SHA-256):\n//\n")
 	}
 	for p, files := range c.files {
-		if !c.single {
+		if info == nil {
 			fmt.Fprintf(&b, "//\t%s:\n", profiles[p].name)
 		}
 		for _, f := range files {
 			sum := sha256.Sum256(f.data)
-			if c.single {
+			if info != nil {
 				fmt.Fprintf(&b, "//\t%s %s\n", hex.EncodeToString(sum[:8]), f.path)
 			} else {
 				fmt.Fprintf(&b, "//\t\t%s %s\n", hex.EncodeToString(sum[:8]), path.Base(f.path))
 			}
 		}
 	}
-	if c.single {
-		fmt.Fprintf(&b, "\n// %s is the version of the UBL schemas compiled into the tables.\nconst %[1]s = %q\n\n", v("schemaVersion"), version)
+	if info != nil {
+		fmt.Fprintf(&b, "\n// %s is the version of the %s compiled into the tables.\nconst %[1]s = %[3]q\n\n", v("schemaVersion"), info.schemas, version)
 		fmt.Fprintf(&b, "// %s lists the element namespaces; particle.ns indexes it (0 = no namespace).\n", v("namespaces"))
 	} else {
 		fmt.Fprintf(&b, "\n// schemaVersion is the version of the Factur-X schemas compiled into the tables.\nconst schemaVersion = %q\n\n", version)
@@ -1376,7 +1594,7 @@ func (c *compiler) emit(version string) ([]byte, error) {
 	}
 	b.WriteString("}\n\n")
 
-	if c.single {
+	if info != nil {
 		fmt.Fprintf(&b, "// %s holds the content model of every element type.\n", v("types"))
 	} else {
 		b.WriteString("// types holds the content model of every element type, shared between\n// profiles when identical; profiles is a bit mask of the profiles using it.\n")
@@ -1414,7 +1632,7 @@ func (c *compiler) emit(version string) ([]byte, error) {
 		if len(t.attrs) > 0 {
 			fmt.Fprintf(&b, ", afirst: %d, an: %d", firstAttr, len(t.attrs))
 		}
-		if c.single {
+		if info != nil {
 			fmt.Fprintf(&b, "}, // %d\n", i)
 		} else {
 			fmt.Fprintf(&b, ", profiles: %#02x}, // %d\n", t.profiles, i)
@@ -1442,8 +1660,8 @@ func (c *compiler) emit(version string) ([]byte, error) {
 		fmt.Fprintf(&b, "minLen: %d, maxLen: %d, collapse: %t},\n", f.min, f.max, f.collapse)
 	}
 	b.WriteString("}\n\n")
-	if c.single {
-		fmt.Fprintf(&b, "// %s holds the root element of each UBL document.\n", v("roots"))
+	if info != nil {
+		fmt.Fprintf(&b, "// %s holds %s.\n", v("roots"), info.roots)
 		fmt.Fprintf(&b, "var %s = [...]particle{\n", v("roots"))
 		for _, r := range c.roots {
 			fmt.Fprintf(&b, "{%q, %d, %d, 1, 1},\n", r.name, nsIndex[r.ns], newID[r.typ])
