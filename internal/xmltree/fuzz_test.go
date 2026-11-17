@@ -39,33 +39,43 @@ func clip(b []byte) []byte {
 // compareTrees returns "" when a and b hold the same elements, attributes,
 // texts and lines, and are linked the same way.
 func compareTrees(a, b, parent *Node) string {
-	where := a.Path()
-	switch {
-	case a.Name != b.Name || a.Space != b.Space || a.Prefix != b.Prefix:
-		return fmt.Sprintf("%s: name %s:%s {%s}, got %s:%s {%s}", where, a.Prefix, a.Name, a.Space, b.Prefix, b.Name, b.Space)
-	case a.Line != b.Line:
-		return fmt.Sprintf("%s: line %d, got %d", where, a.Line, b.Line)
-	case a.Text != b.Text:
-		return fmt.Sprintf("%s: text %q, got %q", where, a.Text, b.Text)
-	case (a.Attrs == nil) != (b.Attrs == nil) || len(a.Attrs) != len(b.Attrs):
-		return fmt.Sprintf("%s: attributes %q, got %q", where, a.Attrs, b.Attrs)
-	case (a.Children == nil) != (b.Children == nil) || len(a.Children) != len(b.Children):
-		return fmt.Sprintf("%s: %d children, got %d", where, len(a.Children), len(b.Children))
-	case b.Parent != parent:
-		return fmt.Sprintf("%s: wrong parent", where)
-	}
-	for i := range a.Attrs {
-		if a.Attrs[i] != b.Attrs[i] {
-			return fmt.Sprintf("%s: attribute %q, got %q", where, a.Attrs[i], b.Attrs[i])
-		}
-	}
-	if cap(b.Attrs) != len(b.Attrs) || cap(b.Children) != len(b.Children) {
-		return fmt.Sprintf("%s: attribute or child list with spare capacity", where)
+	// The path is built only for a difference: Path scans the siblings of
+	// every ancestor, so building it for each node is quadratic in the number
+	// of lines of a large invoice.
+	if d := compareNode(a, b, parent); d != "" {
+		return a.Path() + ": " + d
 	}
 	for i := range a.Children {
 		if d := compareTrees(a.Children[i], b.Children[i], b); d != "" {
 			return d
 		}
+	}
+	return ""
+}
+
+// compareNode compares a and b without their children.
+func compareNode(a, b, parent *Node) string {
+	switch {
+	case a.Name != b.Name || a.Space != b.Space || a.Prefix != b.Prefix:
+		return fmt.Sprintf("name %s:%s {%s}, got %s:%s {%s}", a.Prefix, a.Name, a.Space, b.Prefix, b.Name, b.Space)
+	case a.Line != b.Line:
+		return fmt.Sprintf("line %d, got %d", a.Line, b.Line)
+	case a.Text != b.Text:
+		return fmt.Sprintf("text %q, got %q", a.Text, b.Text)
+	case (a.Attrs == nil) != (b.Attrs == nil) || len(a.Attrs) != len(b.Attrs):
+		return fmt.Sprintf("attributes %q, got %q", a.Attrs, b.Attrs)
+	case (a.Children == nil) != (b.Children == nil) || len(a.Children) != len(b.Children):
+		return fmt.Sprintf("%d children, got %d", len(a.Children), len(b.Children))
+	case b.Parent != parent:
+		return "wrong parent"
+	}
+	for i := range a.Attrs {
+		if a.Attrs[i] != b.Attrs[i] {
+			return fmt.Sprintf("attribute %q, got %q", a.Attrs[i], b.Attrs[i])
+		}
+	}
+	if cap(b.Attrs) != len(b.Attrs) || cap(b.Children) != len(b.Children) {
+		return "attribute or child list with spare capacity"
 	}
 	return ""
 }
