@@ -24,6 +24,7 @@ import (
 	"fmt"
 
 	"github.com/ritoon/factur-x/cii"
+	ublrules "github.com/ritoon/factur-x/internal/rules/ubl"
 	"github.com/ritoon/factur-x/internal/xmltree"
 	"github.com/ritoon/factur-x/invoice"
 	"github.com/ritoon/factur-x/validate"
@@ -111,6 +112,13 @@ func Check(pdf []byte, opts *validate.Options) (*validate.Report, *Attachment, e
 	r := &validate.Report{}
 	if att != nil && len(att.XML) > 0 {
 		r = validate.XML(att.XML, opts)
+		// A Factur-X or ZUGFeRD PDF embeds a CII invoice: a UBL invoice is
+		// validated as such, but the PDF is not a valid hybrid invoice.
+		if root, err := xmltree.Parse(att.XML); err == nil && ublrules.IsUBL(root) {
+			findings = append(findings, validate.Finding{Rule: "CII", Severity: validate.Error, Source: validate.SourceSyntax,
+				Path: "/" + root.Name, Line: root.Line,
+				Message: "the embedded XML is a UBL invoice: a Factur-X or ZUGFeRD PDF embeds a CII invoice (rsm:CrossIndustryInvoice)"})
+		}
 	}
 	r.Findings = append(findings, r.Findings...)
 	return r, att, nil

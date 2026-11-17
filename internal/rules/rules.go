@@ -1,8 +1,10 @@
 // Package rules holds the types shared by the validation rule sets: findings,
-// reports, and the parsed CII document the rules run on.
+// reports, and the parsed CII document the rules run on (for a UBL invoice,
+// a CII view of it, see NewUBLDoc).
 //
 // Each rule set lives in its own package (internal/rules/en16931,
-// internal/rules/facturx, internal/rules/fr, internal/rules/de) and exports:
+// internal/rules/ubl, internal/rules/facturx, internal/rules/fr,
+// internal/rules/de) and exports:
 //
 //	func Check(c *rules.Checker)  // runs every rule of the set
 //	var Catalog []rules.RuleInfo  // the rules the set implements
@@ -183,6 +185,12 @@ type Doc struct {
 	Settlement  *xmltree.Node   // ram:ApplicableHeaderTradeSettlement
 	Summation   *xmltree.Node   // ram:SpecifiedTradeSettlementHeaderMonetarySummation
 	Lines       []*xmltree.Node // ram:IncludedSupplyChainTradeLineItem
+
+	// UBL is the root of the UBL Invoice or CreditNote when the document is
+	// a UBL invoice: Root is then a CII view of it (see NewUBLDoc), and the
+	// findings are located in the UBL document. It is nil for a CII invoice.
+	UBL    *xmltree.Node
+	origin map[*xmltree.Node]*xmltree.Node
 }
 
 // NewDoc wraps the root element of a CII invoice. The profile is read from
@@ -203,6 +211,29 @@ func NewDoc(root *xmltree.Node, profile invoice.Profile) *Doc {
 	}
 	d.Profile = profile
 	return d
+}
+
+// NewUBLDoc wraps the CII view of a UBL invoice: view is a CII tree that
+// carries the business terms of the UBL document ubl, and origin maps each
+// node of view to the UBL node it comes from. The rule sets written for CII
+// run on the view; Checker.Fail locates their findings in the UBL document.
+func NewUBLDoc(ubl, view *xmltree.Node, origin map[*xmltree.Node]*xmltree.Node, profile invoice.Profile) *Doc {
+	d := NewDoc(view, profile)
+	d.UBL = ubl
+	d.origin = origin
+	return d
+}
+
+// Origin returns the node of the original document that n stands for: the UBL
+// node a node of a CII view comes from, n itself otherwise.
+func (d *Doc) Origin(n *xmltree.Node) *xmltree.Node {
+	if d == nil || d.origin == nil || n == nil {
+		return n
+	}
+	if o, ok := d.origin[n]; ok {
+		return o
+	}
+	return n
 }
 
 // SpecificationID returns BT-24.
@@ -226,6 +257,7 @@ func (c *Checker) Fail(rule string, sev Severity, n *xmltree.Node, format string
 		f.Message = format
 	}
 	if n != nil {
+		n = c.Doc.Origin(n)
 		f.Path = n.Path()
 		f.Line = n.Line
 	}

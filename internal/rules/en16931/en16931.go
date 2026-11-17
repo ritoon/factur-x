@@ -34,6 +34,17 @@
 //     and code lists are reported as warnings, and the other CII syntax rules
 //     (which restrict CII to the EN 16931 data set) are not reported.
 //
+// For a UBL invoice, Check runs on the CII view built by package
+// internal/rules/ubl (rules.Doc.UBL is set) and applies the UBL artefacts of
+// the same release where they differ: the rules of categories L and M are
+// BR-IG and BR-IP (swapped with respect to CII), with their own tests and
+// tolerances, BR-CO-17 has a strict tolerance, the taxable amounts of the
+// zero rated categories (rule 08) are exact unrounded sums, BR-51 is a
+// warning, and the XRechnung levels are those of the UBL scenarios. The
+// rules whose UBL context or test the view cannot render (the code lists,
+// the decimal rules, BR-CO-03, BR-53 and a few others, see ublNative) are
+// left to package ubl, which checks them on the UBL document.
+//
 // MINIMUM and BASIC WL invoices are not EN 16931 invoices: Check does nothing
 // for them.
 package en16931
@@ -152,6 +163,8 @@ type checker struct {
 	c    *rules.Checker
 	d    *rules.Doc
 	mode mode
+	ubl  bool               // c.Doc is the CII view of a UBL invoice
+	cats *[nCat]vatCategory // VAT category rules of the syntax
 
 	stack [64]*xmltree.Node // ancestors of the visited node, by depth
 	depth int
@@ -190,20 +203,12 @@ func (k *checker) init(c *rules.Checker) {
 	k.c = c
 	k.d = c.Doc
 	d := k.d
-	spec := d.SpecificationID()
-	switch d.Profile {
-	case invoice.ProfileXRechnung:
-		switch {
-		case strings.Contains(spec, "#conformant#urn:xeinkauf.de:kosit:extension:xrechnung"):
-			k.mode = modeXRechnungExtension
-		case strings.Contains(spec, "xrechnung:cvd"):
-			k.mode = modeXRechnungCVD
-		default:
-			k.mode = modeXRechnung
-		}
-	case invoice.ProfileExtended, invoice.ProfileExtendedCTCFR:
-		k.mode = modeExtended
+	k.cats = &vatCategories
+	if d.UBL != nil {
+		k.ubl = true
+		k.cats = &vatCategoriesUBL
 	}
+	k.mode = profileMode(d)
 
 	seller := d.Agreement.Elem("SellerTradeParty")
 	for it, r := elems(seller, "SpecifiedTaxRegistration"); r != nil; r = it.next() {
@@ -241,6 +246,52 @@ func (k *checker) init(c *rules.Checker) {
 	}
 }
 
+// profileMode returns the severity adjustments for the profile of d.
+func profileMode(d *rules.Doc) mode {
+	switch d.Profile {
+	case invoice.ProfileXRechnung:
+		spec := d.SpecificationID()
+		switch {
+		case strings.Contains(spec, "#conformant#urn:xeinkauf.de:kosit:extension:xrechnung"):
+			return modeXRechnungExtension
+		case strings.Contains(spec, "xrechnung:cvd"):
+			return modeXRechnungCVD
+		}
+		return modeXRechnung
+	case invoice.ProfileExtended, invoice.ProfileExtendedCTCFR:
+		// The Factur-X EXTENDED schematron only exists for CII.
+		if d.UBL == nil {
+			return modeExtended
+		}
+	}
+	return modeCEN
+}
+
+// level returns the severity that the KoSIT configuration gives to rule id in
+// the XRechnung scenario m, if it changes it.
+func level(d *rules.Doc, m mode, id string) (rules.Severity, bool) {
+	levels := xrechnungLevels
+	if d.UBL != nil {
+		if id == "UBL-CR-646" && m == modeXRechnung && d.UBL.Name == "CreditNote" {
+			return 0, false
+		}
+		levels = xrechnungLevelsUBL
+	}
+	s, ok := levels[m][id]
+	return s, ok
+}
+
+// Level returns the severity of rule id in d: sev, or the severity that the
+// KoSIT validator configuration gives to the rule in the XRechnung scenario
+// of d. Package internal/rules/ubl uses it for the rules it checks on the UBL
+// document itself.
+func Level(d *rules.Doc, id string, sev rules.Severity) rules.Severity {
+	if s, ok := level(d, profileMode(d), id); ok {
+		return s
+	}
+	return sev
+}
+
 // hasTaxRegistration reports whether party has a SpecifiedTaxRegistration/ID
 // with the given schemeID.
 func hasTaxRegistration(party *xmltree.Node, scheme string) bool {
@@ -275,9 +326,17 @@ var description = func() map[string]string {
 // fail records a finding for rule id located at n, with the severity of the
 // rule adjusted for the profile.
 func (k *checker) fail(id string, n *xmltree.Node, format string, args ...any) {
+	if k.ubl && ublNative(id) {
+		return
+	}
 	sev, ok := severity[id]
 	if !ok {
 		sev = rules.Error
+	}
+	if k.ubl {
+		if s, ok := ublSeverity[id]; ok {
+			sev = s
+		}
 	}
 	switch k.mode {
 	case modeExtended:
@@ -289,7 +348,7 @@ func (k *checker) fail(id string, n *xmltree.Node, format string, args ...any) {
 			format += " (not enforced for Factur-X EXTENDED)"
 		}
 	case modeXRechnung, modeXRechnungExtension, modeXRechnungCVD:
-		if s, ok := xrechnungLevels[k.mode][id]; ok {
+		if s, ok := level(k.d, k.mode, id); ok {
 			sev = s
 		}
 	}
@@ -297,6 +356,37 @@ func (k *checker) fail(id string, n *xmltree.Node, format string, args ...any) {
 		n = k.d.Root
 	}
 	k.c.Fail(id, sev, n, format, args...)
+}
+
+// ublNative reports whether the rule is checked on the UBL document itself
+// rather than on its CII view: the CII syntax rules (UBL has its own), the
+// code lists (whose contexts and lists differ between the syntaxes, see
+// package internal/rules/ubl), the decimal rules (in UBL, at most two
+// characters after the first ".", whatever the value; BR-DEC-13 and BR-DEC-15
+// never fail there), and the business rules of ublRules.
+func ublNative(id string) bool {
+	switch {
+	case strings.HasPrefix(id, "CII-"), strings.HasPrefix(id, "BR-CL-"), strings.HasPrefix(id, "BR-DEC-"):
+		return true
+	}
+	return ublRules[id]
+}
+
+// ublRules lists the business rules whose context or test in the UBL
+// artefacts the CII view cannot render (an address that must exist, an
+// attribute that must exist rather than be filled in, the payee compared with
+// the seller trading name, a context on the document): package ubl checks
+// them on the UBL document.
+var ublRules = map[string]bool{
+	"BR-09": true, "BR-11": true, "BR-17": true, "BR-20": true, "BR-52": true, "BR-53": true,
+	"BR-55": true, "BR-56": true, "BR-57": true, "BR-61": true, "BR-62": true, "BR-63": true,
+	"BR-64": true, "BR-65": true, "BR-CO-03": true, "BR-CO-18": true,
+}
+
+// ublSeverity holds the severities of the UBL artefacts that differ from the
+// CII ones.
+var ublSeverity = map[string]rules.Severity{
+	"BR-51": rules.Warning, // primary account number of a card: flag warning in UBL, fatal in CII
 }
 
 // failOnce records a finding for rule id unless one was already recorded for

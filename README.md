@@ -1,10 +1,11 @@
 # factur-x
 
-Package Go pour les factures électroniques hybrides **Factur-X**, **ZUGFeRD** et **XRechnung**. Il prend un PDF déjà produit par votre application et y ajoute ce que la norme exige ; il relit et valide n'importe quelle facture de ces formats, quel que soit son profil.
+Package Go pour les factures électroniques hybrides **Factur-X**, **ZUGFeRD** et **XRechnung**. Il prend un PDF déjà produit par votre application et y ajoute ce que la norme exige ; il relit et valide n'importe quelle facture de ces formats, quel que soit son profil. Il lit, écrit et valide aussi les factures XML en syntaxe **UBL 2.1**.
 
 - Pur Go, bibliothèque standard uniquement : pas de CGO, pas de JVM, pas de binaire externe, pas d'appel réseau.
 - Factur-X 1.0x = ZUGFeRD 2.x, syntaxe CII, profils MINIMUM, BASIC WL, BASIC, EN 16931, EXTENDED, XRECHNUNG et EXTENDED-CTC-FR ; schémas et règles de profil à jour de Factur-X 1.09.2 (ZUGFeRD 2.5.2).
-- Validation complète sans Java : schéma du profil, règles EN 16931, règles de profil Factur-X, règles françaises BR-FR (réforme 2026) et allemandes BR-DE (XRechnung), contrôle du conteneur PDF.
+- UBL 2.1 (Invoice et CreditNote, liaison EN 16931 de la CEN/TS 16931-3-2) : lecture et écriture dans le même modèle que le CII, validation EN 16931 selon les artefacts UBL ; la syntaxe d'un XML est détectée d'après son élément racine.
+- Validation complète sans Java : schéma du profil, règles EN 16931 (CII et UBL), règles de profil Factur-X, règles françaises BR-FR (réforme 2026) et allemandes BR-DE (XRechnung), contrôle du conteneur PDF.
 - Licence MIT.
 
 > **Statut : première version (v0).** L'API peut encore changer. Voir [Couverture](#couverture) pour ce qui est fait et [Limites](#limites) pour ce qui reste.
@@ -100,7 +101,7 @@ inv, att, err := facturx.Read(pdf)
 // att : nom du fichier, AFRelationship, présence dans /AF, métadonnées XMP
 ```
 
-`facturx.Extract` renvoie seulement le XML. `cii.Parse` lit un XML CII seul. La lecture est tolérante : ZUGFeRD 2.0 et 2.1, préfixes quelconques, identifiants de profil mal orthographiés trouvés dans la nature ; une valeur illisible est signalée sans arrêter la lecture du reste.
+`facturx.Extract` renvoie seulement le XML. `cii.Parse` lit un XML CII seul, `ubl.Parse` une facture ou un avoir UBL 2.1 (voir [UBL](#ubl)). La lecture est tolérante : ZUGFeRD 2.0 et 2.1, préfixes quelconques, identifiants de profil mal orthographiés trouvés dans la nature ; une valeur illisible est signalée sans arrêter la lecture du reste.
 
 #### Rien n'est perdu en silence
 
@@ -117,6 +118,19 @@ for _, u := range inv.Unmodeled() {
 
 `cii.Marshal` remet chaque extension à sa place dans l'ordre du schéma, en recréant les éléments englobants s'il le faut, quand le profil visé l'admet ; sinon il la signale comme perdue (option `Strict`). Une facture EXTENDED relue puis réécrite en EXTENDED redonne donc tout son arbre, aux formes normalisées près : `currencyID` égal à BT-5 ou BT-6 sous-entendu, attributs d'autres espaces de noms (`xsi:schemaLocation`) non conservés, immatriculations fiscales d'une partie écrites VA puis FC, identifiant global d'une partie écrit en `ram:GlobalID`, BT-7 et BT-8 répétés dans chaque ventilation de TVA. La liste des éléments et attributs du XSD EXTENDED sans champ dans le modèle est tenue dans [cii/testdata/extended-unmodeled.txt](cii/testdata/extended-unmodeled.txt).
 
+#### UBL
+
+```go
+inv, err := ubl.Parse(xml)        // Invoice ou CreditNote UBL 2.1 → même modèle que cii.Parse
+out, err := ubl.Marshal(inv, nil) // CreditNote si BT-3 est un code d'avoir, Invoice sinon
+// UBL → CII
+xmlCII, err := cii.Marshal(inv, &cii.MarshalOptions{Profile: invoice.ProfileEN16931})
+```
+
+- La lecture suit la liaison UBL d'EN 16931 (CEN/TS 16931-3-2) et accepte n'importe quel préfixe d'espace de noms ; une valeur illisible est signalée (`ubl.Issue`) sans arrêter la lecture.
+- `Marshal` écrit le jeu de données EN 16931 dans l'ordre du schéma UBL 2.1. Ce que la liaison ne porte pas (les champs EXTENDED du modèle, les extensions) n'est pas écrit ; l'option `Strict` le signale (`*ubl.LossError`), comme pour `cii.Marshal`.
+- Une facture lue dans une syntaxe s'écrit dans l'autre : le modèle est le même.
+
 ### Valider
 
 ```go
@@ -128,6 +142,8 @@ if !report.Valid() { /* au moins une erreur */ }
 ```
 
 `Check` contrôle le conteneur PDF puis le XML. Pour un XML seul : `validate.XML(xml, opts)`. Le rapport ne s'arrête jamais à la première erreur ; chaque constat porte l'identifiant officiel de la règle, sa gravité, sa source, le chemin XPath et la ligne.
+
+`validate.XML` détecte la syntaxe. Un `Invoice` ou un `CreditNote` UBL 2.1 est contrôlé selon les artefacts EN 16931 pour UBL : règles métier et listes de codes avec leurs contextes UBL, règles de syntaxe UBL-CR (éléments et attributs qu'EN 16931 n'utilise pas, en avertissement), UBL-SR (cardinalités) et UBL-DT (types de données). Les règles de profil Factur-X, propres au CII, ne s'appliquent pas. Les règles BR-FR, BR-DE et Chorus Pro s'appliquent à une vue CII du document ; leurs constats sont situés dans l'UBL (voir [Limites](#limites)). Un PDF Factur-X qui embarque un UBL est refusé : Factur-X impose le CII.
 
 | Option | Effet |
 |---|---|
@@ -192,7 +208,7 @@ facturx json facture.pdf|facture.xml
 facturx rules [-fr] [-de] [-choruspro]
 ```
 
-`validate` sort avec le code 1 quand la facture a des erreurs, ce qui permet de l'utiliser en intégration continue. `embed -attach` ajoute une pièce jointe complémentaire (`/AFRelationship /Supplement`, type MIME d'après l'extension) ; l'option se répète.
+`validate` et `json` acceptent un XML CII ou UBL. `validate` sort avec le code 1 quand la facture a des erreurs, ce qui permet de l'utiliser en intégration continue. `embed -attach` ajoute une pièce jointe complémentaire (`/AFRelationship /Supplement`, type MIME d'après l'extension) ; l'option se répète.
 
 ```text
 $ facturx validate testdata/EN16931_Einfach.pdf
@@ -214,6 +230,7 @@ warning [PDF] PDF-06: the catalog has no PDF/A output intent (/S /GTS_PDFA1) (ca
 | EXTENDED | oui | oui | oui | oui |
 | XRECHNUNG (CII) | oui | oui | schéma EN 16931 | oui ; BR-DE appliquées d'office |
 | EXTENDED-CTC-FR | oui | oui | schéma EXTENDED | oui ; BR-FR sur option (`France` ou `Auto`) |
+| UBL 2.1 (EN 16931, XRECHNUNG) | oui | oui | non (règles UBL-CR, UBL-SR, UBL-DT) | sans objet ; BR-DE appliquées d'office pour XRECHNUNG |
 
 ### Règles
 
@@ -221,6 +238,7 @@ warning [PDF] PDF-06: the catalog has no PDF/A output intent (/S /GTS_PDFA1) (ca
 |---|---|---|
 | Schéma | 11 contrôles (éléments, ordre, cardinalités, types, listes fermées) | XSD Factur-X 1.09.2 (ZUGFeRD 2.5.2), compilés en tables Go |
 | EN 16931 | 793 assertions (328 erreurs, 465 avertissements) : BR, BR-CO, BR-CL, BR-DEC, règles par catégorie de TVA (BR-S, BR-Z, BR-E, BR-AE, BR-IC, BR-IG, BR-IP, BR-G, BR-O, BR-AF, BR-AG, BR-B), CII-SR, CII-DT | Artefacts CEN TC 434 v1.3.17 (CII) |
+| EN 16931 (UBL) | Mêmes règles métier, avec les contextes et les tests des artefacts UBL (catégories L et M, tolérances, BR-DEC sur le texte, listes de codes propres à l'UBL) ; 759 règles de syntaxe (62 erreurs, 697 avertissements) : UBL-CR (678), UBL-SR (57), UBL-DT (24) | Artefacts CEN TC 434 v1.3.17 (UBL) |
 | Factur-X | 229 règles (207 erreurs, 22 avertissements) : identification du profil (BT-24), assertions des schematrons MINIMUM et BASIC WL, éléments non utilisés par profil ; règles BR-FXEXT d'EXTENDED et EXTENDED-CTC-FR (sous-types et regroupements de lignes, totaux avec tolérance, frais logistiques et frais pour compte de tiers, ventilation de TVA par catégorie, taux et motif d'exonération) | Schematrons Factur-X 1.09 (MINIMUM, BASIC WL) ; XSLT EXTENDED Factur-X 1.09.2 (ZUGFeRD 2.5.2) |
 | France (BR-FR) | 59 règles, 170 assertions : SIREN/SIRET, adresses électroniques, mentions obligatoires, cadres de facturation, multi-vendeurs ; 3 contrôles des profils admis (FR-PROFILE) | Schematron FNFE-MPE v1.4.0.04 |
 | Allemagne (BR-DE) | 52 assertions (BR-DE, BR-DE-CVD, BR-DEX, BR-TMP) ; contrôle des profils acceptés par le BMF (DE-PROFILE-01) | Schematron KoSIT XRechnung 3.0.2 ; BMF |
@@ -233,6 +251,8 @@ Les messages sont ceux des artefacts officiels. Les listes de codes (pays, devis
 
 Sur les 26 XML CII valides du corpus officiel `XML-Rechnung/CII`, le validateur signale exactement les 6 fichiers que signalent les schematrons officiels (exécutés par papierleicht) : BR-CL-25 deux fois, CII-SR-465 quatre fois sur les exemples XRECHNUNG. Les 104 PDF hybrides du corpus (`ZUGFeRDv2/correct`, `XML-Rechnung/FX`) sont tous extraits et leurs 26 XML tous lus.
 
+Les 73 factures UBL du corpus (`XML-Rechnung/UBL`, 28) et de la suite de tests KoSIT (45) sont lues, réécrites puis relues dans le même modèle, et validées sans autre erreur que les 3 attendues : BR-CL-25 sur les deux exemples au schéma 9958, comme en CII, et l'exemple `not_validating…`, invalide à dessein.
+
 Sur les 147 XML CII lus du corpus ZUGFeRD et des XML extraits de ses PDF, 145 sont réécrits en EXTENDED avec tout leur arbre ; les 2 autres portent des données qu'aucun profil Factur-X n'admet (le code banque allemand de ZUGFeRD 2.0, retiré depuis du schéma, et un type de référence sur un document justificatif autre que 130), et `Marshal` les signale. Un document qui contient chaque élément du XSD EXTENDED avec tous ses attributs est relu et réécrit à l'identique, sauf ce même élément interdit par les règles.
 
 ### PDF
@@ -244,10 +264,10 @@ Le lecteur XML est lui aussi écrit pour ce package : un seul passage sur les oc
 ## Limites
 
 - **Pas de conversion PDF/A.** `Embed` déclare PDF/A-3 (ou PDF/A-4f pour un PDF 2.0) dans le XMP mais ne touche ni aux polices, ni aux espaces de couleur, ni aux output intents : le PDF hôte doit déjà respecter PDF/A-2, PDF/A-3 ou PDF/A-4 (polices incorporées, output intent), ce que la plupart des générateurs savent faire sur option. `Check` signale ce qui manque parmi ce qui se vérifie sans rendu (output intent, polices non incorporées, JavaScript et actions interdites, `/Info` incohérent avec le XMP, filtre LZW) ; il ne remplace pas un validateur PDF/A comme veraPDF : les espaces de couleur, la transparence, les programmes de police eux-mêmes et le contenu des pages ne sont pas analysés. Une police présente dans les ressources d'une page sans être incorporée est un avertissement (PDF-31), le contenu n'étant pas lu pour savoir si elle sert à afficher du texte visible.
-- **Pas d'UBL.** XRechnung et la réforme française acceptent aussi l'UBL ; seule la syntaxe CII est traitée.
+- **UBL : pas de schéma XSD, règles nationales en identifiants CII.** Un XML UBL n'est pas vérifié contre le schéma UBL 2.1 ; les règles UBL-CR, UBL-SR et UBL-DT couvrent les éléments qu'EN 16931 utilise, et le rapport le rappelle par une information (XSD-UBL). Les règles BR-FR, BR-DE et Chorus Pro tournent sur une vue CII du document : leurs constats sont situés dans l'UBL, mais portent les identifiants et les messages des schematrons CII. Les règles propres aux schematrons UBL de ces jeux ne sont pas encore écrites (dates BR-FR-03 sur BT-134 et BT-135, identifiants scindés comme BR-FR-01_BT-1-1 ; BR-DE-1, BR-DE-23-a à BR-DE-25-a, BR-TMP-2 et PEPPOL-EN16931-R043 de XRechnung).
 - **PDF chiffrés** : signalés (PDF-01), pas déchiffrés.
 - **ZUGFeRD 1.0** : le XMP est reconnu, le XML (syntaxe CII antérieure à D16B) n'est pas lu.
-- Les règles des schematrons sont réécrites en Go, pas interprétées : une nouvelle version des artefacts officiels demande une mise à jour du code (le catalogue EN 16931 est régénéré par `go generate`, les tests vérifient l'alignement).
+- Les règles des schematrons sont réécrites en Go, pas interprétées : une nouvelle version des artefacts officiels demande une mise à jour du code (les catalogues EN 16931 du CII et de l'UBL sont régénérés par `go generate`, les tests vérifient l'alignement).
 
 ## Performances
 
@@ -272,7 +292,8 @@ Le harnais est dans [bench/ecosystem](bench/ecosystem) ; chaque librairie y a so
 | `facturx` (racine) | Création, lecture, extraction, injection et contrôle d'un PDF hybride |
 | `invoice` | Modèle EN 16931 (BT, BG), décimaux exacts, dates, profils, calcul des totaux |
 | `cii` | Lecture et écriture du XML CII, profil par profil |
-| `validate` | Validation : schéma, règles EN 16931, règles de profil Factur-X, règles BR-FR et BR-DE |
+| `ubl` | Lecture et écriture du XML UBL 2.1 (Invoice, CreditNote) |
+| `validate` | Validation : schéma, règles EN 16931 (CII et UBL), règles de profil Factur-X, règles BR-FR et BR-DE |
 | `cmd/facturx` | Outil en ligne de commande |
 | `internal/…` | Lecteur et écrivain PDF, XMP, arbre XML, règles, listes de codes, tables de schéma |
 | `bench/ecosystem` | Benchmarks comparatifs avec les autres librairies Go (modules séparés) |
@@ -287,11 +308,11 @@ Les tests de base n'ont besoin que du dépôt ; la CI ([.github/workflows/ci.yml
 
 | Variable | Contenu | Tests |
 |---|---|---|
-| `FX_CORPUS` | Clone de [ZUGFeRD/corpus](https://github.com/ZUGFeRD/corpus) | Extraction et contrôle des PDF du corpus |
+| `FX_CORPUS` | Clone de [ZUGFeRD/corpus](https://github.com/ZUGFeRD/corpus) | Extraction et contrôle des PDF du corpus ; lecture, aller-retour et validation des factures UBL de `XML-Rechnung/UBL` |
 | `FX_CORPUS_XML` | XML extraits du corpus | Lecture, validation et aller-retour lecture → écriture : sans perte signalée, l'arbre complet du document d'origine doit se retrouver dans le XML réécrit, dans son profil et en EXTENDED |
 | `FX_XSD` | XSD Factur-X 1.09.2, un dossier par profil (`MINIMUM`, `BASICWL`, `BASIC`, `EN16931`, `EXTENDED`) | Le XML écrit par `cii.Marshal` est vérifié contre les XSD d'origine |
 | `FX_XSD_DIR` | XSD Factur-X 1.09.2 : paquet FeRD ZUGFeRD 2.5.2 (BASIC, EN 16931, EXTENDED) et paquet FNFE-MPE 1.09 (MINIMUM, BASIC WL, que le corrigendum 1.09.2 ne modifie pas) | Les tables de schéma régénérées sont identiques à celles du dépôt |
-| `FX_KOSIT` | Clone de [itplr-kosit/xrechnung-testsuite](https://github.com/itplr-kosit/xrechnung-testsuite) | Toutes les factures CII de la suite de tests KoSIT passent les règles BR-DE |
+| `FX_KOSIT` | Clone de [itplr-kosit/xrechnung-testsuite](https://github.com/itplr-kosit/xrechnung-testsuite) | Toutes les factures CII de la suite de tests KoSIT passent les règles BR-DE ; ses factures UBL sont lues, réécrites et validées sans erreur |
 
 ## Licence et provenance
 
@@ -301,11 +322,11 @@ Les règles sont réécrites en Go à partir des artefacts officiels, qui ne son
 
 | Artefact | Version | Licence |
 |---|---|---|
-| Artefacts de validation EN 16931 (CEN TC 434, ConnectingEurope/eInvoicing-EN16931) | 1.3.17 | EUPL-1.2 |
+| Artefacts de validation EN 16931 pour CII et UBL (CEN TC 434, ConnectingEurope/eInvoicing-EN16931) | 1.3.17 | EUPL-1.2 |
 | Schematron BR-FR (FNFE-MPE, fnfempe/France_RFE) | 1.4.0.04 | EUPL-1.2 |
 | Schematron XRechnung (KoSIT) | 3.0.2 | Apache-2.0 |
 | Schémas XSD Factur-X (FNFE-MPE / FeRD) : BASIC, EN 16931 et EXTENDED de ZUGFeRD 2.5.2, MINIMUM et BASIC WL de Factur-X 1.09 | 1.09.2 | Apache-2.0 |
 | Schematrons Factur-X MINIMUM et BASIC WL (FNFE-MPE / FeRD) | 1.09 | Apache-2.0 |
 | XSLT de validation EXTENDED (FeRD, ZUGFeRD 2.5.2) | 1.09.2 | Apache-2.0 |
 
-Les fichiers de `testdata/` à la racine viennent du corpus ZUGFeRD (Apache-2.0), voir [testdata/NOTICE](testdata/NOTICE). Les factures de test des règles françaises et allemandes ont été écrites à la main, avec des parties fictives.
+Les fichiers de `testdata/` à la racine viennent du corpus ZUGFeRD (Apache-2.0) et, pour l'avoir UBL, des artefacts CEN (EUPL-1.2), voir [testdata/NOTICE](testdata/NOTICE). Les factures de test des règles françaises et allemandes ont été écrites à la main, avec des parties fictives.

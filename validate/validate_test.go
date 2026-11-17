@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ritoon/factur-x/internal/rules"
+	"github.com/ritoon/factur-x/internal/rules/ubl"
 	"github.com/ritoon/factur-x/internal/xmltree"
 	"github.com/ritoon/factur-x/invoice"
 )
@@ -172,5 +173,78 @@ func TestCatalogProfiles(t *testing.T) {
 		if got := has(c.set, c.id); got != c.want {
 			t.Errorf("Catalog(%b) has %s = %v, want %v", c.set, c.id, got, c.want)
 		}
+	}
+}
+
+func TestUBL(t *testing.T) {
+	for _, c := range []struct {
+		file    string
+		profile invoice.Profile
+	}{
+		{"../testdata/EN16931_Einfach.ubl.xml", invoice.ProfileEN16931},
+		{"../testdata/XRECHNUNG_Einfach.ubl.xml", invoice.ProfileXRechnung},
+		{"../testdata/ubl-tc434-creditnote1.xml", invoice.ProfileEN16931},
+	} {
+		r := XML([]byte(readXML(t, c.file)), &Options{Auto: true})
+		if !r.Valid() || r.Profile != c.profile {
+			t.Errorf("%s: profile %s, valid %v:\n%s", c.file, r.Profile, r.Valid(), r)
+		}
+		if !r.Has(RuleUBLSchema) {
+			t.Errorf("%s: no %s", c.file, RuleUBLSchema)
+		}
+		if findings(r, "FX-") != nil || findings(r, "XSD-PROFILE") != nil {
+			t.Errorf("%s: CII rules applied to UBL:\n%s", c.file, r)
+		}
+	}
+
+	// The findings are located in the UBL document.
+	doc := strings.Replace(readXML(t, "../testdata/EN16931_Einfach.ubl.xml"), ">529.87</cbc:PayableAmount>", ">1.234</cbc:PayableAmount>", 1)
+	r := XML([]byte(doc), nil)
+	if got, want := strings.Join(r.Rules(), " "), "BR-CO-16 BR-DEC-18 UBL-DT-01 XSD-UBL"; got != want {
+		t.Errorf("rules = %s, want %s\n%s", got, want, r)
+	}
+	for _, f := range r.Errors() {
+		if f.Path != "/Invoice/cac:LegalMonetaryTotal/cbc:PayableAmount" || f.Line != 109 {
+			t.Errorf("finding not located in the UBL document: %s", f)
+		}
+	}
+
+	// Rule sets: the schema only reports that it is not checked; the German
+	// rules apply to an XRechnung UBL invoice.
+	r = XML([]byte(doc), &Options{Rules: Schema})
+	if got := strings.Join(r.Rules(), " "); got != RuleUBLSchema || !r.Valid() {
+		t.Errorf("Schema only: %s", r)
+	}
+	xr := readXML(t, "../testdata/XRECHNUNG_Einfach.ubl.xml")
+	root, err := xmltree.Parse([]byte(xr))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := RulesFor(ubl.View(root, invoice.ProfileUnknown), &Options{Auto: true}); got != Default|Germany|GermanyProfile {
+		t.Errorf("RulesFor(XRechnung UBL) = %b", got)
+	}
+	r = XML([]byte(strings.Replace(xr, "<cbc:BuyerReference>04011000-12345-34</cbc:BuyerReference>", "", 1)), nil)
+	if de := findings(r, "BR-DE-15"); len(de) != 1 || de[0].Source != SourceDE {
+		t.Errorf("XRechnung UBL without buyer reference:\n%s", r)
+	}
+
+	// Neither CII nor UBL.
+	r = XML([]byte(`<Invoice xmlns="urn:example:invoice"/>`), nil)
+	if r.Valid() || !r.Has("CII") {
+		t.Errorf("unknown root: %s", r)
+	}
+}
+
+func TestCatalogUBL(t *testing.T) {
+	has := func(set RuleSet, id string) bool {
+		for _, r := range Catalog(set) {
+			if r.ID == id {
+				return true
+			}
+		}
+		return false
+	}
+	if !has(EN16931, "UBL-CR-001") || !has(EN16931, "UBL-SR-01") || !has(Schema, RuleUBLSchema) || has(Schema, "UBL-CR-001") {
+		t.Errorf("UBL rules missing from the catalog")
 	}
 }
