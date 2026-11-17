@@ -2,6 +2,8 @@ package validate
 
 import (
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -19,7 +21,8 @@ const (
 	peppolInvoice = "../internal/rules/peppol/testdata/peppol.xml" // Peppol BIS Billing 3.0, seller in the United Kingdom
 	bt24EN16931   = "<ram:ID>urn:cen.eu:en16931:2017</ram:ID>"
 
-	xrechnungInvoice = "../testdata/XRECHNUNG_Einfach.cii.xml" // XRECHNUNG, seller in Germany
+	xrechnungInvoice = "../testdata/XRECHNUNG_Einfach.cii.xml"            // XRECHNUNG, seller in Germany
+	peppolUBLInvoice = "../internal/rules/peppol/testdata/peppol.ubl.xml" // peppolInvoice in UBL 2.1
 )
 
 func readXML(t *testing.T, name string) string {
@@ -198,57 +201,71 @@ func TestCatalogProfiles(t *testing.T) {
 	}
 }
 
+// einfachPeppol lists the rules of the Peppol findings on
+// EN16931_Einfach.ubl.xml: the invoice declares Peppol BIS Billing 3.0, but
+// has no electronic address nor buyer reference, and lacks what the German
+// rules of Peppol require when both parties are in Germany.
+const einfachPeppol = "DE-R-001 DE-R-002 DE-R-015 PEPPOL-EN16931-R003 PEPPOL-EN16931-R010 PEPPOL-EN16931-R020"
+
 func TestUBL(t *testing.T) {
 	for _, c := range []struct {
 		file    string
 		profile invoice.Profile
+		peppol  string // rules of the Peppol findings
 	}{
-		{"../testdata/EN16931_Einfach.ubl.xml", invoice.ProfilePeppol},
-		{"../testdata/XRECHNUNG_Einfach.ubl.xml", invoice.ProfileXRechnung},
-		{"../testdata/ubl-tc434-creditnote1.xml", invoice.ProfileEN16931},
+		{"../testdata/EN16931_Einfach.ubl.xml", invoice.ProfilePeppol, einfachPeppol},
+		{"../internal/rules/peppol/testdata/peppol.ubl.xml", invoice.ProfilePeppol, ""},
+		{"../testdata/XRECHNUNG_Einfach.ubl.xml", invoice.ProfileXRechnung, ""},
+		{"../testdata/ubl-tc434-creditnote1.xml", invoice.ProfileEN16931, ""},
 	} {
 		r := XML([]byte(readXML(t, c.file)), &Options{Auto: true})
-		if !r.Valid() || r.Profile != c.profile {
-			t.Errorf("%s: profile %s, valid %v:\n%s", c.file, r.Profile, r.Valid(), r)
+		var other, peppol []string
+		for _, f := range r.Findings {
+			if f.Source == SourcePeppol {
+				peppol = append(peppol, f.Rule)
+			} else {
+				other = append(other, f.Rule)
+			}
 		}
-		if n := len(r.Findings) - len(findings(r, RuleUBLPeppol)); n > 0 {
-			t.Errorf("%s: findings:\n%s", c.file, r)
+		slices.Sort(peppol)
+		if other != nil || r.Profile != c.profile || strings.Join(peppol, " ") != c.peppol {
+			t.Errorf("%s: profile %s, Peppol findings %v, want %s:\n%s", c.file, r.Profile, peppol, c.peppol, r)
 		}
-		if findings(r, "FX-") != nil || findings(r, "XSD-PROFILE") != nil || findings(r, "PEPPOL-EN16931") != nil {
+		if findings(r, "FX-") != nil || findings(r, "XSD-PROFILE") != nil {
 			t.Errorf("%s: CII rules applied to UBL:\n%s", c.file, r)
-		}
-		if peppol := c.profile == invoice.ProfilePeppol; r.Has(RuleUBLPeppol) != peppol {
-			t.Errorf("%s: %s reported = %v, want %v", c.file, RuleUBLPeppol, !peppol, peppol)
 		}
 	}
 
 	// The findings are located in the UBL document.
 	doc := strings.Replace(readXML(t, "../testdata/EN16931_Einfach.ubl.xml"), ">529.87</cbc:PayableAmount>", ">1.234</cbc:PayableAmount>", 1)
 	r := XML([]byte(doc), nil)
-	if got, want := strings.Join(r.Rules(), " "), "BR-CO-16 BR-DEC-18 PEPPOL-UBL UBL-DT-01"; got != want {
+	if got, want := strings.Join(r.Rules(), " "), "BR-CO-16 BR-DEC-18 "+einfachPeppol+" UBL-DT-01"; got != want {
 		t.Errorf("rules = %s, want %s\n%s", got, want, r)
 	}
 	for _, f := range r.Errors() {
-		if f.Path != "/Invoice/cac:LegalMonetaryTotal/cbc:PayableAmount" || f.Line != 109 {
+		if f.Source != SourcePeppol && (f.Path != "/Invoice/cac:LegalMonetaryTotal/cbc:PayableAmount" || f.Line != 109) {
 			t.Errorf("finding not located in the UBL document: %s", f)
 		}
 	}
+	if f := findings(r, "PEPPOL-EN16931-R020"); len(f) != 1 || f[0].Source != SourcePeppol ||
+		f[0].Path != "/Invoice/cac:AccountingSupplierParty/cac:Party" || f[0].Line != 18 {
+		t.Errorf("PEPPOL-EN16931-R020 not located in the UBL document: %v", f)
+	}
 
 	// Rule sets: the Schema rule set checks the UBL 2.1 schema; the Peppol
-	// rule set, added to a Peppol invoice whatever Rules, only reports that
-	// it does not apply; the German rules apply to an XRechnung UBL invoice.
-	r = XML([]byte(doc), &Options{Rules: Schema})
-	if got := strings.Join(r.Rules(), " "); got != RuleUBLPeppol || !r.Valid() {
-		t.Errorf("Schema only: %s", r)
-	}
-	r = XML([]byte(doc), &Options{Rules: Peppol})
-	if got := strings.Join(r.Rules(), " "); got != RuleUBLPeppol || !r.Valid() {
-		t.Errorf("Peppol only: %s", r)
+	// rule set, added to a Peppol invoice whatever Rules, applies the UBL
+	// schematron of Peppol; the German rules apply to an XRechnung UBL
+	// invoice.
+	for _, set := range []RuleSet{Schema, Peppol} {
+		r = XML([]byte(doc), &Options{Rules: set})
+		if got := strings.Join(r.Rules(), " "); got != einfachPeppol {
+			t.Errorf("Rules %b: rules = %s, want %s\n%s", set, got, einfachPeppol, r)
+		}
 	}
 	bad := strings.Replace(doc, "<cbc:IssueDate>2018-03-05</cbc:IssueDate>", "<cbc:IssueDate>2018-03-05</cbc:IssueDate><cbc:IssueDate>2018-03-05</cbc:IssueDate>", 1)
 	r = XML([]byte(bad), &Options{Rules: Schema})
 	if f := findings(r, schema.RuleCount); len(f) != 1 || f[0].Source != SourceSyntax ||
-		f[0].Path != "/Invoice/cbc:IssueDate[2]" || f[0].Line != 6 || len(r.Errors()) != 1 {
+		f[0].Path != "/Invoice/cbc:IssueDate[2]" || f[0].Line != 6 || len(r.Errors()) != 1+len(strings.Fields(einfachPeppol)) {
 		t.Errorf("Schema only, repeated cbc:IssueDate:\n%s", r)
 	}
 	if r = XML([]byte(bad), &Options{Rules: EN16931}); findings(r, "XSD-") != nil {
@@ -283,9 +300,43 @@ func TestCatalogUBL(t *testing.T) {
 		}
 		return false
 	}
-	if !has(EN16931, "UBL-CR-001") || !has(EN16931, "UBL-SR-01") || !has(Schema, schema.RuleOrder) || has(Schema, "UBL-CR-001") || has(Schema, "XSD-UBL") || !has(Peppol, RuleUBLPeppol) {
+	if !has(EN16931, "UBL-CR-001") || !has(EN16931, "UBL-SR-01") || !has(Schema, schema.RuleOrder) || has(Schema, "UBL-CR-001") || has(Schema, "XSD-UBL") ||
+		!has(Peppol, "PEPPOL-EN16931-R008") || !has(Peppol, "GR-R-002") || has(Default, "GR-R-002") {
 		t.Errorf("UBL rules missing from the catalog")
 	}
+}
+
+// TestPeppolExamples validates the official examples of Peppol BIS Billing
+// 3.0, rules/examples and rules/snippets of the directory named by
+// FX_PEPPOL (a clone of OpenPEPPOL/peppol-bis-invoice-3): with the default
+// rule sets, which add the Peppol rules to these UBL invoices, none has an
+// error.
+func TestPeppolExamples(t *testing.T) {
+	dir := os.Getenv("FX_PEPPOL")
+	if dir == "" {
+		t.Skip("FX_PEPPOL not set")
+	}
+	var files []string
+	for _, pattern := range []string{"rules/examples/*.xml", "rules/snippets/*.xml"} {
+		m, err := filepath.Glob(filepath.Join(dir, pattern))
+		if err != nil {
+			t.Fatal(err)
+		}
+		files = append(files, m...)
+	}
+	if len(files) == 0 {
+		t.Fatalf("no example in %s", dir)
+	}
+	for _, name := range files {
+		b, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r := XML(b, nil); r.Profile != invoice.ProfilePeppol || !r.Valid() {
+			t.Errorf("%s: profile %s\n%s", name, r.Profile, r)
+		}
+	}
+	t.Logf("%d examples", len(files))
 }
 
 // TestPeppol checks when the Peppol rules apply: on a Peppol invoice
@@ -330,8 +381,9 @@ func TestDeclaredRulesKept(t *testing.T) {
 		t.Fatal("BT-10 not found")
 	}
 	noBuyerRef := []byte(strings.Replace(xrechnung, buyerRef, "", 1))
-	// A Peppol invoice without electronic addresses.
+	// A Peppol invoice without electronic addresses, in CII and in UBL.
 	noAddress := []byte(strings.ReplaceAll(readXML(t, peppolInvoice), "URIUniversalCommunication>", "X>"))
+	noAddressUBL := []byte(strings.Replace(readXML(t, peppolUBLInvoice), `<cbc:EndpointID schemeID="0088">5012345000091</cbc:EndpointID>`, "", 1))
 	for _, opts := range []*Options{
 		nil,
 		{Auto: true},
@@ -344,6 +396,9 @@ func TestDeclaredRulesKept(t *testing.T) {
 		}
 		if r := XML(noAddress, opts); len(findings(r, "PEPPOL-EN16931-R010")) != 1 {
 			t.Errorf("Peppol invoice without electronic address (%+v): PEPPOL-EN16931-R010 not reported:\n%s", opts, r)
+		}
+		if r := XML(noAddressUBL, opts); len(findings(r, "PEPPOL-EN16931-R010")) != 1 {
+			t.Errorf("Peppol UBL invoice without electronic address (%+v): PEPPOL-EN16931-R010 not reported:\n%s", opts, r)
 		}
 	}
 }

@@ -1,9 +1,10 @@
-// Package peppol implements the rules of Peppol BIS Billing 3.0 for the CII
-// syntax, as published by OpenPEPPOL in PEPPOL-EN16931-CII.sch (release
-// 3.0.21, unchanged in the hotfix 3.0.22).
+// Package peppol implements the rules of Peppol BIS Billing 3.0, as
+// published by OpenPEPPOL in release 3.0.21 (unchanged in the hotfix
+// 3.0.22): the 90 assertions of PEPPOL-EN16931-CII.sch for a CII invoice
+// (Catalog), the 165 assertions of PEPPOL-EN16931-UBL.sch for a UBL invoice
+// (UBLCatalog), in Go, with their exact identifiers, flags and messages.
 //
-// The package reimplements the 90 assertions of the schematron in Go, with
-// their exact identifiers, flags and messages:
+// The rules of the CII schematron are:
 //
 //   - 25 Peppol rules (PEPPOL-EN16931-R*): business process and
 //     specification identifiers, buyer reference, electronic addresses,
@@ -18,6 +19,16 @@
 //     seller (and for some rules the buyer) is established in that country;
 //   - 7 restricted code lists and formats (PEPPOL-EN16931-CL*, P0100,
 //     F001).
+//
+// The rules of the UBL schematron are checked on the UBL document itself
+// (rules.Doc.UBL), not on its CII view: they have other contexts and other
+// tests, and 76 of them have no CII counterpart. They are the empty
+// elements (PEPPOL-EN16931-R008), 27 Peppol rules, 17 checks of identifiers
+// by ICD scheme, the national rules of Norway, Denmark, Italy, Sweden and
+// the Netherlands, and of Greece (GR-*), Iceland (IS-R-*) and Germany
+// (DE-R-*), and 18 code lists and formats, among them the type codes
+// (P0100, P0101, P0112) and the VAT exemption reasons (P0104 to P0111).
+// The faithfulness notes of the UBL rules are in ubl.go.
 //
 // The flags map to the severities of package rules: fatal to Error and
 // warning to Warning. The rules of EN 16931 (BR-*, BR-CL-*, CII-SR-*), which
@@ -37,8 +48,8 @@
 //
 // # Faithfulness notes
 //
-// The schematron is implemented as written, including where its XPath does
-// not do what its message says:
+// The CII schematron is implemented as written, including where its XPath
+// does not do what its message says:
 //
 //   - The VAT identifier is looked up with schemeID 'VAT' (the UBL value),
 //     where CII uses 'VA': in a CII invoice, the supplier country
@@ -81,9 +92,18 @@ const (
 	ProcessBillingWithResponse = "urn:peppol:bis:billing_with_response"
 )
 
-// Check runs the Peppol rules on c.Doc and records the findings in c.Report.
+// Check runs the Peppol rules on c.Doc and records the findings in c.Report:
+// the rules of the CII schematron on a CII invoice, those of the UBL
+// schematron on the UBL document of a UBL invoice (c.Doc.UBL).
 func Check(c *rules.Checker) {
-	if c == nil || c.Doc == nil || c.Doc.Root == nil {
+	if c == nil || c.Doc == nil {
+		return
+	}
+	if c.Doc.UBL != nil {
+		checkUBL(c, c.Doc.UBL)
+		return
+	}
+	if c.Doc.Root == nil {
 		return
 	}
 	k := &checker{Checker: c, root: c.Doc.Root}
@@ -133,15 +153,20 @@ func (k *checker) collect(n *xmltree.Node) {
 }
 
 // fail records a finding for rule id located at n, or at the root element
-// when n is nil. The message is the one of the schematron, followed by the
-// detail, if any.
+// when n is nil.
 func (k *checker) fail(id string, n *xmltree.Node, detail string, args ...any) {
-	r := byID[id]
-	if r == nil {
-		panic("peppol: unknown rule " + id)
-	}
 	if n == nil {
 		n = k.root
+	}
+	report(k.Checker, byID, id, n, detail, args...)
+}
+
+// report records a finding for the rule id of catalog, located at n. The
+// message is the one of the schematron, followed by the detail, if any.
+func report(c *rules.Checker, catalog map[string]*rules.RuleInfo, id string, n *xmltree.Node, detail string, args ...any) {
+	r := catalog[id]
+	if r == nil {
+		panic("peppol: unknown rule " + id)
 	}
 	var b strings.Builder
 	b.WriteString("[")
@@ -156,7 +181,7 @@ func (k *checker) fail(id string, n *xmltree.Node, detail string, args ...any) {
 			b.WriteString(detail)
 		}
 	}
-	k.Fail(id, r.Severity, n, "%s", b.String())
+	c.Fail(id, r.Severity, n, "%s", b.String())
 }
 
 // check records a finding for rule id when ok is false.

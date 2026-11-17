@@ -13,9 +13,8 @@
 // rules, do not apply. The French, German and Chorus Pro rules run on a CII
 // view of the UBL document, with the rule identifiers of their CII
 // schematrons; their findings are located in the UBL document. The Peppol
-// rules, which implement the CII schematron of Peppol BIS Billing 3.0, whose
-// contexts and tests differ from the UBL one, are not applied: the Peppol
-// rule set only reports it (PEPPOL-UBL, information).
+// rule set applies the UBL schematron of Peppol BIS Billing 3.0 to the UBL
+// document itself, the CII schematron to a CII invoice.
 //
 // Validation never stops at the first problem: every finding is collected in
 // a Report. A document that is not well-formed XML, or neither a CII nor a
@@ -80,7 +79,7 @@ const (
 	Germany                            // German rules BR-DE (XRechnung)
 	GermanyProfile                     // profiles the BMF accepts as e-invoices (DE-PROFILE-01: not MINIMUM nor BASIC WL)
 	ChorusPro                          // French B2G checks for Chorus Pro (CPRO-*), see Options.PublicBuyer
-	Peppol                             // Peppol BIS Billing 3.0 rules (PEPPOL-*) and their national rules (NO, DK, IT, SE, NL)
+	Peppol                             // Peppol BIS Billing 3.0 rules (PEPPOL-*) and their national rules (NO, DK, IT, SE, NL; for UBL also GR, IS, DE)
 
 	// Default is the set used when Options.Rules is zero: schema, EN 16931
 	// and profile rules. Whatever the rule sets, the German rules apply to
@@ -129,13 +128,6 @@ type PublicBuyer struct {
 	// accepts the contract reference (BT-12) instead.
 	EngagementRequired bool
 }
-
-// RuleUBLPeppol is the information reported by the Peppol rule set for a UBL
-// invoice, to which the Peppol rules (CII schematron) do not apply.
-const RuleUBLPeppol = "PEPPOL-UBL"
-
-var ublPeppolInfo = RuleInfo{ID: RuleUBLPeppol, Severity: Info,
-	Description: "The Peppol BIS Billing 3.0 rules are implemented for the CII syntax only: they are not applied to a UBL invoice."}
 
 // XML validates a CII or UBL invoice.
 func XML(data []byte, opts *Options) *Report {
@@ -199,17 +191,10 @@ func Tree(root *xmltree.Node, opts *Options) *Report {
 			EngagementRequired:  opts.PublicBuyer.EngagementRequired,
 		})
 	})
-	if isUBL {
-		// The UBL schematron of Peppol BIS Billing 3.0 has other contexts
-		// and tests than the CII one, and rules of its own: the CII rules
-		// would give false findings on a CII view.
-		if set&Peppol != 0 {
-			r.Add(Finding{Rule: RuleUBLPeppol, Severity: Info, Source: SourcePeppol, Path: "/" + root.Name, Line: root.Line,
-				Message: "the Peppol BIS Billing 3.0 rules are implemented for the CII syntax only: they were not applied to the UBL invoice"})
-		}
-	} else {
-		run(Peppol, SourcePeppol, peppol.Check)
-	}
+	// The Peppol rules of a UBL invoice are those of the UBL schematron,
+	// checked on the UBL document: the CII rules would give false findings
+	// on a CII view.
+	run(Peppol, SourcePeppol, peppol.Check)
 	return r
 }
 
@@ -258,6 +243,24 @@ func Catalog(set RuleSet) []RuleInfo {
 	add(GermanyProfile, de.ProfileCatalog)
 	add(ChorusPro, choruspro.Catalog)
 	add(Peppol, peppol.Catalog)
-	add(Peppol, []RuleInfo{ublPeppolInfo})
+	add(Peppol, newRules(peppol.UBLCatalog, peppol.Catalog))
+	return out
+}
+
+// newRules returns the rules of c whose identifier is not in old: the rules
+// of the UBL schematron of Peppol that the CII one does not define. A rule
+// of both is listed once, as the CII schematron describes it (DK-R-003 is a
+// warning there, an error in the UBL schematron).
+func newRules(c, old []RuleInfo) []RuleInfo {
+	seen := make(map[string]bool, len(old))
+	for _, r := range old {
+		seen[r.ID] = true
+	}
+	var out []RuleInfo
+	for _, r := range c {
+		if !seen[r.ID] {
+			out = append(out, r)
+		}
+	}
 	return out
 }

@@ -7,58 +7,62 @@ import (
 )
 
 // identifier checks a ram:URIID, ram:ID or ram:GlobalID against the format
-// of its ICD scheme (PEPPOL-COMMON-R*). The functions follow the u:*
-// functions of the schematron, character by character.
+// of its ICD scheme (PEPPOL-COMMON-R*). The scheme 9907 is only checked on
+// a ram:URIID.
 func (k *checker) identifier(n *xmltree.Node) {
 	scheme, ok := n.LookupAttr("schemeID")
-	if !ok {
+	if !ok || scheme == "9907" && n.Name != "URIID" {
 		return
 	}
-	v := nsv(n) // normalize-space()
-	s := sv(n)  // string(), for the Danish rules
-	var id string
-	var valid bool
+	v := nsv(n)
+	if id, valid := icdRule(scheme, v, sv(n)); id != "" {
+		k.check(valid, id, n, "scheme %s, value: %q", scheme, v)
+	}
+}
+
+// icdRule returns the PEPPOL-COMMON rule that checks an identifier with
+// the ICD scheme, "" when there is none, and whether the identifier passes
+// it: v is the identifier with normalize-space(), s its string value
+// (string(), which the Danish rules use). The functions follow the u:*
+// functions of the schematrons, character by character; the tests are the
+// same in CII and UBL.
+func icdRule(scheme, v, s string) (id string, valid bool) {
 	switch scheme {
 	case "0088":
-		id, valid = "PEPPOL-COMMON-R040", allDigits(v) && gln(v)
+		return "PEPPOL-COMMON-R040", allDigits(v) && gln(v)
 	case "0192":
-		id, valid = "PEPPOL-COMMON-R041", digits(v, 9) && mod11(v)
+		return "PEPPOL-COMMON-R041", digits(v, 9) && mod11(v)
 	case "0184":
-		id, valid = "PEPPOL-COMMON-R042", length(s) == 10 && substring(s, 1, 2) == "DK" && onlyDigits(substring(s, 3, 8)) ||
+		return "PEPPOL-COMMON-R042", length(s) == 10 && substring(s, 1, 2) == "DK" && onlyDigits(substring(s, 3, 8)) ||
 			length(s) == 8 && onlyDigits(substring(s, 1, 8))
 	case "0096":
-		id, valid = "PEPPOL-COMMON-R052", length(s) == 10 && onlyDigits(substring(s, 1, 10))
+		return "PEPPOL-COMMON-R052", length(s) == 10 && onlyDigits(substring(s, 1, 10))
 	case "0198":
-		id, valid = "PEPPOL-COMMON-R053", length(s) == 10 && substring(s, 1, 2) == "DK" && onlyDigits(substring(s, 3, 8))
+		return "PEPPOL-COMMON-R053", length(s) == 10 && substring(s, 1, 2) == "DK" && onlyDigits(substring(s, 3, 8))
 	case "0208":
-		id, valid = "PEPPOL-COMMON-R043", digits(v, 10) && mod97BE(v)
+		return "PEPPOL-COMMON-R043", digits(v, 10) && mod97BE(v)
 	case "0201":
-		id, valid = "PEPPOL-COMMON-R044", codiceIPA(v)
+		return "PEPPOL-COMMON-R044", codiceIPA(v)
 	case "0210":
-		id, valid = "PEPPOL-COMMON-R045", codiceFiscale(v)
+		return "PEPPOL-COMMON-R045", codiceFiscale(v)
 	case "9907":
-		if n.Name != "URIID" {
-			return
-		}
-		id, valid = "PEPPOL-COMMON-R046", codiceFiscale(v)
+		return "PEPPOL-COMMON-R046", codiceFiscale(v)
 	case "0211":
-		id, valid = "PEPPOL-COMMON-R047", partitaIVA(v)
+		return "PEPPOL-COMMON-R047", partitaIVA(v)
 	case "0007":
-		id, valid = "PEPPOL-COMMON-R049", length(v) == 10 && isNumber(v) && swedishOrgNumber(v)
+		return "PEPPOL-COMMON-R049", length(v) == 10 && isNumber(v) && swedishOrgNumber(v)
 	case "0151":
-		id, valid = "PEPPOL-COMMON-R050", abn(v)
+		return "PEPPOL-COMMON-R050", abn(v)
 	case "0106":
-		id, valid = "PEPPOL-COMMON-R054", digits(v, 8)
+		return "PEPPOL-COMMON-R054", digits(v, 8)
 	case "0190":
-		id, valid = "PEPPOL-COMMON-R055", digits(v, 20)
+		return "PEPPOL-COMMON-R055", digits(v, 20)
 	case "9944":
-		id, valid = "PEPPOL-COMMON-R056-1", dutchVAT(v)
+		return "PEPPOL-COMMON-R056-1", dutchVAT(v)
 	case "0217":
-		id, valid = "PEPPOL-COMMON-R057", digits(v, 12)
-	default:
-		return
+		return "PEPPOL-COMMON-R057", digits(v, 12)
 	}
-	k.check(valid, id, n, "scheme %s, value: %q", scheme, v)
+	return "", false
 }
 
 // onlyDigits reports whether s holds ASCII digits only, or is empty: what
