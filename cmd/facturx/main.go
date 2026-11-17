@@ -56,7 +56,7 @@ func main() {
 	case "info":
 		err = info(args)
 	case "validate":
-		code, err = validateCmd(args)
+		code, err = validateCmd(args, os.Stdout)
 	case "embed":
 		err = embed(args)
 	case "json":
@@ -162,10 +162,11 @@ func info(args []string) error {
 	return nil
 }
 
-func validateCmd(args []string) (int, error) {
+// validateCmd runs the validate command and writes the report to w.
+func validateCmd(args []string, w io.Writer) (int, error) {
 	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
 	fr := fs.Bool("fr", false, "apply the French rules BR-FR and the profiles the French reform admits")
-	de := fs.Bool("de", false, "apply the German rules BR-DE (XRechnung) and the profiles the BMF accepts")
+	de := fs.Bool("de", false, "apply the German rules BR-DE (XRechnung) and the profiles the BMF accepts (BR-DE applied anyway to XRECHNUNG invoices)")
 	auto := fs.Bool("auto", false, "apply the national rules of the seller's country")
 	rejectBasicWL := fs.Bool("reject-basicwl", false, "report the profile BASIC WL as an error under the French rules")
 	cpro := fs.Bool("choruspro", false, "apply the Chorus Pro checks of French B2G invoices")
@@ -210,7 +211,7 @@ func validateCmd(args []string) (int, error) {
 		r = validate.XML(data, opts)
 	}
 	if *asJSON {
-		enc := json.NewEncoder(os.Stdout)
+		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 		out := struct {
 			Profile  string             `json:"profile"`
@@ -224,11 +225,11 @@ func validateCmd(args []string) (int, error) {
 			return 0, err
 		}
 	} else {
-		fmt.Printf("Profile: %s\n", r.Profile)
+		fmt.Fprintf(w, "Profile: %s\n", r.Profile)
 		for _, f := range r.Findings {
-			fmt.Println(f)
+			fmt.Fprintln(w, f)
 		}
-		fmt.Printf("%d error(s), %d warning(s)\n", len(r.Errors()), len(r.Warnings()))
+		fmt.Fprintf(w, "%d error(s), %d warning(s)\n", len(r.Errors()), len(r.Warnings()))
 	}
 	if !r.Valid() {
 		return 1, nil
