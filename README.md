@@ -1,5 +1,9 @@
 # factur-x
 
+<p align="center">
+  <img src="docs/gopher.webp" alt="Le gopher Go en chapeau de papier et nœud papillon, tapant des factures à la machine à écrire entre des piles de factures" width="360">
+</p>
+
 Package Go pour les factures électroniques hybrides **Factur-X**, **ZUGFeRD** et **XRechnung**. Il prend un PDF déjà produit par votre application et y ajoute ce que la norme exige ; il relit et valide n'importe quelle facture de ces formats, quel que soit son profil.
 
 - Pur Go, bibliothèque standard uniquement : pas de CGO, pas de JVM, pas de binaire externe, pas d'appel réseau.
