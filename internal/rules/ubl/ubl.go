@@ -7,8 +7,10 @@
 //   - View builds a CII view of the document, on which the rule sets written
 //     for CII run: the business rules of package en16931 (whose identifiers
 //     and tests are the same in both syntaxes, with the differences of the
-//     UBL artefacts handled there), the Factur-X, French, German and Chorus
-//     Pro rules. Their findings are located in the UBL document;
+//     UBL artefacts handled there) and the Chorus Pro rules. Their findings
+//     are located in the UBL document. The French, German and Peppol rules,
+//     whose UBL schematrons have their own identifiers and contexts, run on
+//     the UBL document that the view carries (rules.Doc.UBL);
 //   - Check runs, on the UBL document itself, the rules whose context is UBL
 //     syntax: the UBL syntax rules UBL-CR (elements and attributes that
 //     EN 16931 does not use), UBL-SR (cardinalities) and UBL-DT (data
