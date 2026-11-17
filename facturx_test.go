@@ -47,6 +47,18 @@ func TestCheck(t *testing.T) {
 	if att != nil || r.Valid() {
 		t.Errorf("plain PDF: attachment %v, valid %v", att, r.Valid())
 	}
+	// A UBL invoice in a PDF is not a Factur-X invoice.
+	pdf, err := facturx.Embed(readFile(t, "testdata/host.pdf"), readFile(t, "testdata/EN16931_Einfach.ubl.xml"), &facturx.EmbedOptions{Profile: invoice.ProfileEN16931})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, att, err = facturx.Check(pdf, nil)
+	if err != nil || att == nil {
+		t.Fatal(att, err)
+	}
+	if r.Valid() || !r.Has("CII") {
+		t.Errorf("UBL in a PDF:\n%s", r)
+	}
 }
 
 func TestCreateProfiles(t *testing.T) {

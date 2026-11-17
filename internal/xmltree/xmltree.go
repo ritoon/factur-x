@@ -182,8 +182,9 @@ func (n *Node) Walk(fn func(*Node) bool) {
 
 // Path returns an XPath-like location of n, such as
 // "/rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:AssociatedDocumentLineDocument".
-// Prefixes are the conventional CII ones (rsm, ram, udt, qdt) when the
-// namespace is known, the document prefix otherwise. A position is added when
+// Prefixes are the conventional CII ones (rsm, ram, udt, qdt) and UBL ones
+// (cac, cbc, ext, none for the root) when the namespace is known, the
+// document prefix otherwise. A position is added when
 // the parent has several children with the same name.
 func (n *Node) Path() string {
 	if n == nil {
@@ -216,16 +217,25 @@ func (n *Node) Path() string {
 	return b.String()
 }
 
-// Conventional prefixes of the CII namespaces.
+// Conventional prefixes of the CII and UBL namespaces. The roots of UBL
+// documents (Invoice, CreditNote) get no prefix.
 var prefixes = map[string]string{
 	"urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100":                       "rsm",
 	"urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100": "ram",
 	"urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100":                        "udt",
 	"urn:un:unece:uncefact:data:standard:QualifiedDataType:100":                          "qdt",
+	"urn:oasis:names:specification:ubl:schema:xsd:Invoice-2":                             "",
+	"urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2":                          "",
+	"urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2":           "cac",
+	"urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2":               "cbc",
+	"urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2":           "ext",
 }
 
 func (n *Node) qualified() string {
 	if p, ok := prefixes[n.Space]; ok {
+		if p == "" {
+			return n.Name
+		}
 		return p + ":" + n.Name
 	}
 	if n.Prefix != "" {

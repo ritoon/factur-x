@@ -83,3 +83,32 @@ var xrechnungLevels = func() map[mode]map[string]rules.Severity {
 		modeXRechnungCVD:       cvd,
 	}
 }()
+
+// xrechnungLevelsUBL are the severities that the same configuration gives to
+// CEN rules for UBL documents, per scenario. In the XRechnung scenario of a
+// CreditNote, UBL-CR-646 keeps its severity (see level).
+var xrechnungLevelsUBL = map[mode]map[string]rules.Severity{
+	modeXRechnung: {
+		"BR-CL-21":   rules.Warning,
+		"BR-CL-23":   rules.Warning,
+		"UBL-CR-646": rules.Error,
+	},
+	modeXRechnungExtension: {
+		"BR-CL-10":   rules.Info,
+		"BR-CL-11":   rules.Info,
+		"BR-CL-21":   rules.Info,
+		"BR-CL-23":   rules.Warning,
+		"BR-CL-24":   rules.Info,
+		"BR-CL-25":   rules.Info,
+		"BR-CL-26":   rules.Info,
+		"BR-CO-16":   rules.Info,
+		"UBL-CR-470": rules.Info,
+		"UBL-CR-646": rules.Info,
+	},
+	modeXRechnungCVD: {
+		"BR-CL-13":   rules.Info,
+		"BR-CL-21":   rules.Warning,
+		"BR-CL-23":   rules.Warning,
+		"UBL-CR-646": rules.Error,
+	},
+}

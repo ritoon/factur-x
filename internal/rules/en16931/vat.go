@@ -6,8 +6,9 @@ import (
 )
 
 // VAT category rules: BR-S, BR-Z, BR-E, BR-AE, BR-IC (K), BR-G, BR-O, BR-IP
-// (IGIC, L), BR-IG (IPSI, M), and the VAT breakdown rules BR-45 to BR-48,
-// BR-CO-03, BR-CO-17, BR-DEC-19 and BR-DEC-20.
+// (IGIC, L), BR-IG (IPSI, M) (the reverse in UBL, see vatCategoriesUBL), and
+// the VAT breakdown rules BR-45 to BR-48, BR-CO-03, BR-CO-17, BR-DEC-19 and
+// BR-DEC-20.
 
 // rateCond is the condition a category puts on the VAT rate of a line, an
 // allowance or a charge.
@@ -76,6 +77,17 @@ var vatCategories = [nCat]vatCategory{
 	catL:  {name: "L (IGIC, Canary Islands)", prefix: "BR-IP-", seller: partySellerVAFC, sellerMsg: sellerAny, rate: ratePositive},
 	catM:  {name: "M (IPSI, Ceuta and Melilla)", prefix: "BR-IG-", seller: partySellerVAFC, sellerMsg: sellerAny, rate: rateNonNegative},
 }
+
+// vatCategoriesUBL are the category rules of the UBL artefacts. They differ
+// from the CII ones for L and M: the UBL artefacts number the rules of
+// category L (IGIC) BR-IG and those of category M (IPSI) BR-IP, the reverse
+// of the CII artefacts, and accept a zero rate for category L.
+var vatCategoriesUBL = func() [nCat]vatCategory {
+	c := vatCategories
+	c[catL].prefix, c[catL].rate = "BR-IG-", rateNonNegative
+	c[catM].prefix = "BR-IP-"
+	return c
+}()
 
 // vatOrder is the order of the category rules in the official pattern: when
 // an element has several category codes, the first rule wins.
@@ -177,7 +189,7 @@ func (k *checker) categoryTradeTax(n *xmltree.Node) {
 		if !present[i] {
 			continue
 		}
-		v := &vatCategories[i]
+		v := &k.cats[i]
 		seller, rate, what := "04", "07", "charge"
 		if allowance {
 			seller, rate, what = "03", "06", "allowance"
@@ -220,7 +232,7 @@ func (k *checker) applicableTradeTax(n *xmltree.Node) {
 			if !present[i] {
 				continue
 			}
-			v := &vatCategories[i]
+			v := &k.cats[i]
 			if !k.partiesOK(v.seller) || !rateOK(n, v.rate) {
 				subject := "line " + lineID(n.Parent.Parent) + " with VAT category " + v.name
 				if !k.partiesOK(v.seller) {
@@ -239,7 +251,7 @@ func (k *checker) applicableTradeTax(n *xmltree.Node) {
 func (k *checker) categoriesPresent() {
 	for _, i := range vatOrder {
 		hdr, line, tax := k.catHdr[i], k.catLine[i], k.catTax[i]
-		v := &vatCategories[i]
+		v := &k.cats[i]
 		var ok bool
 		switch i {
 		case catS, catL, catM:
@@ -315,7 +327,24 @@ func taxMatches(n *xmltree.Node, name, cat string, rate *invoice.Decimal) bool {
 // document level charges minus the rounded sum of the document level
 // allowances of that category.
 func (k *checker) categoryBasis(cat string, rate *invoice.Decimal) invoice.Decimal {
-	lines, charges, allowances := zero, zero, zero
+	lines, charges, allowances, _ := k.categorySums(cat, rate)
+	return round2(lines).Add(round2(charges)).Sub(round2(allowances))
+}
+
+// categoryTotal returns the sum of the line net amounts plus the sum of the
+// document level charges minus the sum of the document level allowances of
+// a VAT category (and rate), unrounded as in the UBL artefacts, and the
+// number of lines, allowances and charges of that category.
+func (k *checker) categoryTotal(cat string, rate *invoice.Decimal) (invoice.Decimal, int) {
+	lines, charges, allowances, n := k.categorySums(cat, rate)
+	return lines.Add(charges).Sub(allowances), n
+}
+
+// categorySums returns the sums of the line net amounts, document level
+// charges and document level allowances of a VAT category (and rate), and
+// the number of lines, allowances and charges of that category.
+func (k *checker) categorySums(cat string, rate *invoice.Decimal) (lines, charges, allowances invoice.Decimal, n int) {
+	lines, charges, allowances = zero, zero, zero
 	for _, l := range children(k.d.Transaction) {
 		switch l.Name {
 		case "IncludedSupplyChainTradeLineItem":
@@ -323,6 +352,7 @@ func (k *checker) categoryBasis(cat string, rate *invoice.Decimal) invoice.Decim
 				if s.Name != "SpecifiedLineTradeSettlement" || !taxMatches(s, "ApplicableTradeTax", cat, rate) {
 					continue
 				}
+				n++
 				for _, m := range s.Children {
 					if m.Name != "SpecifiedTradeSettlementLineMonetarySummation" {
 						continue
@@ -337,6 +367,7 @@ func (k *checker) categoryBasis(cat string, rate *invoice.Decimal) invoice.Decim
 				if ac.Name != "SpecifiedTradeAllowanceCharge" || !taxMatches(ac, "CategoryTradeTax", cat, rate) {
 					continue
 				}
+				n++
 				v, ok := dec(ac.Elem("ActualAmount"))
 				if !ok {
 					continue
@@ -351,7 +382,7 @@ func (k *checker) categoryBasis(cat string, rate *invoice.Decimal) invoice.Decim
 			}
 		}
 	}
-	return round2(lines).Add(round2(charges)).Sub(round2(allowances))
+	return lines, charges, allowances, n
 }
 
 // breakdowns checks the VAT breakdowns (BG-23) of a header settlement.
@@ -365,13 +396,9 @@ func (k *checker) breakdowns(s *xmltree.Node) {
 		special := vat && underTransaction
 		switch {
 		case special && childText(t, "CategoryCode", "L"):
-			if hasExemption(t) {
-				k.fail("BR-IP-10", t, "a VAT breakdown of category %s must not have a VAT exemption reason (BT-120, BT-121)", vatCategories[catL].name)
-			}
+			k.canaryBreakdown(t, catL)
 		case special && childText(t, "CategoryCode", "M"):
-			if hasExemption(t) {
-				k.fail("BR-IG-10", t, "a VAT breakdown of category %s must not have a VAT exemption reason (BT-120, BT-121)", vatCategories[catM].name)
-			}
+			k.canaryBreakdown(t, catM)
 		case special && childText(t, "CategoryCode", "O"):
 			k.notSubjectBreakdown(t)
 		default:
@@ -404,6 +431,46 @@ func (k *checker) breakdowns(s *xmltree.Node) {
 				k.standardBreakdown(t)
 			}
 		}
+	}
+}
+
+// canaryBreakdown checks BR-IP-08 to BR-IP-10 and BR-IG-08 to BR-IG-10 on a
+// VAT breakdown of category L or M. In the CII artefacts the first two
+// assertions are always true; the UBL artefacts check the taxable amount and
+// the tax amount, within one unit.
+func (k *checker) canaryBreakdown(t *xmltree.Node, cat int) {
+	v := &k.cats[cat]
+	if k.ubl {
+		basis, calc := t.Elem("BasisAmount"), t.Elem("CalculatedAmount")
+		b, bok := dec(basis)
+		for _, r := range t.Children {
+			if r.Name != "RateApplicablePercent" {
+				continue
+			}
+			rate, ok := dec(r)
+			if !ok {
+				continue
+			}
+			want, _ := k.categoryTotal(catCodes[cat], &rate)
+			if !bok || !within(b, want, false) {
+				k.fail(v.prefix+"08", t, "VAT category %s taxable amount (BT-116) %q at rate %q is not the sum of the line net amounts minus allowances plus charges of that category and rate (%s, tolerance 1)", v.name, quote(text(basis)), quote(r.Text), want.String())
+			}
+		}
+		ok := false
+		var want invoice.Decimal
+		if c, cok := dec(calc); cok && bok {
+			if rate, rok := dec(t.Elem("RateApplicablePercent")); rok {
+				want = percentOf(b, rate)
+				ok = within(c.Abs(), want, false)
+			}
+		}
+		if !ok {
+			k.fail(v.prefix+"09", t, "VAT category %s tax amount (BT-117) %q is not VAT category taxable amount (BT-116) %q × rate (BT-119) %q / 100 = %s (tolerance 1)",
+				v.name, quote(text(calc)), quote(text(basis)), quote(text(t.Elem("RateApplicablePercent"))), want.String())
+		}
+	}
+	if hasExemption(t) {
+		k.fail(v.prefix+"10", t, "a VAT breakdown of category %s must not have a VAT exemption reason (BT-120, BT-121)", v.name)
 	}
 }
 
@@ -454,7 +521,7 @@ func (k *checker) vatAmount(t, basis, calc *xmltree.Node) {
 	case rok:
 		if b, bok := dec(basis); bok {
 			expected = percentOf(b, rate)
-			ok = within(c.Abs(), expected, true)
+			ok = within(c.Abs(), expected, !k.ubl) // UBL: strict comparisons
 		}
 	default:
 		ok = c.RoundHalfCeil(0).IsZero()
@@ -500,11 +567,19 @@ func (k *checker) notSubjectBreakdown(t *xmltree.Node) {
 // .../ram:ApplicableTradeTax/ram:CategoryCode[. = 'x']). exempt tells whether
 // an exemption reason is required (AE, E, G, K) or forbidden (Z).
 func (k *checker) zeroBreakdown(s, t *xmltree.Node, cat int, exempt bool) {
-	v := &vatCategories[cat]
+	v := &k.cats[cat]
 	basis := t.Elem("BasisAmount")
-	want := k.categoryBasis(catCodes[cat], nil)
-	if b, ok := dec(basis); !ok || !within(b, want, false) {
-		k.fail(v.prefix+"08", t, "VAT category %s taxable amount (BT-116) %q is not the sum of the line net amounts minus allowances plus charges of that category (%s, tolerance 1)", v.name, quote(text(basis)), want.String())
+	if k.ubl {
+		// The UBL artefacts compare the exact sums, without tolerance.
+		want, _ := k.categoryTotal(catCodes[cat], nil)
+		if b, ok := dec(basis); !ok || !b.Equal(want) {
+			k.fail(v.prefix+"08", t, "VAT category %s taxable amount (BT-116) %q is not the sum of the line net amounts minus allowances plus charges of that category (%s)", v.name, quote(text(basis)), want.String())
+		}
+	} else {
+		want := k.categoryBasis(catCodes[cat], nil)
+		if b, ok := dec(basis); !ok || !within(b, want, false) {
+			k.fail(v.prefix+"08", t, "VAT category %s taxable amount (BT-116) %q is not the sum of the line net amounts minus allowances plus charges of that category (%s, tolerance 1)", v.name, quote(text(basis)), want.String())
+		}
 	}
 	if !calculatedZero(t) {
 		k.fail(v.prefix+"09", t, "VAT category %s tax amount (BT-117) %q must be 0", v.name, quote(text(t.Elem("CalculatedAmount"))))
@@ -538,6 +613,15 @@ func (k *checker) standardBreakdown(t *xmltree.Node) {
 		}
 		rate, ok := dec(r)
 		if !ok {
+			continue
+		}
+		if k.ubl {
+			// The UBL artefacts compare the exact sums within one unit, and
+			// require a line, an allowance or a charge at that rate.
+			want, n := k.categoryTotal("S", &rate)
+			if n == 0 || !bok || !within(b, want, false) {
+				k.fail("BR-S-08", t, "VAT category S taxable amount (BT-116) %q at rate %q is not the sum of the line net amounts minus allowances plus charges of category S at that rate (%s, tolerance 1)", quote(text(basis)), quote(r.Text), want.String())
+			}
 			continue
 		}
 		want := k.categoryBasis("S", &rate)

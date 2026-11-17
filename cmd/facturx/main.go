@@ -1,5 +1,6 @@
 // Command facturx reads, validates and creates Factur-X / ZUGFeRD /
-// XRechnung invoices.
+// XRechnung invoices. validate and json also accept a CII or UBL 2.1 XML
+// invoice, whose syntax is detected from the root element.
 //
 //	facturx extract [-o out.xml] invoice.pdf
 //	facturx info invoice.pdf
@@ -25,11 +26,14 @@ import (
 
 	facturx "github.com/ritoon/factur-x"
 	"github.com/ritoon/factur-x/cii"
+	"github.com/ritoon/factur-x/internal/xmltree"
 	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/factur-x/ubl"
 	"github.com/ritoon/factur-x/validate"
 )
 
 const usage = `facturx reads, validates and creates Factur-X / ZUGFeRD / XRechnung invoices.
+validate and json also accept an XML invoice in CII or UBL 2.1 syntax.
 
 Usage:
   facturx extract [-o out.xml] invoice.pdf
@@ -172,7 +176,7 @@ func validateCmd(args []string, w io.Writer) (int, error) {
 	cpro := fs.Bool("choruspro", false, "apply the Chorus Pro checks of French B2G invoices")
 	serviceRequired := fs.Bool("service-required", false, "with -choruspro: the public buyer requires a service code (BT-10)")
 	engagementRequired := fs.Bool("engagement-required", false, "with -choruspro: the public buyer requires an engagement number (BT-13)")
-	pep := fs.Bool("peppol", false, "apply the Peppol BIS Billing 3.0 rules (applied anyway when BT-24 is the Peppol identifier)")
+	pep := fs.Bool("peppol", false, "apply the Peppol BIS Billing 3.0 rules to a CII invoice (applied anyway when BT-24 is the Peppol identifier)")
 	profile := fs.String("profile", "", "validate against this profile instead of BT-24")
 	asJSON := fs.Bool("json", false, "print the report as JSON")
 	_, data, err := oneFile(fs, args)
@@ -295,7 +299,7 @@ func jsonCmd(args []string) error {
 		}
 		data = att.XML
 	}
-	inv, err := cii.Parse(data)
+	inv, err := parseInvoice(data)
 	if inv == nil {
 		return err
 	}
@@ -305,6 +309,14 @@ func jsonCmd(args []string) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(inv)
+}
+
+// parseInvoice reads a CII or UBL invoice, detected from the root element.
+func parseInvoice(data []byte) (*invoice.Invoice, error) {
+	if root, err := xmltree.Parse(data); err == nil && ubl.IsUBL(root) {
+		return ubl.Parse(data)
+	}
+	return cii.Parse(data)
 }
 
 func rulesCmd(args []string) error {

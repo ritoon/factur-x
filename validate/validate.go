@@ -1,12 +1,25 @@
-// Package validate checks CII invoices against the XML schema of their
-// Factur-X profile, the EN 16931 business rules, the Factur-X profile rules,
-// and optionally the French (BR-FR) and German (BR-DE) rules, the profiles
-// that France and Germany admit, the checks of Chorus Pro for French B2G
-// invoices, and the Peppol BIS Billing 3.0 rules.
+// Package validate checks CII and UBL invoices: CII invoices against the XML
+// schema of their Factur-X profile, the EN 16931 business rules, the
+// Factur-X profile rules, and optionally the French (BR-FR) and German
+// (BR-DE) rules, the profiles that France and Germany admit, the checks of
+// Chorus Pro for French B2G invoices, and the Peppol BIS Billing 3.0 rules.
+//
+// The syntax is detected from the root element. A UBL 2.1 Invoice or
+// CreditNote is checked against the OASIS UBL 2.1 XML schema of its document
+// (the Schema rule set, with the same XSD-* rules as CII; the content of the
+// UBL extensions is not checked) and against the EN 16931 rules of the UBL
+// artefacts: the business rules and code lists, and the UBL syntax rules
+// UBL-CR, UBL-SR and UBL-DT. The Factur-X profile rules, which are CII
+// rules, do not apply. The French, German and Chorus Pro rules run on a CII
+// view of the UBL document, with the rule identifiers of their CII
+// schematrons; their findings are located in the UBL document. The Peppol
+// rules, which implement the CII schematron of Peppol BIS Billing 3.0, whose
+// contexts and tests differ from the UBL one, are not applied: the Peppol
+// rule set only reports it (PEPPOL-UBL, information).
 //
 // Validation never stops at the first problem: every finding is collected in
-// a Report. A document that is not well-formed XML, or not a CII invoice,
-// gives a report with a single syntax error.
+// a Report. A document that is not well-formed XML, or neither a CII nor a
+// UBL invoice, gives a report with a single syntax error.
 package validate
 
 import (
@@ -17,6 +30,7 @@ import (
 	"github.com/ritoon/factur-x/internal/rules/facturx"
 	"github.com/ritoon/factur-x/internal/rules/fr"
 	"github.com/ritoon/factur-x/internal/rules/peppol"
+	"github.com/ritoon/factur-x/internal/rules/ubl"
 	"github.com/ritoon/factur-x/internal/schema"
 	"github.com/ritoon/factur-x/internal/xmltree"
 	"github.com/ritoon/factur-x/invoice"
@@ -59,9 +73,9 @@ type RuleSet uint
 
 // Rule sets.
 const (
-	Schema         RuleSet = 1 << iota // structure against the XML schema of the profile
-	EN16931                            // CEN business rules and code lists
-	FacturX                            // Factur-X / ZUGFeRD profile rules
+	Schema         RuleSet = 1 << iota // structure against the XML schema: of the profile (CII), UBL 2.1 (UBL)
+	EN16931                            // CEN business rules and code lists, and the UBL syntax rules for UBL
+	FacturX                            // Factur-X / ZUGFeRD profile rules (CII only)
 	France                             // French rules BR-FR (2026 reform) and the profiles the reform admits (FR-PROFILE-*)
 	Germany                            // German rules BR-DE (XRechnung)
 	GermanyProfile                     // profiles the BMF accepts as e-invoices (DE-PROFILE-01: not MINIMUM nor BASIC WL)
@@ -116,7 +130,14 @@ type PublicBuyer struct {
 	EngagementRequired bool
 }
 
-// XML validates a CII invoice.
+// RuleUBLPeppol is the information reported by the Peppol rule set for a UBL
+// invoice, to which the Peppol rules (CII schematron) do not apply.
+const RuleUBLPeppol = "PEPPOL-UBL"
+
+var ublPeppolInfo = RuleInfo{ID: RuleUBLPeppol, Severity: Info,
+	Description: "The Peppol BIS Billing 3.0 rules are implemented for the CII syntax only: they are not applied to a UBL invoice."}
+
+// XML validates a CII or UBL invoice.
 func XML(data []byte, opts *Options) *Report {
 	if opts == nil {
 		opts = &Options{}
@@ -130,28 +151,42 @@ func XML(data []byte, opts *Options) *Report {
 	return Tree(root, opts)
 }
 
-// Tree validates an already parsed CII invoice.
+// Tree validates an already parsed CII or UBL invoice.
 func Tree(root *xmltree.Node, opts *Options) *Report {
 	if opts == nil {
 		opts = &Options{}
 	}
 	r := &Report{}
-	if root.Name != "CrossIndustryInvoice" || root.Space != rules.NSRsm {
+	var doc *rules.Doc
+	switch {
+	case root.Name == "CrossIndustryInvoice" && root.Space == rules.NSRsm:
+		doc = rules.NewDoc(root, opts.Profile)
+	case ubl.IsUBL(root):
+		doc = ubl.View(root, opts.Profile)
+	default:
 		r.Add(Finding{Rule: "CII", Severity: Error, Source: SourceSyntax, Path: "/" + root.Name, Line: root.Line,
-			Message: "the root element is not rsm:CrossIndustryInvoice in namespace " + rules.NSRsm})
+			Message: "the root element is neither rsm:CrossIndustryInvoice in namespace " + rules.NSRsm +
+				" nor a UBL 2.1 Invoice or CreditNote"})
 		return r
 	}
-	doc := rules.NewDoc(root, opts.Profile)
 	r.Profile = doc.Profile
 	set := RulesFor(doc, opts)
+	isUBL := doc.UBL != nil
 	run := func(s RuleSet, source string, check func(*rules.Checker)) {
 		if set&s != 0 {
 			check(&rules.Checker{Doc: doc, Report: r, Source: source})
 		}
 	}
 	run(Schema, SourceSyntax, schema.Check)
-	run(EN16931, SourceEN16931, en16931.Check)
-	run(FacturX, SourceFacturX, facturx.Check)
+	if isUBL {
+		run(EN16931, SourceEN16931, func(c *rules.Checker) {
+			en16931.Check(c)
+			ubl.Check(c)
+		})
+	} else {
+		run(EN16931, SourceEN16931, en16931.Check)
+		run(FacturX, SourceFacturX, facturx.Check)
+	}
 	run(France, SourceFR, func(c *rules.Checker) {
 		fr.Check(c)
 		fr.CheckProfile(c, opts.RejectBasicWL)
@@ -164,7 +199,17 @@ func Tree(root *xmltree.Node, opts *Options) *Report {
 			EngagementRequired:  opts.PublicBuyer.EngagementRequired,
 		})
 	})
-	run(Peppol, SourcePeppol, peppol.Check)
+	if isUBL {
+		// The UBL schematron of Peppol BIS Billing 3.0 has other contexts
+		// and tests than the CII one, and rules of its own: the CII rules
+		// would give false findings on a CII view.
+		if set&Peppol != 0 {
+			r.Add(Finding{Rule: RuleUBLPeppol, Severity: Info, Source: SourcePeppol, Path: "/" + root.Name, Line: root.Line,
+				Message: "the Peppol BIS Billing 3.0 rules are implemented for the CII syntax only: they were not applied to the UBL invoice"})
+		}
+	} else {
+		run(Peppol, SourcePeppol, peppol.Check)
+	}
 	return r
 }
 
@@ -205,6 +250,7 @@ func Catalog(set RuleSet) []RuleInfo {
 	}
 	add(Schema, schema.Catalog)
 	add(EN16931, en16931.Catalog)
+	add(EN16931, ubl.Catalog)
 	add(FacturX, facturx.Catalog)
 	add(France, fr.Catalog)
 	add(France, fr.ProfileCatalog)
@@ -212,5 +258,6 @@ func Catalog(set RuleSet) []RuleInfo {
 	add(GermanyProfile, de.ProfileCatalog)
 	add(ChorusPro, choruspro.Catalog)
 	add(Peppol, peppol.Catalog)
+	add(Peppol, []RuleInfo{ublPeppolInfo})
 	return out
 }
