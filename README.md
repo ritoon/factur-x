@@ -351,7 +351,7 @@ Le lecteur XML est lui aussi écrit pour ce package : un seul passage sur les oc
 
 ## Performances
 
-Apple M4 Pro, Go 1.26, 16/11/2026. Comparaison avec le plus rapide des autres packages Go qui réussit l'opération ; tableaux complets dans [bench/ecosystem/results/2026-11-16/tables.md](bench/ecosystem/results/2026-11-16/tables.md).
+Apple M4 Pro, Go 1.26, 16/11/2026. Comparaison avec le plus rapide des autres packages Go qui réussit l'opération ; tableaux complets dans [bench/ecosystem/results/2026-11-16/tables.md](bench/ecosystem/results/2026-11-16/tables.md). Le contrôle complet a été remesuré le 17/11/2026 (Go 1.26.4), après l'ajout des contrôles PDF/A du conteneur (polices, JavaScript et actions, `/Info`, LZW).
 
 | Opération | factur-x | Meilleur autre package Go |
 |---|---|---|
@@ -361,7 +361,7 @@ Apple M4 Pro, Go 1.26, 16/11/2026. Comparaison avec le plus rapide des autres pa
 | Lecture et validation complète (1,3 Mo, pièces jointes base64) | 744 µs | 7,01 ms (angelo) |
 | Écriture modèle → XML (13 Ko) | 2,7 µs | 20,7 µs (fX) |
 | Injection dans un PDF à flux xref | 80 µs | 543 µs (pdfcpu) |
-| Contrôle complet d'un PDF hybride (149 Ko) | 55 µs | 1,18 ms (DCNWS) |
+| Contrôle complet d'un PDF hybride (149 Ko) | 68 µs | 1,18 ms (DCNWS) |
 
 Le harnais est dans [bench/ecosystem](bench/ecosystem) ; chaque librairie y a son propre module.
 
