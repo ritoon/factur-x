@@ -174,6 +174,19 @@ Les schematrons officiels ne contrôlent pas le profil ; ces contrôles ont des 
 
 En France, EN 16931 et EXTENDED-CTC-FR forment le socle et EXTENDED est admis ; en Allemagne, BASIC, EN 16931, EXTENDED et XRECHNUNG sont acceptés. `Auto` n'applique pas les règles BR-DE à une facture ZUGFeRD : elles ne concernent que XRECHNUNG, à qui elles s'appliquent quels que soient les jeux choisis.
 
+#### Leitweg-ID et GEBA
+
+Le schematron XRechnung exige BT-10 (BR-DE-15) et admet les schémas d'adresse électronique 0204 (Leitweg-ID) et 0246 (GEBA) sans en contrôler la forme. Le jeu `Germany` vérifie aussi leur format et leur clé, en avertissement et avec des identifiants propres au package. Une valeur mal formée n'est pas soumise au contrôle de clé.
+
+| Règle | Gravité | Valeurs contrôlées | Constat |
+|---|---|---|---|
+| DE-LEITWEG-01 | avertissement | BT-10 ; BT-34 et BT-49 de schéma 0204 | Format de la Formatspezifikation Leitweg-ID 2.0.2 : Grobadressierung de 2, 3, 5, 8, 9 ou 12 chiffres commençant par le code d'un Land (01 à 16) ou du Bund (99), Feinadressierung facultative de 1 à 30 lettres ou chiffres, deux chiffres de contrôle, séparés par « - » |
+| DE-LEITWEG-02 | avertissement | idem | Chiffres de contrôle ISO/IEC 7064 MOD 97-10 ; le message donne les chiffres attendus |
+| DE-GEBA-01 | avertissement | BT-34 et BT-49 de schéma 0246 | Format de la GEBA Formatspezifikation 1.0.1 : `DE` et les 9 chiffres de la W-IdNr, puis en option « - » et un Unterscheidungsmerkmal de 5 chiffres, puis en option « . » et une sous-adresse de 1 à 8 lettres ou chiffres |
+| DE-GEBA-02 | avertissement | idem | Chiffre de contrôle de la W-IdNr (ISO 7064 MOD 11,10, comme pour la USt-IdNr) |
+
+Dans une facture XRECHNUNG, BT-10 porte la Leitweg-ID de l'acheteur public : une facture B2B qui y met une autre référence reçoit DE-LEITWEG-01, qu'elle peut ignorer.
+
 #### Relation du XML au PDF (`/AFRelationship`) par pays
 
 La spécification Factur-X 1.09 (§ 5.3 et § 6.2.2) fixe la relation du XML au PDF selon le profil et le pays :
@@ -276,7 +289,7 @@ warning [PDF] PDF-06: the catalog has no PDF/A output intent (/S /GTS_PDFA1) (ca
 | EN 16931 (UBL) | Mêmes règles métier, avec les contextes et les tests des artefacts UBL (catégories L et M, tolérances, BR-DEC sur le texte, listes de codes propres à l'UBL) ; 759 règles de syntaxe (62 erreurs, 697 avertissements) : UBL-CR (678), UBL-SR (57), UBL-DT (24) | Artefacts CEN TC 434 v1.3.17 (UBL) |
 | Factur-X | 229 règles (207 erreurs, 22 avertissements) : identification du profil (BT-24), assertions des schematrons MINIMUM et BASIC WL, éléments non utilisés par profil ; règles BR-FXEXT d'EXTENDED et EXTENDED-CTC-FR (sous-types et regroupements de lignes, totaux avec tolérance, frais logistiques et frais pour compte de tiers, ventilation de TVA par catégorie, taux et motif d'exonération) | Schematrons Factur-X 1.09 (MINIMUM, BASIC WL) ; XSLT EXTENDED Factur-X 1.09.2 (ZUGFeRD 2.5.2) |
 | France (BR-FR) | 59 règles, 170 assertions en CII, 173 en UBL : SIREN/SIRET, adresses électroniques, mentions obligatoires, cadres de facturation, multi-vendeurs ; 3 contrôles des profils admis (FR-PROFILE) | Schematrons FNFE-MPE v1.4.0.04 (CII et UBL) |
-| Allemagne (BR-DE) | 52 assertions en CII, 57 en UBL (BR-DE, BR-DE-CVD, BR-DEX, BR-TMP ; PEPPOL-EN16931-R043 en UBL) ; contrôle des profils acceptés par le BMF (DE-PROFILE-01) | Schematrons KoSIT XRechnung 3.0.2 (CII et UBL) ; BMF |
+| Allemagne (BR-DE) | 52 assertions en CII, 57 en UBL (BR-DE, BR-DE-CVD, BR-DEX, BR-TMP ; PEPPOL-EN16931-R043 en UBL) ; contrôle des profils acceptés par le BMF (DE-PROFILE-01) ; format et clé de la Leitweg-ID et de la GEBA (DE-LEITWEG-01, DE-LEITWEG-02, DE-GEBA-01, DE-GEBA-02) | Schematrons KoSIT XRechnung 3.0.2 (CII et UBL) ; BMF ; Formatspezifikation Leitweg-ID 2.0.2 ; GEBA Formatspezifikation 1.0.1 |
 | Peppol BIS Billing 3.0 | CII : 90 assertions (73 erreurs, 17 avertissements) ; UBL : 165 assertions (139 erreurs, 26 avertissements), dont 76 propres à l'UBL. PEPPOL-EN16931-R, PEPPOL-COMMON-R (identifiants par schéma ICD), listes de codes restreintes, règles nationales NO, DK, IT, SE et NL, et en UBL GR, IS et DE | Schematrons Peppol BIS Billing 3.0.21 (`PEPPOL-EN16931-CII.sch` et `PEPPOL-EN16931-UBL.sch`, inchangés en 3.0.22) |
 | Chorus Pro (B2G) | 8 contrôles (CPRO-01 à CPRO-08) : SIRET de la structure publique, code service, numéro d'engagement, type de document, numéro de facture | Spécifications externes Chorus Pro (annexe EDI V4.23) |
 | Conteneur PDF | 40 contrôles (PDF-01 à PDF-40) : PDF/A-3 ou PDF/A-4f déclaré, cohérent avec la version PDF, XMP `fx` cohérent avec le XML, pièce jointe, `/AF`, `/AFRelationship` selon le profil et le pays, type MIME, chiffrement ; prérequis PDF/A vérifiables sans rendu : polices incorporées, JavaScript et actions interdites (`/OpenAction`, liens, signets, `/AA`), cohérence entre `/Info` et le XMP, pièces jointes annexes (`/AFRelationship`, type MIME, présence dans un `/AF`), filtre `LZWDecode` | Spécification Factur-X 1.08 et 1.09 (§ 6.2.2), ISO 19005-3 et 19005-4 |

@@ -77,7 +77,7 @@ const (
 	EN16931                            // CEN business rules and code lists, and the UBL syntax rules for UBL
 	FacturX                            // Factur-X / ZUGFeRD profile rules (CII only)
 	France                             // French rules BR-FR (2026 reform) and the profiles the reform admits (FR-PROFILE-*)
-	Germany                            // German rules BR-DE (XRechnung)
+	Germany                            // German rules BR-DE (XRechnung) and the format of the Leitweg-ID and of the GEBA (DE-LEITWEG-*, DE-GEBA-*)
 	GermanyProfile                     // profiles the BMF accepts as e-invoices (DE-PROFILE-01: not MINIMUM nor BASIC WL)
 	ChorusPro                          // French B2G checks for Chorus Pro (CPRO-*), see Options.PublicBuyer
 	Peppol                             // Peppol BIS Billing 3.0 rules (PEPPOL-*) and their national rules (NO, DK, IT, SE, NL; for UBL also GR, IS, DE)
@@ -184,7 +184,10 @@ func Tree(root *xmltree.Node, opts *Options) *Report {
 		fr.Check(c)
 		fr.CheckProfile(c, opts.RejectBasicWL)
 	})
-	run(Germany, SourceDE, de.Check)
+	run(Germany, SourceDE, func(c *rules.Checker) {
+		de.Check(c)
+		de.CheckIdentifiers(c)
+	})
 	run(GermanyProfile, SourceDE, de.CheckProfile)
 	run(ChorusPro, SourceChorusPro, func(c *rules.Checker) {
 		choruspro.Check(c, choruspro.Settings{
@@ -245,6 +248,7 @@ func Catalog(set RuleSet) []RuleInfo {
 	add(France, fr.ProfileCatalog)
 	add(Germany, de.Catalog)
 	add(Germany, newRules(de.UBLCatalog, de.Catalog))
+	add(Germany, de.IdentifierCatalog)
 	add(GermanyProfile, de.ProfileCatalog)
 	add(ChorusPro, choruspro.Catalog)
 	add(Peppol, peppol.Catalog)

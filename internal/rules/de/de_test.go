@@ -199,7 +199,7 @@ func mutationCases() []mutationCase {
 		{"BR-DE-30 creditor identifier only", one(before(aCurrency, elem("CreditorReferenceID", "DE98ZZZ09999999999"))), ids("BR-DE-23-b", "BR-DE-30", "BR-DE-31")},
 		{"BR-DE-31 no debited account", edits(directDebit, one(repAll("IBANID>", "ProprietaryID>"))), ids("BR-DE-20", "BR-DE-31")},
 		{"BR-DE-1 no payment means", one(repAll("SpecifiedTradeSettlementPaymentMeans>", "SpecifiedTradeSettlementPaymentMeansX>")), ids("BR-DE-1")},
-		{"BR-DE-15 blank buyer reference", one(rep(elem("BuyerReference", "04011000-12345-34"), elem("BuyerReference", " "))), ids("BR-DE-15")},
+		{"BR-DE-15 blank buyer reference", one(rep(elem("BuyerReference", "04011000-12345-03"), elem("BuyerReference", " "))), ids("BR-DE-15")},
 		{"BR-DE-16 no seller VAT identifier", one(remove(aSellerVAT)), ids("BR-DE-16")},
 		{"BR-DE-16 tax registration FC", one(rep(aSellerVAT, `<ram:ID schemeID=" FC ">12/345/67890</ram:ID>`)), nil},
 		{"BR-DE-16 tax representative", one(remove(aSellerVAT), after(aBuyerEnd, "<ram:SellerTaxRepresentativeTradeParty><ram:Name>Vertreter</ram:Name></ram:SellerTaxRepresentativeTradeParty>")), nil},

@@ -567,5 +567,6 @@ const (
 	SchemeGLN         = "0088"
 	SchemeFRDirectory = "0225" // French e-invoicing directory (annuaire) address
 	SchemeLeitwegID   = "0204"
+	SchemeGEBA        = "0246" // German Electronic Business Address, based on the W-IdNr
 	SchemeEmail       = "EM"
 )

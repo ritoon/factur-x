@@ -11,7 +11,7 @@
   <cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>
   <cbc:Note>Leistungen gemäß Rahmenvertrag.</cbc:Note>
   <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
-  <cbc:BuyerReference>04011000-12345-34</cbc:BuyerReference>
+  <cbc:BuyerReference>04011000-12345-03</cbc:BuyerReference>
   <cac:AdditionalDocumentReference>
     <cbc:ID>LS-2026-311</cbc:ID>
     <cbc:DocumentDescription>Lieferschein</cbc:DocumentDescription>
