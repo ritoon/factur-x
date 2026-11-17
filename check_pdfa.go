@@ -66,7 +66,8 @@ type pdfaScan struct {
 // pdfa runs the PDF/A scan. invoice is the file specification of the
 // invoice attachment, checked by CheckContainer itself; it may be nil.
 func (k *containerCheck) pdfa(c *container, invoice *fileSpec) {
-	s := &pdfaScan{c: c, k: k, seen: map[pdf.Ref]uint16{}, fonts: map[string]bool{}, afRefs: map[pdf.Ref]bool{}, counts: map[string]int{}}
+	// fonts, afRefs and counts, rarely needed, are made on first use.
+	s := &pdfaScan{c: c, k: k, seen: map[pdf.Ref]uint16{}}
 	r := c.r
 	cat := c.catalog
 	if s.present(cat, "AA") {
@@ -99,6 +100,9 @@ func (k *containerCheck) pdfa(c *container, invoice *fileSpec) {
 
 // report adds a finding, up to maxReported per rule.
 func (s *pdfaScan) report(id, path, format string, args ...any) {
+	if s.counts == nil {
+		s.counts = map[string]int{}
+	}
 	s.counts[id]++
 	if s.counts[id] <= maxReported {
 		s.k.add(id, path, format, args...)
@@ -387,8 +391,9 @@ func (s *pdfaScan) font(o pdf.Object, where string, depth int) {
 	if !s.visit(o, roleFont) {
 		return
 	}
+	// The glyph widths (/Widths, /W), hundreds of numbers, are skipped.
 	r := s.c.r
-	d, ok := r.Dict(o)
+	d, ok := r.DictSkipArrays(o, "DescendantFonts")
 	if !ok {
 		return
 	}
@@ -401,7 +406,7 @@ func (s *pdfaScan) font(o pdf.Object, where string, depth int) {
 	case "Type0":
 		desc = nil
 		if list, ok := r.Resolve(d.Get("DescendantFonts")).(pdf.Array); ok && len(list) > 0 {
-			desc, _ = r.Dict(list[0])
+			desc, _ = r.DictSkipArrays(list[0])
 		}
 	}
 	fd, ok := r.Dict(desc.Get("FontDescriptor"))
@@ -416,6 +421,9 @@ func (s *pdfaScan) font(o pdf.Object, where string, depth int) {
 	name := string(s.name(d, "BaseFont"))
 	if s.fonts[name+" "+string(sub)] {
 		return
+	}
+	if s.fonts == nil {
+		s.fonts = map[string]bool{}
 	}
 	s.fonts[name+" "+string(sub)] = true
 	if !ok {
@@ -457,6 +465,9 @@ func (s *pdfaScan) associate(o pdf.Object) {
 	if af, ok := s.c.r.Resolve(o).(pdf.Array); ok {
 		for _, x := range af {
 			if ref, ok := x.(pdf.Ref); ok {
+				if s.afRefs == nil {
+					s.afRefs = map[pdf.Ref]bool{}
+				}
 				s.afRefs[ref] = true
 			}
 		}

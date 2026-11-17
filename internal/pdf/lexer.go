@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"errors"
 	"math"
+	"slices"
 	"strconv"
 )
+
+//go:generate go run ./gen -o ints_gen.go
 
 // Character classes (ISO 32000-1, 7.2.2).
 const (
@@ -42,13 +45,37 @@ var (
 // "stream", "R"...). It never escapes the parser.
 type keyword string
 
-// parser reads objects from b. r, when set, resolves indirect stream
-// lengths.
+// parser reads objects from b. r, when set, lends it its scratch space.
 type parser struct {
 	b     []byte
 	pos   int
 	r     *Reader
 	depth int
+	kvs   *[]KV      // scratch space of dict, shared by the parsers of a Reader
+	sel   *selection // when set, dict skips some arrays (see DictSkipArrays)
+
+	// The unsigned integer read after an integer by number, looking for
+	// "gen R", ends at aheadEnd. When it is not a generation number, it is
+	// the next object: number takes it from there instead of reading it
+	// again, which halves the work on arrays of numbers.
+	aheadAt, aheadEnd int
+	ahead             int64
+}
+
+// scratch returns the space in which dict collects the entries of the
+// dictionaries being read, nested ones on top of the others.
+func (p *parser) scratch() *[]KV {
+	if p.kvs == nil {
+		if p.r != nil {
+			p.kvs = &p.r.kvs
+		} else {
+			p.kvs = new([]KV)
+		}
+		if *p.kvs == nil {
+			*p.kvs = make([]KV, 0, 32)
+		}
+	}
+	return p.kvs
 }
 
 // skip skips white space and comments.
@@ -270,6 +297,128 @@ func internName(w []byte) Name {
 		return "Columns"
 	case "text/xml":
 		return "text/xml"
+	case "FontDescriptor":
+		return "FontDescriptor"
+	case "FontName":
+		return "FontName"
+	case "FontBBox":
+		return "FontBBox"
+	case "FontFile":
+		return "FontFile"
+	case "FontFile2":
+		return "FontFile2"
+	case "FontFile3":
+		return "FontFile3"
+	case "Flags":
+		return "Flags"
+	case "ItalicAngle":
+		return "ItalicAngle"
+	case "Ascent":
+		return "Ascent"
+	case "Descent":
+		return "Descent"
+	case "CapHeight":
+		return "CapHeight"
+	case "StemV":
+		return "StemV"
+	case "Length1":
+		return "Length1"
+	case "Length2":
+		return "Length2"
+	case "Length3":
+		return "Length3"
+	case "BaseFont":
+		return "BaseFont"
+	case "Encoding":
+		return "Encoding"
+	case "WinAnsiEncoding":
+		return "WinAnsiEncoding"
+	case "MacRomanEncoding":
+		return "MacRomanEncoding"
+	case "FirstChar":
+		return "FirstChar"
+	case "LastChar":
+		return "LastChar"
+	case "Widths":
+		return "Widths"
+	case "Type0":
+		return "Type0"
+	case "Type1":
+		return "Type1"
+	case "Type3":
+		return "Type3"
+	case "TrueType":
+		return "TrueType"
+	case "DescendantFonts":
+		return "DescendantFonts"
+	case "ToUnicode":
+		return "ToUnicode"
+	case "Annots":
+		return "Annots"
+	case "ColorSpace":
+		return "ColorSpace"
+	case "DefaultRGB":
+		return "DefaultRGB"
+	case "ICCBased":
+		return "ICCBased"
+	case "DeviceRGB":
+		return "DeviceRGB"
+	case "DeviceGray":
+		return "DeviceGray"
+	case "DeviceCMYK":
+		return "DeviceCMYK"
+	case "ExtGState":
+		return "ExtGState"
+	case "Shading":
+		return "Shading"
+	case "Pattern":
+		return "Pattern"
+	case "SMask":
+		return "SMask"
+	case "Image":
+		return "Image"
+	case "Form":
+		return "Form"
+	case "BBox":
+		return "BBox"
+	case "Matrix":
+		return "Matrix"
+	case "Width":
+		return "Width"
+	case "Height":
+		return "Height"
+	case "BitsPerComponent":
+		return "BitsPerComponent"
+	case "Rotate":
+		return "Rotate"
+	case "Group":
+		return "Group"
+	case "Version":
+		return "Version"
+	case "PageMode":
+		return "PageMode"
+	case "UseNone":
+		return "UseNone"
+	case "OpenAction":
+		return "OpenAction"
+	case "Outlines":
+		return "Outlines"
+	case "AcroForm":
+		return "AcroForm"
+	case "StructTreeRoot":
+		return "StructTreeRoot"
+	case "MarkInfo":
+		return "MarkInfo"
+	case "Lang":
+		return "Lang"
+	case "OutputIntent":
+		return "OutputIntent"
+	case "DestOutputProfile":
+		return "DestOutputProfile"
+	case "GTS_PDFA1":
+		return "GTS_PDFA1"
+	case "S":
+		return "S"
 	}
 	return Name(w)
 }
@@ -421,7 +570,13 @@ func (p *parser) number() Object {
 	}
 	signed := p.pos > start
 	intStart := p.pos
-	n, isInt := p.uint()
+	var n int64
+	var isInt bool
+	if p.pos == p.aheadAt && p.aheadEnd > p.aheadAt {
+		n, isInt, p.pos = p.ahead, true, p.aheadEnd
+	} else {
+		n, isInt = p.uint()
+	}
 	if p.pos < len(b) && b[p.pos] == '.' {
 		// Real number.
 		p.pos++
@@ -463,23 +618,38 @@ func (p *parser) number() Object {
 		if neg {
 			n = -n
 		}
-		return Int(n)
+		return intObject(n)
 	}
 	if !signed && n <= math.MaxUint32 {
 		// Look ahead for "gen R".
 		save := p.pos
 		p.skip()
-		if gen, ok := p.uint(); ok && gen <= math.MaxUint16 {
-			p.skip()
-			if p.pos < len(b) && b[p.pos] == 'R' && (p.pos+1 == len(b) || !isRegular(b[p.pos+1])) {
-				p.pos++
-				return Ref{Num: uint32(n), Gen: uint16(gen)}
+		at := p.pos
+		if gen, ok := p.uint(); ok {
+			end := p.pos
+			if gen <= math.MaxUint16 {
+				p.skip()
+				if p.pos < len(b) && b[p.pos] == 'R' && (p.pos+1 == len(b) || !isRegular(b[p.pos+1])) {
+					p.pos++
+					return Ref{Num: uint32(n), Gen: uint16(gen)}
+				}
 			}
+			p.aheadAt, p.aheadEnd, p.ahead = at, end, gen
 		}
 		p.pos = save
 	}
 	if neg {
 		n = -n
+	}
+	return intObject(n)
+}
+
+// intObject returns n as an Object. Integers below smallIntLimit, such as
+// glyph widths and page coordinates, come boxed from smallInts: converting
+// them to an interface would allocate.
+func intObject(n int64) Object {
+	if uint64(n) < smallIntLimit {
+		return smallInts[n]
 	}
 	return Int(n)
 }
@@ -491,7 +661,7 @@ func (p *parser) array() (Object, error) {
 		return nil, errTooDeep
 	}
 	defer func() { p.depth-- }()
-	arr := make(Array, 0, 4)
+	arr := make(Array, 0, p.arrayLen())
 	for {
 		p.skip()
 		if p.pos >= len(p.b) {
@@ -522,18 +692,136 @@ func (p *parser) array() (Object, error) {
 	}
 }
 
-// dict reads a dictionary.
+// skipArray moves past an array, after "[", where array would stop, without
+// building it. Numbers, names and keywords are runs of regular characters,
+// which array reads whole too; strings and dictionaries are read and
+// dropped.
+func (p *parser) skipArray() error {
+	p.pos++ // [
+	if p.depth++; p.depth > maxDepth {
+		return errTooDeep
+	}
+	defer func() { p.depth-- }()
+	b := p.b
+	for {
+		// White space and unsigned numbers, with what is glued to them as
+		// number reads it, make the bulk of the arrays skipped.
+		for p.pos < len(b) {
+			c := b[p.pos]
+			if class[c] == white {
+				p.pos++
+				continue
+			}
+			if !isDigit(c) {
+				break
+			}
+			for p.pos++; p.pos < len(b) && isRegular(b[p.pos]); p.pos++ {
+			}
+		}
+		if p.pos >= len(b) {
+			return nil // truncated
+		}
+		start := p.pos
+		switch c := b[p.pos]; {
+		case c == '%':
+			p.skip()
+		case c == ']':
+			p.pos++
+			return nil
+		case c == '>':
+			return nil // unterminated array: array stops before ">"
+		case c == '[':
+			if err := p.skipArray(); err != nil {
+				return err
+			}
+		case c == '(' || c == '<':
+			if _, err := p.object(); err == errTooDeep {
+				return err
+			}
+		case c == '/':
+			p.pos++
+			p.word()
+		case class[c] == delim: // ")", "{" or "}": read as null
+			p.pos++
+		default:
+			switch string(p.word()) {
+			case "endobj", "stream", "endstream", "obj":
+				// Unterminated array: stop before the keyword.
+				p.pos = start
+				return nil
+			}
+		}
+	}
+}
+
+// maxArrayLen bounds the capacity arrayLen gives an array before reading it.
+const maxArrayLen = 1 << 16
+
+// arrayLen returns the capacity to give the array that starts at the current
+// position, after "[": the number of its elements when they are numbers,
+// names, references, booleans or null, as in the arrays of glyph widths,
+// which have hundreds of elements and would otherwise grow step by step.
+// Counting stops at a string, a nested array or dictionary, a comment or an
+// unknown keyword, with a small margin for what follows.
+func (p *parser) arrayLen() int {
+	b := p.b
+	n := 0
+	for i := p.pos; i < len(b) && n < maxArrayLen; {
+		c := b[i]
+		switch {
+		case class[c] == white:
+			i++
+			continue
+		case c == ']':
+			return n
+		case c == '/':
+			i++
+		case isDigit(c) || c == '+' || c == '-' || c == '.':
+		case c == 'R':
+			// "num gen R" is one element: num and gen were counted.
+			if i+1 == len(b) || !isRegular(b[i+1]) {
+				n = max(n-1, 0)
+				i++
+				continue
+			}
+			return n + 4
+		case c == 't' || c == 'f' || c == 'n': // true, false, null
+		default:
+			return n + 4
+		}
+		for i < len(b) && isRegular(b[i]) {
+			i++
+		}
+		n++
+	}
+	return min(n, maxArrayLen)
+}
+
+// dict reads a dictionary. The entries are collected in the scratch space
+// of the parser, then copied to a dictionary of their number.
 func (p *parser) dict() (Object, error) {
 	p.pos += 2 // <<
 	if p.depth++; p.depth > maxDepth {
 		return nil, errTooDeep
 	}
-	defer func() { p.depth-- }()
-	d := make(Dict, 0, 8)
+	kvs := p.scratch()
+	base := len(*kvs)
+	defer func() {
+		p.depth--
+		clear((*kvs)[base:])
+		*kvs = (*kvs)[:base]
+	}()
+	done := func() Dict {
+		d := make(Dict, len(*kvs)-base)
+		copy(d, (*kvs)[base:])
+		return d
+	}
+	var skippedKeys [4]Name
+	skipped := skippedKeys[:0] // keys whose array was skipped
 	for {
 		p.skip()
 		if p.pos >= len(p.b) {
-			return d, nil
+			return done(), nil
 		}
 		c := p.b[p.pos]
 		if c == '>' {
@@ -542,7 +830,7 @@ func (p *parser) dict() (Object, error) {
 			} else {
 				p.pos++
 			}
-			return d, nil
+			return done(), nil
 		}
 		if c != '/' {
 			// Not a key: skip one object (tolerance) or stop on a keyword.
@@ -553,7 +841,7 @@ func (p *parser) dict() (Object, error) {
 			}
 			if k, ok := o.(keyword); ok && (k == "endobj" || k == "stream" || k == "endstream" || k == "obj") {
 				p.pos = save
-				return d, nil
+				return done(), nil
 			}
 			continue
 		}
@@ -562,6 +850,13 @@ func (p *parser) dict() (Object, error) {
 		p.skip()
 		if p.pos < len(p.b) && p.b[p.pos] == '>' {
 			// Key without value.
+			continue
+		}
+		if p.sel != nil && p.depth == 1 && p.pos < len(p.b) && p.b[p.pos] == '[' && !slices.Contains(p.sel.keep, key) {
+			if err := p.skipArray(); err != nil {
+				return nil, err
+			}
+			skipped = append(skipped, key) // the first of duplicate keys wins
 			continue
 		}
 		save := p.pos
@@ -576,14 +871,14 @@ func (p *parser) dict() (Object, error) {
 			switch k {
 			case "endobj", "stream", "endstream", "obj":
 				p.pos = save
-				return d, nil
+				return done(), nil
 			}
 			val = nil
 		}
 		// A null value is equivalent to an absent entry; the first of
 		// duplicate keys wins.
-		if val != nil && !d.Has(key) {
-			d = append(d, KV{key, val})
+		if val != nil && !Dict((*kvs)[base:]).Has(key) && !slices.Contains(skipped, key) {
+			*kvs = append(*kvs, KV{key, val})
 		}
 	}
 }
