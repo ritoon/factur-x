@@ -1,5 +1,9 @@
 # factur-x
 
+<p align="center">
+  <img src="docs/gopher.webp" alt="Le gopher Go en chapeau de papier et nœud papillon, tapant des factures à la machine à écrire entre des piles de factures" width="360">
+</p>
+
 Package Go pour les factures électroniques hybrides **Factur-X**, **ZUGFeRD** et **XRechnung**. Il prend un PDF déjà produit par votre application et y ajoute ce que la norme exige ; il relit et valide n'importe quelle facture de ces formats, quel que soit son profil.
 
 - Pur Go, bibliothèque standard uniquement : pas de CGO, pas de JVM, pas de binaire externe, pas d'appel réseau.
@@ -132,7 +136,7 @@ if !report.Valid() { /* au moins une erreur */ }
 | Option | Effet |
 |---|---|
 | `nil` ou `&validate.Options{}` | Schéma du profil, règles EN 16931, règles de profil Factur-X ; règles BR-DE en plus pour une facture XRECHNUNG, règles Peppol pour une facture Peppol BIS Billing 3.0 |
-| `Auto: true` | Ajoute les règles du pays du vendeur (BT-40) : BR-FR et profils admis en France pour un vendeur en France, profils acceptés par le BMF pour un vendeur en Allemagne |
+| `Auto: true` | Ajoute les règles du pays du vendeur (BT-40) : BR-FR et profils admis en France pour un vendeur en France, profils acceptés par le BMF pour un vendeur en Allemagne ; `Check` y ajoute l'`/AFRelationship` admise dans ce pays (voir plus bas) |
 | `Rules: validate.Default \| validate.France` | Choix explicite des jeux de règles (`France`, `Germany`, `GermanyProfile`, `ChorusPro`, `Peppol`) |
 | `RejectBasicWL: true` | Avec les règles françaises, signale BASIC WL en erreur (FR-PROFILE-03) |
 | `Rules: … \| validate.ChorusPro` | Ajoute les contrôles B2G de Chorus Pro (voir ci-dessous) |
@@ -153,6 +157,21 @@ Les schematrons officiels ne contrôlent pas le profil ; ces contrôles ont des 
 | DE-PROFILE-01 | erreur | `GermanyProfile` | MINIMUM et BASIC WL, que le BMF n'accepte pas comme factures électroniques (BMF-Schreiben du 15/10/2024 : ZUGFeRD à partir de 2.0.1, sauf ces deux profils) |
 
 En France, EN 16931 et EXTENDED-CTC-FR forment le socle et EXTENDED est admis ; en Allemagne, BASIC, EN 16931, EXTENDED et XRECHNUNG sont acceptés. `Auto` n'applique pas les règles BR-DE à une facture ZUGFeRD : elles ne concernent que XRECHNUNG.
+
+#### Relation du XML au PDF (`/AFRelationship`) par pays
+
+La spécification Factur-X 1.09 (§ 5.3 et § 6.2.2) fixe la relation du XML au PDF selon le profil et le pays :
+
+| Profil | France | Allemagne |
+|---|---|---|
+| MINIMUM, BASIC WL | `Data` | `Data` |
+| BASIC, EN 16931, EXTENDED, EXTENDED-CTC-FR | `Alternative`, `Source` ou `Data` | `Alternative` |
+| XRECHNUNG | — | `Alternative` |
+
+- Par défaut, `Embed` et `Create` écrivent `Data` pour MINIMUM et BASIC WL, `Alternative` sinon : ces valeurs conviennent aux deux pays.
+- `Embed` (et donc `Create`) refuse une valeur `EmbedOptions.Relationship` que le tableau exclut : autre chose que `Data` pour MINIMUM et BASIC WL, autre chose qu'`Alternative` pour XRECHNUNG ou pour un vendeur établi en Allemagne (BT-40 = `DE`).
+- `Check` signale une valeur qui ne correspond pas au profil (PDF-14, avertissement). `Data` pour BASIC et au-delà ne l'est pas quand les règles françaises s'appliquent (`France`, ou `Auto` pour un vendeur en France), puisque la France l'admet.
+- `Check` signale en erreur une autre valeur qu'`Alternative` pour BASIC et au-delà quand les règles allemandes s'appliquent (PDF-40) : profil XRECHNUNG, jeux `Germany` ou `GermanyProfile`, ou `Auto` pour un vendeur en Allemagne. `CheckContainer`, qui ne reçoit pas d'options, n'applique cette règle qu'à XRECHNUNG.
 
 #### Factures B2G (Chorus Pro)
 
@@ -240,7 +259,7 @@ warning [PDF] PDF-06: the catalog has no PDF/A output intent (/S /GTS_PDFA1) (ca
 | Allemagne (BR-DE) | 52 assertions (BR-DE, BR-DE-CVD, BR-DEX, BR-TMP) ; contrôle des profils acceptés par le BMF (DE-PROFILE-01) | Schematron KoSIT XRechnung 3.0.2 ; BMF |
 | Peppol BIS Billing 3.0 | 90 assertions (73 erreurs, 17 avertissements) : PEPPOL-EN16931-R, PEPPOL-COMMON-R (identifiants par schéma ICD), listes de codes restreintes, règles nationales NO, DK, IT, SE et NL | Schematron Peppol BIS Billing 3.0.21 (`PEPPOL-EN16931-CII.sch`, inchangé en 3.0.22) |
 | Chorus Pro (B2G) | 8 contrôles (CPRO-01 à CPRO-08) : SIRET de la structure publique, code service, numéro d'engagement, type de document, numéro de facture | Spécifications externes Chorus Pro (annexe EDI V4.23) |
-| Conteneur PDF | 39 contrôles (PDF-01 à PDF-39) : PDF/A-3 ou PDF/A-4f déclaré, cohérent avec la version PDF, XMP `fx` cohérent avec le XML, pièce jointe, `/AF`, `/AFRelationship`, type MIME, chiffrement ; prérequis PDF/A vérifiables sans rendu : polices incorporées, JavaScript et actions interdites (`/OpenAction`, liens, signets, `/AA`), cohérence entre `/Info` et le XMP, pièces jointes annexes (`/AFRelationship`, type MIME, présence dans un `/AF`), filtre `LZWDecode` | Spécification Factur-X 1.08, ISO 19005-3 et 19005-4 |
+| Conteneur PDF | 40 contrôles (PDF-01 à PDF-40) : PDF/A-3 ou PDF/A-4f déclaré, cohérent avec la version PDF, XMP `fx` cohérent avec le XML, pièce jointe, `/AF`, `/AFRelationship` selon le profil et le pays, type MIME, chiffrement ; prérequis PDF/A vérifiables sans rendu : polices incorporées, JavaScript et actions interdites (`/OpenAction`, liens, signets, `/AA`), cohérence entre `/Info` et le XMP, pièces jointes annexes (`/AFRelationship`, type MIME, présence dans un `/AF`), filtre `LZWDecode` | Spécification Factur-X 1.08 et 1.09 (§ 6.2.2), ISO 19005-3 et 19005-4 |
 
 Les messages sont ceux des artefacts officiels. Les listes de codes (pays, devises, unités, schémas d'identifiants, motifs d'exonération…) sont embarquées.
 

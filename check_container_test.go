@@ -12,6 +12,7 @@ import (
 	"github.com/ritoon/factur-x/internal/rules"
 	"github.com/ritoon/factur-x/internal/xmp"
 	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/factur-x/validate"
 )
 
 // xmpWith returns a valid Factur-X XMP packet modified by fn.
@@ -64,6 +65,14 @@ func TestCheckContainer(t *testing.T) {
 			fn(f)
 		})
 	}
+	// xrechnung returns a valid XRECHNUNG fixture with the relationship rel.
+	xrechnung := func(rel string) *fixture {
+		return mod(func(f *fixture) {
+			f.files[0].name, f.files[0].rel = "xrechnung.xml", rel
+			f.files[0].data = ciiXML(invoice.URNXRechnung)
+			f.xmp = xmpWith(func(p *xmp.Params) { p.DocumentFileName, p.ConformanceLevel = "xrechnung.xml", "XRECHNUNG" })
+		})
+	}
 	pdfaOnly := `<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
 <rdf:Description rdf:about="" xmlns:pdfaid="http://www.aiim.org/pdfa/ns/id/"><pdfaid:part>3</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance></rdf:Description>
 </rdf:RDF></x:xmpmeta>`
@@ -114,6 +123,9 @@ func TestCheckContainer(t *testing.T) {
 			f.files[0].data = ciiXML(invoice.URNMinimum)
 			f.xmp = xmpWith(func(p *xmp.Params) { p.ConformanceLevel = "MINIMUM" })
 		}), "PDF-14"},
+		{"Alternative for XRECHNUNG", xrechnung("Alternative"), ""},
+		{"Source for XRECHNUNG", xrechnung("Source"), "PDF-40"},
+		{"Data for XRECHNUNG", xrechnung("Data"), "PDF-40"},
 		{"not in AF", modFile(func(fl *file) { fl.notInAF = true }), "PDF-15"},
 		{"no MIME type", modFile(func(fl *file) { fl.subtype = "" }), "PDF-16"},
 		{"PDF MIME type", modFile(func(fl *file) { fl.subtype = "application#2Fpdf" }), "PDF-16"},
@@ -186,6 +198,95 @@ func checkContainerRules(t *testing.T, f *fixture, want string) {
 	for _, f := range findings {
 		if f.Source != rules.SourcePDF || f.Message == "" || f.Severity != containerSeverity(f.Rule) {
 			t.Errorf("finding %+v", f)
+		}
+	}
+}
+
+// TestCheckRelationship covers the national usage of the /AFRelationship in
+// Check: the rule sets of validate.Options select the French and German
+// usages (Factur-X 1.09, 6.2.2). Only the container findings are compared:
+// the XML of the fixtures is minimal.
+func TestCheckRelationship(t *testing.T) {
+	auto := &validate.Options{Auto: true}
+	for _, tc := range []struct {
+		name   string
+		urn    string
+		seller string
+		rel    string
+		opts   *validate.Options
+		rules  string
+	}{
+		{"Source, seller in Germany, Auto", invoice.URNEN16931, "DE", "Source", auto, "PDF-40"},
+		{"Data, seller in Germany, Auto", invoice.URNBasic, "DE", "Data", auto, "PDF-40"},
+		{"Alternative, seller in Germany, Auto", invoice.URNExtended, "DE", "Alternative", auto, ""},
+		{"Source, seller in Germany, no option", invoice.URNEN16931, "DE", "Source", nil, ""},
+		{"Data, seller in Germany, no option", invoice.URNEN16931, "DE", "Data", nil, "PDF-14"},
+		{"Data for MINIMUM, seller in Germany, Auto", invoice.URNMinimum, "DE", "Data", auto, ""},
+		{"Alternative for BASIC WL, seller in Germany, Auto", invoice.URNBasicWL, "DE", "Alternative", auto, "PDF-14"},
+		{"Source, German rules", invoice.URNEN16931, "FR", "Source", &validate.Options{Rules: validate.Default | validate.Germany}, "PDF-40"},
+		{"Source, BMF profiles", invoice.URNEN16931, "FR", "Source", &validate.Options{Rules: validate.Default | validate.GermanyProfile}, "PDF-40"},
+		{"Data, seller in France, Auto", invoice.URNEN16931, "FR", "Data", auto, ""},
+		{"Data, French rules", invoice.URNExtendedCTCFR, "BE", "Data", &validate.Options{Rules: validate.Default | validate.France}, ""},
+		{"Data, seller in France, no option", invoice.URNEN16931, "FR", "Data", nil, "PDF-14"},
+		{"Source, seller in France, Auto", invoice.URNEN16931, "FR", "Source", auto, ""},
+		{"Data, French and German rules", invoice.URNEN16931, "FR", "Data", &validate.Options{Rules: validate.Default | validate.France | validate.Germany}, "PDF-40"},
+		{"Source for XRECHNUNG, no option", invoice.URNXRechnung, "DE", "Source", nil, "PDF-40"},
+		{"Source for XRECHNUNG, rules without Germany", invoice.URNXRechnung, "DE", "Source", &validate.Options{Rules: validate.Schema}, "PDF-40"},
+		{"Source, profile forced to XRECHNUNG", invoice.URNEN16931, "FR", "Source", &validate.Options{Profile: invoice.ProfileXRechnung}, "PDF-40"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := invoice.ProfileFromURN(tc.urn)
+			f := valid(sellerXML(tc.urn, tc.seller))
+			f.files[0].name, f.files[0].rel = p.Filename(), tc.rel
+			f.xmp = xmpWith(func(x *xmp.Params) { x.DocumentFileName, x.ConformanceLevel = p.Filename(), p.ConformanceLevel() })
+			r, a, err := Check(f.build(), tc.opts)
+			if err != nil || a == nil {
+				t.Fatal(a, err)
+			}
+			var container []rules.Finding
+			for _, f := range r.Findings {
+				if f.Source == rules.SourcePDF {
+					container = append(container, f)
+				}
+			}
+			if got := strings.Join(rulesOf(container), ","); got != tc.rules {
+				t.Errorf("rules %q, want %q", got, tc.rules)
+				for _, f := range container {
+					t.Log(f)
+				}
+			}
+		})
+	}
+}
+
+// TestCheckXML checks that Check validates the XML it parsed for the
+// national rules as validate.XML does, including the XML that cannot be
+// parsed or is not a CII invoice.
+func TestCheckXML(t *testing.T) {
+	en := readTestdata(t, "EN16931_Einfach.cii.xml")
+	opts := &validate.Options{Auto: true}
+	for name, x := range map[string][]byte{
+		"EN 16931":   en,
+		"malformed":  []byte("<rsm:CrossIndustryInvoice><ram:ID>"),
+		"ZUGFeRD 1":  zf1XML("comfort"),
+		"empty root": []byte("<a/>"),
+	} {
+		r, a, err := Check(valid(x).build(), opts)
+		if err != nil || a == nil {
+			t.Fatalf("%s: %v %v", name, a, err)
+		}
+		var got []rules.Finding
+		for _, f := range r.Findings {
+			if f.Source != rules.SourcePDF {
+				got = append(got, f)
+			}
+		}
+		want := validate.XML(x, opts)
+		if fmt.Sprint(got) != fmt.Sprint(want.Findings) || r.Profile != want.Profile {
+			t.Errorf("%s: Check gives %s %v, validate.XML %s %v", name, r.Profile, got, want.Profile, want.Findings)
+		}
+		if name != "EN 16931" && len(got) == 0 {
+			t.Errorf("%s: no XML finding", name)
 		}
 	}
 }

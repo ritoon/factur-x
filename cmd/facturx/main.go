@@ -246,7 +246,7 @@ func embed(args []string) error {
 	fs := flag.NewFlagSet("embed", flag.ContinueOnError)
 	xmlPath := fs.String("xml", "", "invoice XML to embed (required)")
 	profile := fs.String("profile", "", "profile (default: read from BT-24)")
-	rel := fs.String("relationship", "", "AFRelationship (default: Data for MINIMUM and BASIC WL, Alternative otherwise)")
+	rel := fs.String("relationship", "", "AFRelationship (default: Data for MINIMUM and BASIC WL, Alternative otherwise; Germany and XRECHNUNG admit only Alternative)")
 	var attach fileList
 	fs.Var(&attach, "attach", "supplementary file to embed besides the invoice, with AFRelationship Supplement and the MIME type of its extension (repeatable)")
 	out := fs.String("o", "", "output PDF (default: standard output)")
