@@ -272,12 +272,16 @@ func fixedTables() {
 			l[i] = 8
 		}
 	}
-	fixedLit.build(l[:], litBits)
+	if err := fixedLit.build(l[:], litBits); err != nil {
+		panic("pdf: fixed literal/length code: " + err.Error())
+	}
 	var dl [32]uint8 // codes 30 and 31 complete the code but never occur
 	for i := range dl {
 		dl[i] = 5
 	}
-	fixedDist.build(dl[:], distBits)
+	if err := fixedDist.build(dl[:], distBits); err != nil {
+		panic("pdf: fixed distance code: " + err.Error())
+	}
 }
 
 // inflateRaw decompresses raw deflate data.

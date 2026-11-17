@@ -63,6 +63,7 @@ type ValidationError struct {
 	Report *validate.Report
 }
 
+// Error gives the number of errors of the report and the first one.
 func (e *ValidationError) Error() string {
 	errs := e.Report.Errors()
 	if len(errs) == 0 {

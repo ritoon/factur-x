@@ -819,9 +819,7 @@ var base64Alphabet = func() (t [256]bool) {
 // validDate reports whether s is an xs:date lexical value
 // (-?YYYY-MM-DD with an optional time zone), the day existing in the month.
 func validDate(s string) bool {
-	if strings.HasPrefix(s, "-") {
-		s = s[1:]
-	}
+	s = strings.TrimPrefix(s, "-")
 	if len(s) < 10 || s[4] != '-' || s[7] != '-' {
 		return false
 	}

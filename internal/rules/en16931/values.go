@@ -166,9 +166,6 @@ func isVAT(n *xmltree.Node) bool {
 	return tc != nil && upperIs(tc.Text, "VAT")
 }
 
-// first returns the first child of n named name (nil safe).
-func first(n *xmltree.Node, name string) *xmltree.Node { return n.Elem(name) }
-
 // exists reports whether a descendant of n matches the path of local names.
 func exists(n *xmltree.Node, path ...string) bool {
 	if n == nil {

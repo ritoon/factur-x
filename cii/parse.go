@@ -26,6 +26,7 @@ type Issue struct {
 	Message string
 }
 
+// String formats the issue as "line <Line>: <Path>: <Message>".
 func (i Issue) String() string {
 	return "line " + strconv.Itoa(i.Line) + ": " + i.Path + ": " + i.Message
 }
@@ -38,6 +39,7 @@ type IssuesError struct {
 	Issues []Issue
 }
 
+// Error gives the number of issues and the first one.
 func (e *IssuesError) Error() string {
 	if len(e.Issues) == 1 {
 		return "cii: unreadable value at " + e.Issues[0].String()
