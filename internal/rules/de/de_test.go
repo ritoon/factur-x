@@ -432,9 +432,21 @@ func eachCII(t *testing.T, dir string, fn func(path string, root *xmltree.Node))
 	}
 }
 
+// corpusFailures lists the XRechnung invoices of the corpus, by file name,
+// that are in a fail directory and break rules of this package: the rules
+// they must report, and only those, and why.
+var corpusFailures = map[string]struct {
+	rules []string
+	why   string
+}{
+	"XRechnung 722825203.XML": {rules: []string{"BR-DE-18"},
+		why: "ZUGFeRD/corpus 82e886f, anonymised by scrambling the letters, including those of the cash " +
+			"discount keywords: #SKONTO#TAGE=..#PROZENT=..# became #PZYKMU#TNIW=96#IQITDIB=6.71#"},
+}
+
 // TestCorpus runs Check on the CII files of FX_CORPUS and FX_CORPUS_XML: the
-// XRechnung invoices (BT-24 starting with CIUSID) have no error, and every
-// reported rule is in Catalog.
+// XRechnung invoices (BT-24 starting with CIUSID) have no error, except
+// those of corpusFailures, and every reported rule is in Catalog.
 func TestCorpus(t *testing.T) {
 	var dirs []string
 	for _, env := range []string{"FX_CORPUS", "FX_CORPUS_XML"} {
@@ -455,7 +467,18 @@ func TestCorpus(t *testing.T) {
 				return
 			}
 			xr++
-			if !r.Valid() {
+			if known, ok := corpusFailures[filepath.Base(path)]; ok {
+				var got []string
+				for _, f := range r.Errors() {
+					if !slices.Contains(got, f.Rule) {
+						got = append(got, f.Rule)
+					}
+				}
+				slices.Sort(got)
+				if !slices.Equal(got, known.rules) {
+					t.Errorf("%s: errors %v, want %v (%s)", path, got, known.rules, known.why)
+				}
+			} else if !r.Valid() {
 				t.Errorf("%s: %v", path, r.Errors())
 			}
 			if len(r.Findings) > 0 {
