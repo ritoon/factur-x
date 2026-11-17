@@ -379,7 +379,8 @@ func (k *checker) attachments() {
 	}
 }
 
-// validURL implements matches(s, $XR-URL-REGEX): ^([a-zA-Z])([a-zA-Z0-9+.-])+:.*
+// validURL implements matches(s, $XR-URL-REGEX), whose regular expression is
+// ^([a-zA-Z])([a-zA-Z0-9+.-])+:.* (a scheme then a colon).
 func validURL(s string) bool {
 	if s == "" || !(s[0] >= 'a' && s[0] <= 'z' || s[0] >= 'A' && s[0] <= 'Z') {
 		return false

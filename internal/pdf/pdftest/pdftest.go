@@ -95,7 +95,7 @@ func (b *Builder) SetStream(num int, dict string, data []byte) {
 func Flate(data []byte) []byte {
 	var buf bytes.Buffer
 	w := zlib.NewWriter(&buf)
-	w.Write(data)
+	_, _ = w.Write(data) // writing to a bytes.Buffer does not fail
 	w.Close()
 	return buf.Bytes()
 }

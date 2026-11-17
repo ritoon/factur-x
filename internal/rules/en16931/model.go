@@ -515,16 +515,10 @@ func (k *checker) document() {
 			k.fail("BR-55", r, "a preceding invoice reference (BG-3) has no invoice reference (BT-25)")
 		}
 	}
-	if del := d.Delivery; del != nil {
-		for it, st := elems(del, "ShipToTradeParty"); st != nil; st = it.next() {
-			for it, a := elems(st, "PostalTradeAddress"); a != nil; a = it.next() {
-				if blank(a.Elem("CountryID")) {
-					k.fail("BR-57", a, "the deliver to address (BG-15) has no country code (BT-80)")
-				}
-				break
-			}
-			break
-		}
+	// The CII schema allows a single deliver to party with a single address:
+	// only the first ones are checked.
+	if a := d.Delivery.Elem("ShipToTradeParty").Elem("PostalTradeAddress"); a != nil && blank(a.Elem("CountryID")) {
+		k.fail("BR-57", a, "the deliver to address (BG-15) has no country code (BT-80)")
 	}
 }
 

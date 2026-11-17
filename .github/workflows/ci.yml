@@ -37,9 +37,32 @@ jobs:
       - name: go vet
         run: go vet ./...
       - name: go test -race
-        run: go test -race ./...
+        # -coverpkg counts the code of every package reached by the tests,
+        # such as the rule sets exercised through package validate.
+        run: go test -race -coverpkg=./... -coverprofile=coverage.out ./...
       - name: Build the command
         run: go build ./cmd/facturx
+      - name: Upload the coverage to Codecov
+        if: matrix.go == 'stable'
+        uses: codecov/codecov-action@v7
+        with:
+          files: coverage.out
+          disable_search: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  lint:
+    # Settings in .golangci.yml: staticcheck, errcheck, doc comments of the
+    # exported symbols (revive) and their final period (godot).
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.15.0
 
   fuzz:
     name: Fuzzing (short)

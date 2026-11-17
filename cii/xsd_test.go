@@ -20,8 +20,6 @@ import (
 // order, cardinalities, allowed and required attributes, no children in
 // simple content. Facets of simple types are not checked.
 
-const xsNS = "http://www.w3.org/2001/XMLSchema"
-
 var xsdPrefixes = map[string]string{
 	"rsm": NamespaceRSM,
 	"ram": NamespaceRAM,
@@ -30,11 +28,10 @@ var xsdPrefixes = map[string]string{
 }
 
 type xsdType struct {
-	simple   bool
-	choice   bool
-	elems    []xsdElem
-	attrs    map[string]bool // attribute name → required
-	resolved bool
+	simple bool
+	choice bool
+	elems  []xsdElem
+	attrs  map[string]bool // attribute name → required
 }
 
 type xsdElem struct {

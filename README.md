@@ -1,5 +1,12 @@
 # factur-x
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/ritoon/factur-x.svg)](https://pkg.go.dev/github.com/ritoon/factur-x)
+[![CI](https://github.com/ritoon/factur-x/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ritoon/factur-x/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/ritoon/factur-x)](https://goreportcard.com/report/github.com/ritoon/factur-x)
+[![codecov](https://codecov.io/gh/ritoon/factur-x/graph/badge.svg)](https://codecov.io/gh/ritoon/factur-x)
+[![Version de Go](https://img.shields.io/github/go-mod/go-version/ritoon/factur-x)](go.mod)
+[![Licence MIT](https://img.shields.io/github/license/ritoon/factur-x)](LICENSE)
+
 <p align="center">
   <img src="docs/gopher.webp" alt="Le gopher Go en chapeau de papier et nœud papillon, tapant des factures à la machine à écrire entre des piles de factures" width="360">
 </p>

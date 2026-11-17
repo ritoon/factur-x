@@ -1,0 +1,37 @@
+version: "2"
+
+linters:
+  # The standard set (errcheck, govet, ineffassign, staticcheck, unused)
+  # plus the rules on doc comments. misspell is left out: it takes the French
+  # messages of the BR-FR rules and the British spellings of the official
+  # texts for typos.
+  enable:
+    - godot
+    - revive
+  settings:
+    revive:
+      rules:
+        # Every exported symbol has a doc comment starting with its name.
+        - name: exported
+        # Every package has a package comment.
+        - name: package-comments
+    staticcheck:
+      checks:
+        # The defaults of golangci-lint, without De Morgan's law rewrites
+        # (QF1001): !('a' <= c && c <= 'z' || ...) reads better as is.
+        - all
+        - -ST1000
+        - -ST1003
+        - -ST1016
+        - -ST1020
+        - -ST1021
+        - -ST1022
+        - -QF1001
+  exclusions:
+    presets:
+      # Unchecked errors of Close, Flush and fmt.Fprint*.
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck

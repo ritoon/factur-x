@@ -53,6 +53,8 @@ type LossError struct {
 	Terms []string
 }
 
+// Error gives the target profile and lists the business terms that would be
+// lost.
 func (e *LossError) Error() string {
 	return "cii: profile " + e.Profile.String() + " cannot carry " +
 		strconv.Itoa(len(e.Terms)) + " business terms: " + strings.Join(e.Terms, ", ")

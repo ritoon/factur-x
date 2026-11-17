@@ -27,21 +27,6 @@ func nsPrefix(space string) string {
 	return ""
 }
 
-// nsOfPrefix returns the namespace of a conventional CII prefix, or "".
-func nsOfPrefix(prefix string) string {
-	switch prefix {
-	case "rsm":
-		return NamespaceRSM
-	case "ram":
-		return NamespaceRAM
-	case "udt":
-		return NamespaceUDT
-	case "qdt":
-		return NamespaceQDT
-	}
-	return ""
-}
-
 // appendElement appends n and its content as XML. CII elements get the
 // conventional prefixes, declared on the root of the documents written by
 // Marshal; other elements keep their prefix and get a namespace declaration.

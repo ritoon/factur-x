@@ -38,6 +38,7 @@ type LossError struct {
 	Terms []string
 }
 
+// Error lists the business terms that would be lost.
 func (e *LossError) Error() string {
 	return "ubl: UBL cannot carry " + strconv.Itoa(len(e.Terms)) + " business terms: " + strings.Join(e.Terms, ", ")
 }
