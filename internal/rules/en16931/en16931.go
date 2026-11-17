@@ -22,17 +22,26 @@
 //     implemented: BR-CO-05 to BR-CO-08, BR-IP-08, BR-IP-09, BR-IG-08,
 //     BR-IG-09, CII-SR-039 to CII-SR-044 and CII-DT-010 to CII-DT-012.
 //
-// Severities are the official ones (fatal: Error, warning: Warning), with two
+// Severities are the official ones (fatal: Error, warning: Warning), with
 // adjustments that follow the reference validators of the profiles:
 //
 //   - XRECHNUNG: the severities set by the KoSIT validator configuration
 //     XRechnung 3.0.2 (CII-SR-452, 453, 454, 465 and 466 are errors, BR-CL-21
 //     and BR-CL-23 warnings, CII-SR-475 and 476 information);
+//   - BASIC, EXTENDED, and EN 16931 in a Factur-X PDF (rules.Doc.FacturX):
+//     the reference is the Factur-X 1.09.2 schematron of the profile
+//     (FNFE-MPE / FeRD), which reuses the CEN business rules with an older
+//     base, checks the code lists with its own lists (package facturx
+//     implements them: the BR-CL rules are not reported), keeps only some
+//     CII syntax rules (CII-SR-463 to 470, 472, 473, and 474 to 476 for
+//     EN 16931; CII-DT-097 is kept as an addition), makes CII-SR-465 and
+//     CII-SR-466 errors and cannot fail CII-SR-464 (not reported);
 //   - EXTENDED and EXTENDED-CTC-FR: Factur-X EXTENDED is only conformant
 //     with EN 16931 and its schematron keeps a subset of the CEN rules.
 //     The rules of that subset keep their severity; the other business rules
-//     and code lists are reported as warnings, and the other CII syntax rules
-//     (which restrict CII to the EN 16931 data set) are not reported;
+//     are reported as warnings, and the other CII syntax rules (which
+//     restrict CII to the EN 16931 data set) are not reported. The code
+//     lists of EXTENDED-CTC-FR are those of the CEN, as warnings;
 //   - EXTENDED-CTC-FR, in CII: the CII syntax rules are those of the FNFE-MPE
 //     schematron EXTENDED-CTC-FR-CII.sch (France_RFE CTCFRRelease, see
 //     CTCFRCatalog), with its severities and messages, instead of the CEN
@@ -50,6 +59,12 @@
 // rules whose UBL context or test the view cannot render (the code lists,
 // the decimal rules, BR-CO-03, BR-53 and a few others, see ublNative) are
 // left to package ubl, which checks them on the UBL document.
+//
+// An EN 16931 CII invoice (BT-24 urn:cen.eu:en16931:2017) on its own gets
+// the CEN rules, as the KoSIT validator gives them: its identifier is the one
+// of any CII invoice that follows EN 16931 without a CIUS, Factur-X or not.
+// It gets the Factur-X schematron when it is the XML of a Factur-X PDF
+// (validate.Options.Hybrid, set by zerechnung.Check).
 //
 // MINIMUM and BASIC WL invoices are not EN 16931 invoices: Check does nothing
 // for them.
@@ -91,6 +106,8 @@ const (
 	modeXRechnungCVD
 	modeExtended
 	modeExtendedCTCFR // modeExtended with the syntax rules of the EXTENDED-CTC-FR schematron
+	modeBasic         // BASIC: the CEN rules kept by the Factur-X schematron of BASIC
+	modeEN16931FX     // EN 16931 in a Factur-X PDF: the CEN rules kept by the Factur-X schematron of EN 16931
 )
 
 // Category indexes of the VAT category codes of the EN 16931 subset.
@@ -271,6 +288,14 @@ func profileMode(d *rules.Doc) mode {
 			return modeXRechnungCVD
 		}
 		return modeXRechnung
+	case invoice.ProfileBasic:
+		if d.FacturX() {
+			return modeBasic
+		}
+	case invoice.ProfileEN16931:
+		if d.FacturX() {
+			return modeEN16931FX
+		}
 	case invoice.ProfileExtended:
 		// The Factur-X EXTENDED schematron only exists for CII.
 		if d.UBL == nil {
@@ -392,12 +417,34 @@ func (k *checker) fail(id string, n *xmltree.Node, format string, args ...any) {
 			format += " (not enforced for Factur-X EXTENDED)"
 		}
 	case modeExtended:
+		if strings.HasPrefix(id, "BR-CL-") {
+			return // the code lists of the Factur-X schematron, see package facturx
+		}
 		if !extendedRules[id] {
 			if strings.HasPrefix(id, "CII-") {
 				return
 			}
 			sev = rules.Warning
 			format += " (not enforced for Factur-X EXTENDED)"
+		}
+		if s, ok := facturXLevels[id]; ok {
+			if s == notReported {
+				return
+			}
+			sev = s
+		}
+	case modeBasic, modeEN16931FX:
+		switch {
+		case strings.HasPrefix(id, "BR-CL-"):
+			return // the code lists of the Factur-X schematron, see package facturx
+		case strings.HasPrefix(id, "CII-") && !facturXSyntax(k.mode, id):
+			return
+		}
+		if s, ok := facturXLevels[id]; ok {
+			if s == notReported {
+				return
+			}
+			sev = s
 		}
 	case modeXRechnung, modeXRechnungExtension, modeXRechnungCVD:
 		if s, ok := level(k.d, k.mode, id); ok {

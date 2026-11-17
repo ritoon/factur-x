@@ -52,16 +52,18 @@ var extCases = []extCase{
 	{"BR-FXEXT-02 line note without content", []string{extLine1, extLine1 + "<ram:IncludedNote><ram:SubjectCode>AAI</ram:SubjectCode></ram:IncludedNote>"}, "BR-FXEXT-02"},
 	{"line note with content code", []string{extLine1, extLine1 + "<ram:IncludedNote><ram:ContentCode>X</ram:ContentCode><ram:SubjectCode>AAI</ram:SubjectCode></ram:IncludedNote>"}, ""},
 	// Parties, attributes, dates.
-	{"BR-FXEXT-03 buyer tax number", []string{"</ram:PostalTradeAddress>\n      </ram:BuyerTradeParty>", `</ram:PostalTradeAddress><ram:SpecifiedTaxRegistration><ram:ID schemeID="FC">123/456</ram:ID></ram:SpecifiedTaxRegistration></ram:BuyerTradeParty>`}, "BR-FXEXT-03"},
+	{"BR-FXEXT-03 buyer tax number", []string{"</ram:PostalTradeAddress>\n      </ram:BuyerTradeParty>", `</ram:PostalTradeAddress><ram:SpecifiedTaxRegistration><ram:ID schemeID="FC">123/456</ram:ID></ram:SpecifiedTaxRegistration></ram:BuyerTradeParty>`}, "BR-FXEXT-03 FX-SCH-A-000703"},
 	{"buyer VAT identifier", []string{"</ram:PostalTradeAddress>\n      </ram:BuyerTradeParty>", `</ram:PostalTradeAddress><ram:SpecifiedTaxRegistration><ram:ID schemeID="VA">DE987654321</ram:ID></ram:SpecifiedTaxRegistration></ram:BuyerTradeParty>`}, ""},
 	{"item attribute", []string{extProduct, extProduct + "<ram:ApplicableProductCharacteristic><ram:Description>Colour</ram:Description><ram:Value>red</ram:Value></ram:ApplicableProductCharacteristic>"}, ""},
 	{"item attribute with code and measure", []string{extProduct, extProduct + `<ram:ApplicableProductCharacteristic><ram:TypeCode>AAA</ram:TypeCode><ram:ValueMeasure unitCode="KGM">2</ram:ValueMeasure></ram:ApplicableProductCharacteristic>`}, ""},
 	{"BR-FXEXT-BR-54-1 attribute without name", []string{extProduct, extProduct + "<ram:ApplicableProductCharacteristic><ram:Value>red</ram:Value></ram:ApplicableProductCharacteristic>"}, "BR-FXEXT-BR-54-1"},
 	{"BR-FXEXT-BR-54-2 and BR-FXEXT-04", []string{extProduct, extProduct + `<ram:ApplicableProductCharacteristic><ram:TypeCode>XYZ</ram:TypeCode><ram:Value>2</ram:Value><ram:ValueMeasure unitCode="KGM">2</ram:ValueMeasure></ram:ApplicableProductCharacteristic>`}, "BR-FXEXT-04 BR-FXEXT-BR-54-2"},
 	{"BR-FXEXT-BR-54-2 measure without unit", []string{extProduct, extProduct + `<ram:ApplicableProductCharacteristic><ram:Description>Weight</ram:Description><ram:ValueMeasure>2</ram:ValueMeasure></ram:ApplicableProductCharacteristic>`}, "BR-FXEXT-BR-54-2"},
-	{"format 205", []string{extDelivery, `<udt:DateTimeString format="205">201803051230</udt:DateTimeString></ram:OccurrenceDateTime>`}, ""},
+	// The code list of the delivery date (BT-72) only holds format 102
+	// (FX-SCH-A-000786): the XSLT checks format 205 anyway.
+	{"format 205", []string{extDelivery, `<udt:DateTimeString format="205">201803051230</udt:DateTimeString></ram:OccurrenceDateTime>`}, "FX-SCH-A-000786"},
 	// The official pattern has no seconds, whatever its message says.
-	{"BR-FXEXT-CII-DT-097a seconds", []string{extDelivery, `<udt:DateTimeString format="205">20180305123000</udt:DateTimeString></ram:OccurrenceDateTime>`}, "BR-FXEXT-CII-DT-097a"},
+	{"BR-FXEXT-CII-DT-097a seconds", []string{extDelivery, `<udt:DateTimeString format="205">20180305123000</udt:DateTimeString></ram:OccurrenceDateTime>`}, "BR-FXEXT-CII-DT-097a FX-SCH-A-000786"},
 	// Lines.
 	{"BR-FXEXT-BR-23 unit", []string{`<ram:BilledQuantity unitCode="H87">20.0000</ram:BilledQuantity>`, "<ram:BilledQuantity>20.0000</ram:BilledQuantity>"}, "BR-FXEXT-BR-23"},
 	{"BR-FXEXT-BR-22 quantity", []string{`<ram:BilledQuantity unitCode="H87">20.0000</ram:BilledQuantity>`, ""}, "BR-FXEXT-BR-22 BR-FXEXT-BR-23"},

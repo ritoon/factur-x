@@ -96,6 +96,7 @@ func Create(pdf []byte, inv *invoice.Invoice, opts *CreateOptions) ([]byte, erro
 	if opts.Validate != nil {
 		vo := *opts.Validate
 		vo.Profile = p
+		vo.Hybrid = true // the XML goes into a Factur-X PDF
 		if r := validate.XML(xml, &vo); !r.Valid() {
 			return nil, &ValidationError{Report: r}
 		}
@@ -115,10 +116,17 @@ func Create(pdf []byte, inv *invoice.Invoice, opts *CreateOptions) ([]byte, erro
 // of the container: with the German rules, the /AFRelationship of a
 // BASIC invoice or above must be Alternative (PDF-40); with the French
 // rules, Data is admitted besides Alternative and Source (no PDF-14).
+//
+// The XML is validated with opts.Hybrid set: an EN 16931 invoice in a
+// Factur-X PDF is checked against the Factur-X schematron of the EN 16931
+// profile, like BASIC and EXTENDED invoices (see validate.Options.Hybrid).
 func Check(pdf []byte, opts *validate.Options) (*validate.Report, *Attachment, error) {
-	if opts == nil {
-		opts = &validate.Options{}
+	o := validate.Options{}
+	if opts != nil {
+		o = *opts
 	}
+	o.Hybrid = true
+	opts = &o
 	// The XML is parsed once: to find the national rules that apply to the
 	// container, then to validate it.
 	var root *xmltree.Node

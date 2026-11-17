@@ -2,7 +2,10 @@
 // profile requires and allows beyond EN 16931.
 //
 // For every profile it checks the specification identifier BT-24: present,
-// known, and matching the profile the invoice is checked against.
+// known, and matching the profile the invoice is checked against. An
+// obsolete spelling of a known identifier (FX-PROFILE-03) is an error where
+// the Factur-X schematron applies, whose code list of BT-24 only holds the
+// current identifiers, and a warning otherwise.
 //
 // For MINIMUM and BASIC WL, whose invoices are not complete EN 16931
 // invoices and are therefore not checked by package en16931, it implements
@@ -44,6 +47,19 @@
 // per category, rate and exemption reason, item attributes, notes and tax
 // registrations (see extended.go). Package en16931 checks the CEN rules that
 // the XSLT keeps for this profile.
+//
+// For BASIC, EN 16931 and EXTENDED, where the Factur-X 1.09.2 schematron of
+// the profile applies (rules.Doc.FacturX: always for BASIC and EXTENDED, for
+// EN 16931 in a Factur-X PDF only), it implements the code list assertions
+// of the schematron, under their FX-SCH-A-* identifier: 48 for BASIC, 58 for
+// EN 16931 and 209 for EXTENDED, generated from FACTUR-X_<profile>.sch and
+// its codedb file by ./gen (see codedb.go). Their lists, those of FNFE-MPE
+// and FeRD, replace the CEN code lists (BR-CL-*), which package en16931 does
+// not report there. The other assertions of these schematrons are the CEN
+// business rules, which package en16931 checks, and structural assertions
+// that the XML schema of the profile already expresses. An EN 16931 invoice
+// on its own gets the CEN code lists, as the KoSIT validator gives them:
+// its identifier is the one of any CII invoice that follows EN 16931.
 package facturx
 
 import (
@@ -66,6 +82,10 @@ func Check(c *rules.Checker) {
 		k.p = mMin
 	case invoice.ProfileBasicWL:
 		k.p = mBWL
+	case invoice.ProfileBasic:
+		k.p = mBasic
+	case invoice.ProfileEN16931:
+		k.p = mEN
 	case invoice.ProfileExtended, invoice.ProfileExtendedCTCFR:
 		k.p = mExt
 	default:
@@ -77,6 +97,11 @@ func Check(c *rules.Checker) {
 	}
 	if k.p == mExt {
 		k.extended()
+	}
+	if d.FacturX() {
+		// BASIC, EXTENDED, and EN 16931 in a Factur-X PDF: the code lists
+		// of the Factur-X schematron, which package en16931 leaves out.
+		k.checkCodes(d.Profile)
 	}
 }
 
@@ -134,7 +159,11 @@ func (k *checker) profile() {
 	declared := invoice.ProfileFromURN(urn)
 	if declared == invoice.ProfileUnknown {
 		if p, fixed := legacyProfile(urn); p != invoice.ProfileUnknown {
-			k.fail("FX-PROFILE-03", loc, "the specification identifier (BT-24) %q is an obsolete spelling of %q (profile %s); current validators do not recognize it", urn, fixed, p)
+			sev := rules.Error
+			if !d.FacturX() {
+				sev = rules.Warning // the CEN rules do not check BT-24
+			}
+			k.c.Fail("FX-PROFILE-03", sev, loc, "the specification identifier (BT-24) %q is an obsolete spelling of %q (profile %s); current validators do not recognize it", urn, fixed, p)
 		} else {
 			k.fail("FX-PROFILE-02", loc, "the specification identifier (BT-24) %q is not a known Factur-X, ZUGFeRD, XRechnung or Peppol identifier (Factur-X profiles: %s, %s, %s, %s, %s)",
 				urn, invoice.URNMinimum, invoice.URNBasicWL, invoice.URNBasic, invoice.URNEN16931, invoice.URNExtended)

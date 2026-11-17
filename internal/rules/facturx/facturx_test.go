@@ -442,6 +442,23 @@ var knownErrors = map[string]struct {
 }{
 	"Facture_UE_BASICWL.xml": {[]string{"BR-IC-11", "BR-IC-12"},
 		"FNFE example (2017): intra-community supply without delivery date, invoicing period nor deliver to country, required by BR-IC-11 and BR-IC-12 since EN 16931 (2017)"},
+	"Avoir_FR_type381_BASIC.xml": {[]string{"FX-PROFILE-03"},
+		"FNFE example (2017): specification identifier of a Factur-X 1.0 draft, out of the code list of BT-24 (FX-SCH-A-000493)"},
+	// ZUGFeRD 2.0 and 2.1 examples (intarsys, symtrax): codes out of the
+	// lists of the Factur-X 1.09.2 EXTENDED schematron, which Mustang
+	// rejects too.
+	"zugferd_2p0_EXTENDED_Fremdwaehrung.xml": {[]string{"FX-SCH-A-000704", "FX-SCH-A-000973", "FX-SCH-A-001137"},
+		"electronic address scheme 9958 (EAS), allowance reasons ABK (a charge code), ADZ and CAO out of UNTDID 5189"},
+	"zugferd_2p1_EXTENDED_Fremdwaehrung.xml": {[]string{"FX-SCH-A-000704", "FX-SCH-A-000973", "FX-SCH-A-001137"},
+		"electronic address scheme 9958 (EAS), allowance reasons ABK (a charge code), ADZ and CAO out of UNTDID 5189"},
+	"zugferd_2p0_EXTENDED_InnergemeinschLieferungMehrereBestellungen.xml": {[]string{"FX-SCH-A-000704"},
+		"electronic address scheme 9958, out of the EAS list"},
+	"zugferd_2p1_EXTENDED_InnergemeinschLieferungMehrereBestellungen.xml": {[]string{"FX-SCH-A-000704"},
+		"electronic address scheme 9958, out of the EAS list"},
+	"zugferd_2p0_EXTENDED_Rechnungskorrektur.xml": {[]string{"FX-SCH-A-001084"},
+		"package units BO and CT (UN/ECE recommendation 21), out of the list of PackageQuantity"},
+	"zugferd_2p0_EXTENDED_Warenrechnung.xml": {[]string{"FX-SCH-A-001084"},
+		"package units BC, BO, CT and PX (UN/ECE recommendation 21), out of the list of PackageQuantity"},
 }
 
 func TestCorpus(t *testing.T) {

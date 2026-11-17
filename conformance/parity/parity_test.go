@@ -133,15 +133,15 @@ func TestKnownAndDiff(t *testing.T) {
 
 	// Errors only, a Factur-X code list assertion being the same as its CEN
 	// rule (FX-SCH-A-000571, BR-CL-25), and FX-PROFILE an equivalent only.
-	mine := map[string]string{schemaToken: levelError, "BR-CO-10": levelError, "BR-CO-11": levelInfo, "BR-CL-25": levelError, "FX-PROFILE-02": levelError, "BR-CL-19": levelWarning}
-	ref := map[string]string{"BR-CO-11": levelError, "BR-CO-12": levelWarning, "FX-SCH-A-000571": levelError, "FX-SCH-A-000636": levelError, "FX-SCH-A-000973": levelError}
+	mine := map[string]string{schemaToken: levelError, "BR-CO-10": levelError, "BR-CO-11": levelInfo, "BR-CL-25": levelError, "FX-PROFILE-02": levelError, "BR-CL-23": levelWarning}
+	ref := map[string]string{"BR-CO-11": levelError, "BR-CO-12": levelWarning, "FX-SCH-A-000571": levelError, "FX-SCH-A-000636": levelError, "FX-SCH-A-000613": levelError}
 	got := diff(mine, ref)
-	if want := []string{"+BR-CO-10", "+SCHEMA", "-BR-CO-11", "-FX-SCH-A-000973"}; !reflect.DeepEqual(got, want) {
+	if want := []string{"+BR-CO-10", "+SCHEMA", "-BR-CO-11", "-FX-SCH-A-000613"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("diff = %q, want %q", got, want)
 	}
 	c := comparison{Ours: result{Rules: mine}, Ref: result{Rules: ref}}
 	for d, want := range map[string]string{
-		"-FX-SCH-A-000973": "`-FX-SCH-A-000973` (warning)",
+		"-FX-SCH-A-000613": "`-FX-SCH-A-000613` (warning)",
 		"-BR-CO-11":        "`-BR-CO-11` (info)",
 		"+BR-CO-10":        "`+BR-CO-10`",
 	} {

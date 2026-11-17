@@ -206,21 +206,20 @@ func compare(work, knownFile, mdFile, jsonFile string) (bool, error) {
 
 // equivalents maps the assertions of the Factur-X 1.09.2 schematrons that
 // Mustang applies to the rules of this package that check the same element
-// against the same code list under another identifier: the Factur-X
-// schematrons check the code lists with their own lists (codedb) where the
-// CEN schematron, that KoSIT and this package apply, has a BR-CL rule, and
-// this package checks the specification identifier BT-24 with FX-PROFILE.
-// A final * matches a prefix.
+// against the same code list under another identifier. Mustang applies the
+// Factur-X schematron of EN 16931 to an EN 16931 XML on its own, where this
+// package applies the CEN rules, as KoSIT does: their BR-CL rules check the
+// same elements against the CEN code lists. This package checks the
+// specification identifier BT-24 with FX-PROFILE. A final * matches a
+// prefix.
 var equivalents = map[string][]string{
 	"FX-SCH-A-000493": {"FX-PROFILE-*"}, // BASIC: BT-24
+	"FX-SCH-A-000556": {"FX-PROFILE-*"}, // EN 16931: BT-24
 	"FX-SCH-A-000636": {"FX-PROFILE-*"}, // EXTENDED: BT-24
 	"FX-SCH-A-000571": {"BR-CL-25"},     // EN 16931: scheme of BT-49 (EAS)
-	"FX-SCH-A-000704": {"BR-CL-25"},     // EXTENDED: scheme of BT-49 (EAS)
 	"FX-SCH-A-000581": {"BR-CL-11"},     // EN 16931: scheme of BT-30 (ICD)
 	"FX-SCH-A-000612": {"BR-CL-23"},     // EN 16931: unit of BT-149
 	"FX-SCH-A-000613": {"BR-CL-23"},     // EN 16931: unit of BT-130
-	"FX-SCH-A-000973": {"BR-CL-19"},     // EXTENDED: BT-98 (UNTDID 5189)
-	"FX-SCH-A-001137": {"BR-CL-19"},     // EXTENDED: BT-140 (UNTDID 5189)
 }
 
 func matchRule(pattern, rule string) bool {

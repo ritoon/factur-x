@@ -180,6 +180,7 @@ if !report.Valid() { /* au moins une erreur */ }
 | `Rules: … \| validate.ChorusPro` | Ajoute les contrôles B2G de Chorus Pro (voir ci-dessous) |
 | `Rules: … \| validate.Peppol` | Ajoute les règles Peppol BIS Billing 3.0 à une facture qui ne se déclare pas Peppol (voir ci-dessous) |
 | `Profile: invoice.ProfileBasic` | Valide contre un profil plutôt que celui que déclare BT-24 |
+| `Hybrid: true` | Le XML est celui d'un PDF Factur-X : une facture EN 16931 reçoit le schematron Factur-X de son profil plutôt que les règles CEN (voir [Factur-X ou CEN](#factur-x-ou-cen)) ; `zerechnung.Check` et `zerechnung.Create` le fixent, `zerechnung validate -hybrid` aussi |
 
 `validate.Catalog(set)` liste les règles implémentées.
 
@@ -271,7 +272,7 @@ go install github.com/ritoon/zerechnung/cmd/zerechnung@latest
 ```text
 zerechnung extract [-o out.xml] facture.pdf
 zerechnung info facture.pdf
-zerechnung validate [-fr] [-de] [-peppol] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-json] facture.pdf|facture.xml
+zerechnung validate [-fr] [-de] [-peppol] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-hybrid] [-json] facture.pdf|facture.xml
 zerechnung embed -xml facture.xml [-profile p] [-attach fichier]... [-o out.pdf] entree.pdf
 zerechnung json facture.pdf|facture.xml
 zerechnung rules [-fr] [-de] [-choruspro] [-peppol]
@@ -314,7 +315,7 @@ Elle reste contrôlée contre le schéma EXTENDED, inclus dans le schéma CII D2
 | Schéma | 11 contrôles (éléments, ordre, cardinalités, attributs, espaces de noms, types, listes fermées, valeurs fixes) | XSD Factur-X 1.09.2 (ZUGFeRD 2.5.2), XSD UN/CEFACT CII D16B de la configuration KoSIT XRechnung 3.0.2 (XRECHNUNG) et XSD OASIS UBL 2.1 (Invoice, CreditNote), compilés en tables Go |
 | EN 16931 | 793 assertions (328 erreurs, 465 avertissements) : BR, BR-CO, BR-CL, BR-DEC, règles par catégorie de TVA (BR-S, BR-Z, BR-E, BR-AE, BR-IC, BR-IG, BR-IP, BR-G, BR-O, BR-AF, BR-AG, BR-B), CII-SR, CII-DT ; pour EXTENDED-CTC-FR en CII, 535 règles de syntaxe (108 erreurs, 427 avertissements) à la place de celles du CEN : CII-SR (434), CII-DT (92), CII-FREXT et CII-EXT (9) | Artefacts CEN TC 434 v1.3.17 (CII) ; motif de syntaxe du schematron EXTENDED-CTC-FR-CII FNFE-MPE v1.4.0.04 |
 | EN 16931 (UBL) | Mêmes règles métier, avec les contextes et les tests des artefacts UBL (catégories L et M, tolérances, BR-DEC sur le texte, listes de codes propres à l'UBL) ; 759 règles de syntaxe (62 erreurs, 697 avertissements) : UBL-CR (678), UBL-SR (57), UBL-DT (24) | Artefacts CEN TC 434 v1.3.17 (UBL) |
-| Factur-X | 229 règles (207 erreurs, 22 avertissements) : identification du profil (BT-24), assertions des schematrons MINIMUM et BASIC WL, éléments non utilisés par profil ; règles BR-FXEXT d'EXTENDED et EXTENDED-CTC-FR (sous-types et regroupements de lignes, totaux avec tolérance, frais logistiques et frais pour compte de tiers, ventilation de TVA par catégorie, taux et motif d'exonération) | Schematrons Factur-X 1.09 (MINIMUM, BASIC WL) ; XSLT EXTENDED Factur-X 1.09.2 (ZUGFeRD 2.5.2) |
+| Factur-X | 544 règles (523 erreurs, 21 avertissements) : identification du profil (BT-24), assertions des schematrons MINIMUM et BASIC WL, éléments non utilisés par profil ; listes de codes des schematrons BASIC (48), EN 16931 (58) et EXTENDED (209) ; règles BR-FXEXT d'EXTENDED et EXTENDED-CTC-FR (sous-types et regroupements de lignes, totaux avec tolérance, frais logistiques et frais pour compte de tiers, ventilation de TVA par catégorie, taux et motif d'exonération) | Schematrons Factur-X 1.09 (MINIMUM, BASIC WL) ; schematrons et listes de codes Factur-X 1.09.2 (BASIC, EN 16931, EXTENDED) ; XSLT EXTENDED Factur-X 1.09.2 (ZUGFeRD 2.5.2) |
 | France (BR-FR) | 59 règles, 170 assertions en CII, 173 en UBL : SIREN/SIRET, adresses électroniques, mentions obligatoires, cadres de facturation, multi-vendeurs ; 3 contrôles des profils admis (FR-PROFILE) | Schematrons FNFE-MPE v1.4.0.04 (CII et UBL) |
 | Allemagne (BR-DE) | 52 assertions en CII, 57 en UBL (BR-DE, BR-DE-CVD, BR-DEX, BR-TMP ; PEPPOL-EN16931-R043 en UBL) ; contrôle des profils acceptés par le BMF (DE-PROFILE-01) ; format et clé de la Leitweg-ID et de la GEBA (DE-LEITWEG-01, DE-LEITWEG-02, DE-GEBA-01, DE-GEBA-02) | Schematrons KoSIT XRechnung 3.0.2 (CII et UBL) ; BMF ; Formatspezifikation Leitweg-ID 2.0.2 ; GEBA Formatspezifikation 1.0.1 |
 | Peppol BIS Billing 3.0 | CII : 90 assertions (73 erreurs, 17 avertissements) ; UBL : 165 assertions (139 erreurs, 26 avertissements), dont 76 propres à l'UBL. PEPPOL-EN16931-R, PEPPOL-COMMON-R (identifiants par schéma ICD), listes de codes restreintes, règles nationales NO, DK, IT, SE et NL, et en UBL GR, IS et DE | Schematrons Peppol BIS Billing 3.0.21 (`PEPPOL-EN16931-CII.sch` et `PEPPOL-EN16931-UBL.sch`, inchangés en 3.0.22) |
@@ -324,6 +325,12 @@ Elle reste contrôlée contre le schéma EXTENDED, inclus dans le schéma CII D2
 
 Les messages sont ceux des artefacts officiels. Les listes de codes (pays, devises, unités, schémas d'identifiants, motifs d'exonération…) sont embarquées.
 
+#### Factur-X ou CEN
+
+Une facture BASIC ou EXTENDED reçoit le schematron Factur-X 1.09.2 de son profil (FNFE-MPE / FeRD), sa référence officielle, que Mustang applique aussi. Il reprend les règles métier du CEN, mais vérifie les listes de codes avec ses propres listes (règles FX-SCH-A, à la place des BR-CL du CEN), ne garde qu'une partie des règles de syntaxe CII, met CII-SR-465 et CII-SR-466 (contact avec un nom de personne et un service) en erreur et refuse un BT-24 d'orthographe obsolète (FX-PROFILE-03 en erreur). Les deux jeux de listes diffèrent sur quelques codes : le schéma d'adresse électronique 9958, les motifs de remise ABK, ADZ et CAO, les unités d'emballage (`PackageQuantity`) d'EXTENDED…
+
+Une facture EN 16931 reçoit ce schematron quand elle est le XML d'un PDF Factur-X : `zerechnung.Check` et `zerechnung.Create` fixent `validate.Options.Hybrid`, que `zerechnung validate -hybrid` fixe aussi pour un XML seul. Sans cela, elle reçoit les règles CEN 1.3.17, comme dans le validateur KoSIT : son identifiant, `urn:cen.eu:en16931:2017`, est celui de toute facture CII conforme à EN 16931 sans CIUS, et rien dans le XML ne dit qu'il est destiné à un PDF Factur-X. Les verdicts ne diffèrent alors que sur les listes de codes, sur l'attribut `currencyID` d'un montant autre que le total de TVA (CII-DT-031, une erreur pour le CEN, admis par Factur-X) et sur le niveau de CII-SR-465 et CII-SR-466.
+
 ### Exactitude mesurée
 
 Le workflow [Conformité](.github/workflows/conformance.yml) exécute à chaque pull request les validateurs de référence sur 282 factures du corpus ZUGFeRD et de la suite de tests KoSIT, et compare facture par facture les règles levées en erreur (méthode et détail dans [conformance](conformance/README.md#parité-avec-kosit-et-mustang)) :
@@ -331,9 +338,9 @@ Le workflow [Conformité](.github/workflows/conformance.yml) exécute à chaque 
 | Référence | Factures comparées | Mêmes erreurs | Écarts justifiés |
 |---|---|---|---|
 | KoSIT validator 1.6.3, configuration XRechnung 3.0.2 du 2026-08-31 | 128 | 128 | 0 |
-| Mustang 2.26.0 | 282 | 223 | 59 |
+| Mustang 2.26.0 | 282 | 241 | 41 |
 
-Avec KoSIT, toutes les factures comparées ont les mêmes erreurs. Avec Mustang, chaque écart est justifié dans [conformance/parity/known.txt](conformance/parity/known.txt), et tout nouvel écart fait échouer le job ; ils viennent des références elles-mêmes : Mustang n'applique ni Peppol BIS 3.0, ni la configuration KoSIT aux factures XRechnung (niveaux des règles, XSD CII D16B), embarque le schematron XRechnung 2.4.0 (2.6.0 pour KoSIT et le package), et applique aux factures Factur-X BASIC et EN 16931 les schematrons Factur-X 1.09.2, là où le package applique les règles CEN 1.3.17, comme KoSIT. Les 26 factures invalides à dessein du corpus (`ZUGFeRDv2/fail`, exemples `not_validating`) sont vérifiées une à une par `TestOfficialNegativeCases` contre les erreurs des références.
+Avec KoSIT, toutes les factures comparées ont les mêmes erreurs. Avec Mustang, chaque écart est justifié dans [conformance/parity/known.txt](conformance/parity/known.txt), et tout nouvel écart fait échouer le job ; ils viennent des références elles-mêmes : Mustang n'applique ni Peppol BIS 3.0, ni la configuration KoSIT aux factures XRechnung (niveaux des règles, XSD CII D16B), et embarque le schematron XRechnung 2.4.0 (2.6.0 pour KoSIT et le package). Les 26 factures invalides à dessein du corpus (`ZUGFeRDv2/fail`, exemples `not_validating`) sont vérifiées une à une par `TestOfficialNegativeCases` contre les erreurs des références.
 
 Les 104 PDF hybrides du corpus (`ZUGFeRDv2/correct`, `XML-Rechnung/FX`) sont tous extraits et leurs 26 XML tous lus.
 
@@ -415,6 +422,7 @@ Les tests de base n'ont besoin que du dépôt ; la CI ([.github/workflows/ci.yml
 | `FX_FNFE` | Clone de [fnfempe/France_RFE](https://github.com/fnfempe/France_RFE), tag v1.4.0.04 | Les exemples CII et Factur-X (`Z.example/TEST`) respectent le schéma de leur profil et le schéma CII D22B ; contrôlés en EXTENDED-CTC-FR, ils n'enfreignent aucune règle de syntaxe de son schematron ; les tables du D22B, compilées pour les tests seulement, et le catalogue `ctcfr_gen.go` (`go generate` dans `internal/rules/en16931` télécharge le schematron et vérifie son SHA-256) sont identiques à ceux du dépôt |
 | `FX_PEPPOL` | Clone de [OpenPEPPOL/peppol-bis-invoice-3](https://github.com/OpenPEPPOL/peppol-bis-invoice-3), version 3.0.21 ou suivante | Les 351 tests unitaires CII (`rules/unit-CII-*`) et les 678 tests unitaires UBL (`rules/unit-UBL-*`) donnent le résultat attendu par le schematron ; les exemples officiels (`rules/examples`, `rules/snippets`) passent la validation sans erreur |
 | `FX_UBL_ZIP` | Paquet OASIS [UBL-2.1.zip](https://docs.oasis-open.org/ubl/os-UBL-2.1/UBL-2.1.zip) | Les tables du schéma UBL régénérées sont identiques à celles du dépôt (`go generate -run -ubl` dans `internal/schema` télécharge le paquet et vérifie son SHA-256) |
+| `FX_FACTURX_SCH` | Schematrons Factur-X 1.09.2 de BASIC, EN 16931 et EXTENDED et leurs listes de codes (`FACTUR-X_<profil>.sch` et `FACTUR-X_<profil>_codedb.xml`) | Les assertions de listes de codes régénérées (`codedb_gen.go`) sont identiques à celles du dépôt (`go generate` dans `internal/rules/facturx` télécharge les fichiers et vérifie leur SHA-256) |
 
 ## Licence et provenance
 
@@ -433,6 +441,7 @@ Les règles sont réécrites en Go à partir des artefacts officiels, qui ne son
 | Schémas XSD UN/CEFACT CII D22B (`CII/1xsd-CII_D22B_uncoupled` de fnfempe/France_RFE), compilés pour les tests | D22B | Schémas UN/CEFACT, sans avis dans les fichiers ; dépôt France_RFE sous Apache-2.0 |
 | Schémas XSD UBL 2.1 (OASIS, os-UBL-2.1, schémas `xsdrt` d'Invoice et CreditNote) | 2.1 | Copyright OASIS Open, politique de droits de propriété intellectuelle d'OASIS |
 | Schematrons Factur-X MINIMUM et BASIC WL (FNFE-MPE / FeRD) | 1.09 | Apache-2.0 |
+| Schematrons Factur-X BASIC, EN 16931 et EXTENDED et leurs listes de codes (FeRD, ZUGFeRD 2.5.2), assertions de listes de codes | 1.09.2 | Apache-2.0 |
 | XSLT de validation EXTENDED (FeRD, ZUGFeRD 2.5.2) | 1.09.2 | Apache-2.0 |
 | Schematrons Peppol BIS Billing 3.0, CII et UBL (OpenPEPPOL/peppol-bis-invoice-3) | 3.0.21 | aucune licence publiée dans le dépôt |
 
