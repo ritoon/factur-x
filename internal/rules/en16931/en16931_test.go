@@ -80,13 +80,13 @@ func edit(t *testing.T, s string, pairs ...string) string {
 }
 
 // findings runs Check and returns the sorted distinct rules found, failing
-// the test when a rule is not in Catalog.
+// the test when a rule is not in Catalog or CTCFRCatalog.
 func findings(t *testing.T, doc string, profile invoice.Profile) (*rules.Report, []string) {
 	t.Helper()
 	r := check(t, []byte(doc), profile)
 	set := map[string]bool{}
 	for _, f := range r.Findings {
-		if _, ok := severity[f.Rule]; !ok {
+		if _, ok := severity[f.Rule]; !ok && ctcfrRules[f.Rule] == nil {
 			t.Errorf("rule %s is not in Catalog", f.Rule)
 		}
 		if f.Message == "" || f.Path == "" || f.Line == 0 {
@@ -323,12 +323,13 @@ func TestMalformed(t *testing.T) {
 var ruleID = regexp.MustCompile(`"((?:BR|CII)-[A-Z0-9-]*[0-9])"`)
 
 // TestCatalogComplete checks that the rule identifiers written in the
-// sources are in Catalog and that every rule of Catalog can be reported.
+// sources are in Catalog, or in CTCFRCatalog for the rules of the
+// EXTENDED-CTC-FR schematron, and that every rule of Catalog can be reported.
 func TestCatalogComplete(t *testing.T) {
 	inSource := map[string]bool{}
 	files, _ := filepath.Glob("*.go")
 	for _, f := range files {
-		if strings.HasSuffix(f, "_test.go") || f == "catalog_gen.go" {
+		if strings.HasSuffix(f, "_test.go") || f == "catalog_gen.go" || f == "ctcfr_gen.go" {
 			continue
 		}
 		data, err := os.ReadFile(f)
@@ -357,7 +358,7 @@ func TestCatalogComplete(t *testing.T) {
 		}
 	}
 	for id := range inSource {
-		if _, ok := severity[id]; !ok {
+		if _, ok := severity[id]; !ok && ctcfrRules[id] == nil {
 			t.Errorf("%s is used but not in Catalog", id)
 		}
 	}

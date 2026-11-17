@@ -12,6 +12,19 @@ import (
 // element or attribute that must not exist (syntaxNots), or a number of
 // occurrences (syntaxCounts). The others are written below.
 //
+// EXTENDED-CTC-FR invoices get the syntax rules of the FNFE-MPE schematron
+// EXTENDED-CTC-FR-CII.sch instead (ctcfr_gen.go: ctcfrNots, ctcfrCounts and
+// CTCFRCatalog). The schematron derives them from the CEN ones: it drops the
+// rules on the data that EXTENDED-CTC-FR admits (line notes, delivery terms,
+// sub-lines, references...), relaxes a few counts, adds rules of its own
+// (CII-FREXT-SR-*, CII-EXT-DT-018, CII-FREXT-DT-024, CII-FREXTDT-027) and
+// changes three contexts: CII-SR-035..038 and CII-SR-221 move to the line,
+// which lets CII-SR-042..044 run, and CII-SR-475 and CII-SR-476 move to the
+// header agreement, so that the header AdditionalReferencedDocument is no
+// longer the context of an absolute rule and gets the rules of the
+// referenced documents (CII-DT-015, CII-EXT-DT-018...). Each schematron is
+// compiled into its own syntaxSet.
+//
 // Rules whose context is an absolute path are checked with a trie of element
 // names, walked together with the document; rules whose context is an
 // element name or a name suffix ("//ram:*[ends-with(name(), 'ID')]") are
@@ -167,6 +180,20 @@ var specials = map[string]special{
 	ctxRoot:           specialNone, // rules needing the whole document run in finish
 }
 
+// specialsCTCFR are the contexts of the hand written syntax rules of the
+// EXTENDED-CTC-FR schematron. The rules of the line settlement (CII-SR-474),
+// of the header AdditionalReferencedDocument (CII-SR-475, CII-SR-476 in
+// their CEN form) and of its attachment (CII-DT-105, CII-DT-106) are not in
+// the schematron.
+var specialsCTCFR = map[string]special{
+	ctxAgreement:     specialAgreement,
+	ctxDelivery:      specialDelivery,
+	ctxSettlement:    specialSettlement,
+	ctxProduct:       specialProduct,
+	ctxLineAgreement: specialLineAgreement,
+	ctxRoot:          specialNone,
+}
+
 // runSpecial runs the hand written syntax rules of context node n.
 func (k *checker) runSpecial(s special, n *xmltree.Node) {
 	switch s {
@@ -189,12 +216,23 @@ func (k *checker) runSpecial(s special, n *xmltree.Node) {
 	}
 }
 
-var (
+// syntaxSet holds the syntax rules of one schematron, compiled for the walk:
+// the trie of the absolute contexts and the rules of each kind of name
+// context.
+type syntaxSet struct {
 	trie  *tnode
 	kinds [nKinds]kindSet
+	ctcfr bool // the rules of the EXTENDED-CTC-FR schematron
+}
+
+var (
+	cenSyntax   = newSyntaxSet(syntaxNots, syntaxCounts, specials, false)
+	ctcfrSyntax = newSyntaxSet(ctcfrNots, ctcfrCounts, specialsCTCFR, true)
 )
 
-func init() {
+func newSyntaxSet(nots []syntaxNot, counts []syntaxCount, specials map[string]special, ctcfr bool) *syntaxSet {
+	set := &syntaxSet{ctcfr: ctcfr}
+	kinds := &set.kinds
 	root := &tnode{name: "CrossIndustryInvoice"}
 	// contexts returns the trie nodes of the absolute contexts of ctx, or
 	// nil and the kind for a name context.
@@ -217,7 +255,7 @@ func init() {
 		}
 		return nodes, depths
 	}
-	for _, r := range syntaxNots {
+	for _, r := range nots {
 		path, attr := splitAttr(r.Path)
 		if kd, ok := kindContexts[r.Context]; ok {
 			kinds[kd].nots = append(kinds[kd].nots, kindNot{rule: r.Rule, path: path, attr: attr})
@@ -236,7 +274,7 @@ func init() {
 			}
 		}
 	}
-	for _, r := range syntaxCounts {
+	for _, r := range counts {
 		cr := countRule{rule: r.Rule, path: steps(r.Path), exact: r.Exact, n: r.N}
 		if kd, ok := kindContexts[r.Context]; ok {
 			kinds[kd].counts = append(kinds[kd].counts, cr)
@@ -253,7 +291,8 @@ func init() {
 			t.special = sp
 		}
 	}
-	trie = root
+	set.trie = root
+	return set
 }
 
 // steps returns the local names of the steps of a path ("ram:A/ram:B").
@@ -322,11 +361,11 @@ func nodeKind(n *xmltree.Node) kind {
 // trieChecks runs the absolute syntax rules attached to the trie node of n.
 func (k *checker) trieChecks(n *xmltree.Node, t *tnode) {
 	for _, h := range t.nots {
-		k.failOnce(h.rule, k.stack[h.ctxDepth], n, "%s", description[h.rule])
+		k.failOnce(h.rule, k.stack[h.ctxDepth], n, "%s", k.desc(h.rule))
 	}
 	for _, h := range t.attrs {
 		if v, ok := n.LookupAttr(h.attr); ok {
-			k.failOnce(h.rule, k.stack[h.ctxDepth], n, "%s (@%s=%q)", description[h.rule], h.attr, quote(v))
+			k.failOnce(h.rule, k.stack[h.ctxDepth], n, "%s (@%s=%q)", k.desc(h.rule), h.attr, quote(v))
 		}
 	}
 	if !t.ctx {
@@ -343,7 +382,7 @@ func (k *checker) trieChecks(n *xmltree.Node, t *tnode) {
 func (k *checker) checkCount(n *xmltree.Node, cr countRule) {
 	c := count(n, cr.path)
 	if (cr.exact && c != cr.n) || (!cr.exact && c > cr.n) {
-		k.fail(cr.rule, n, "%s (%d found)", description[cr.rule], c)
+		k.fail(cr.rule, n, "%s (%d found)", k.desc(cr.rule), c)
 	}
 }
 
@@ -358,7 +397,7 @@ func (k *checker) kindChecks(n *xmltree.Node) {
 		}
 		return
 	}
-	ks := &kinds[kd]
+	ks := &k.syn.kinds[kd]
 	for i := range ks.nots {
 		r := &ks.nots[i]
 		m := n
@@ -369,12 +408,12 @@ func (k *checker) kindChecks(n *xmltree.Node) {
 			}
 		}
 		if r.attr == "" {
-			k.fail(r.rule, m, "%s", description[r.rule])
+			k.fail(r.rule, m, "%s", k.desc(r.rule))
 			continue
 		}
 		if r.path == nil {
 			if v, ok := m.LookupAttr(r.attr); ok {
-				k.fail(r.rule, m, "%s (@%s=%q)", description[r.rule], r.attr, quote(v))
+				k.fail(r.rule, m, "%s (@%s=%q)", k.desc(r.rule), r.attr, quote(v))
 			}
 			continue
 		}
@@ -404,7 +443,7 @@ func (k *checker) kindChecks(n *xmltree.Node) {
 func (k *checker) attrOnPath(rule string, n *xmltree.Node, path []string, attr string) {
 	if len(path) == 0 {
 		if v, ok := n.LookupAttr(attr); ok {
-			k.fail(rule, n, "%s (@%s=%q)", description[rule], attr, quote(v))
+			k.fail(rule, n, "%s (@%s=%q)", k.desc(rule), attr, quote(v))
 		}
 		return
 	}
@@ -438,8 +477,15 @@ func (k *checker) syntaxRefDoc(n *xmltree.Node) {
 	if m := n.Elem("URIID"); m != nil && !tc916 {
 		k.failDesc("CII-DT-015", m)
 	}
-	if m := n.Elem("TypeCode"); m != nil && !(ard && (childText(n, "TypeCode", "50") || childText(n, "TypeCode", "130") || tc916)) {
-		k.fail("CII-DT-018", m, "%s (TypeCode %q)", description["CII-DT-018"], quote(m.Text))
+	typeCodeOK := ard && (childText(n, "TypeCode", "50") || childText(n, "TypeCode", "130") || tc916)
+	if k.syn.ctcfr {
+		// CII-EXT-DT-018 also admits the type code of a preceding invoice
+		// reference (BT-X-555).
+		if m := n.Elem("TypeCode"); m != nil && !typeCodeOK && n.Name != "InvoiceReferencedDocument" {
+			k.fail("CII-EXT-DT-018", m, "%s (TypeCode %q)", k.desc("CII-EXT-DT-018"), quote(m.Text))
+		}
+	} else if m := n.Elem("TypeCode"); m != nil && !typeCodeOK {
+		k.fail("CII-DT-018", m, "%s (TypeCode %q)", k.desc("CII-DT-018"), quote(m.Text))
 	}
 	if m := n.Elem("Name"); m != nil && !tc916 {
 		k.failDesc("CII-DT-021", m)
@@ -447,31 +493,57 @@ func (k *checker) syntaxRefDoc(n *xmltree.Node) {
 	if m := n.Elem("AttachmentBinaryObject"); m != nil && !tc916 {
 		k.failDesc("CII-DT-022", m)
 	}
-	if m := n.Elem("ReferenceTypeCode"); m != nil && !(ard && childText(n, "TypeCode", "130")) {
-		k.failDesc("CII-DT-024", m)
+	refTypeOK := ard && childText(n, "TypeCode", "130")
+	issueDateOK := n.Name == "InvoiceReferencedDocument"
+	if k.syn.ctcfr {
+		// The contract reference may carry a reference type code, and the
+		// contract, order and despatch advice references an issue date.
+		refTypeOK = refTypeOK || n.Name == "ContractReferencedDocument"
+		switch n.Name {
+		case "ContractReferencedDocument", "BuyerOrderReferencedDocument", "DespatchAdviceReferencedDocument":
+			issueDateOK = true
+		}
 	}
-	if m := n.Elem("FormattedIssueDateTime"); m != nil && n.Name != "InvoiceReferencedDocument" {
-		k.failDesc("CII-DT-027", m)
+	if m := n.Elem("ReferenceTypeCode"); m != nil && !refTypeOK {
+		k.failDesc(k.ctcfrID("CII-DT-024", "CII-FREXT-DT-024"), m)
 	}
+	if m := n.Elem("FormattedIssueDateTime"); m != nil && !issueDateOK {
+		k.failDesc(k.ctcfrID("CII-DT-027", "CII-FREXTDT-027"), m)
+	}
+}
+
+// ctcfrID returns id, or the identifier the EXTENDED-CTC-FR schematron
+// gives to the rule that replaces it when the EXTENDED-CTC-FR rules apply.
+func (k *checker) ctcfrID(id, ctcfr string) string {
+	if k.syn.ctcfr {
+		return ctcfr
+	}
+	return id
 }
 
 func (k *checker) syntaxTradeTax(n *xmltree.Node) {
 	if tc := n.Elem("TypeCode"); tc != nil && !childText(n, "TypeCode", "VAT") {
-		k.fail("CII-DT-037", tc, "%s (TypeCode %q)", description["CII-DT-037"], quote(tc.Text))
+		k.fail("CII-DT-037", tc, "%s (TypeCode %q)", k.desc("CII-DT-037"), quote(tc.Text))
 	}
 	header := k.hasAncestor("ApplicableHeaderTradeSettlement")
 	applicable := n.Name == "ApplicableTradeTax"
 	if m := n.Elem("BasisAmount"); m != nil && !header {
 		k.failDesc("CII-DT-041", m)
 	}
+	if m := n.Elem("TaxPointDate"); m != nil && !header {
+		k.failDesc("CII-DT-054", m)
+	}
+	if k.syn.ctcfr {
+		// Exemption reasons and due date codes are admitted on any trade
+		// tax: CII-DT-052, CII-DT-098 and CII-DT-058 are not in the
+		// EXTENDED-CTC-FR schematron.
+		return
+	}
 	if m := n.Elem("ExemptionReasonCode"); m != nil && !applicable {
 		k.failDesc("CII-DT-052", m)
 	}
 	if m := n.Elem("ExemptionReason"); m != nil && !applicable {
 		k.failDesc("CII-DT-098", m)
-	}
-	if m := n.Elem("TaxPointDate"); m != nil && !header {
-		k.failDesc("CII-DT-054", m)
 	}
 	if m := n.Elem("DueDateTypeCode"); m != nil && !header {
 		k.failDesc("CII-DT-058", m)
@@ -491,6 +563,7 @@ func (k *checker) syntaxAgreement(n *xmltree.Node) {
 		k.failDesc("CII-SR-450", p)
 	}
 	n50, n130 := 0, 0
+	names, attachments := 0, 0 // of the documents of type 916 (EXTENDED-CTC-FR)
 	for it, d := elems(n, "AdditionalReferencedDocument"); d != nil; d = it.next() {
 		if childText(d, "TypeCode", "50") {
 			n50++
@@ -498,19 +571,59 @@ func (k *checker) syntaxAgreement(n *xmltree.Node) {
 		if childText(d, "TypeCode", "130") {
 			n130++
 		}
+		if trim(text(d.Elem("TypeCode"))) == "916" {
+			names += countElems(d, "Name")
+			attachments += countElems(d, "AttachmentBinaryObject")
+		}
 	}
 	if n50 > 1 {
-		k.fail("CII-SR-457", n, "%s (%d found)", description["CII-SR-457"], n50)
+		k.fail("CII-SR-457", n, "%s (%d found)", k.desc("CII-SR-457"), n50)
 	}
-	if n130 > 1 {
-		k.fail("CII-SR-458", n, "%s (%d found)", description["CII-SR-458"], n130)
+	if n130 > 1 && !k.syn.ctcfr {
+		k.fail("CII-SR-458", n, "%s (%d found)", k.desc("CII-SR-458"), n130)
 	}
 	if exists(n, "SellerTradeParty", "DefinedTradeContact", "PersonName") && exists(n, "SellerTradeParty", "DefinedTradeContact", "DepartmentName") {
-		k.fail("CII-SR-465", find(n, "SellerTradeParty", "DefinedTradeContact"), "%s (the seller contact has both a PersonName and a DepartmentName)", description["CII-SR-465"])
+		k.fail("CII-SR-465", find(n, "SellerTradeParty", "DefinedTradeContact"), "%s (the seller contact has both a PersonName and a DepartmentName)", k.desc("CII-SR-465"))
 	}
 	if exists(n, "BuyerTradeParty", "DefinedTradeContact", "PersonName") && exists(n, "BuyerTradeParty", "DefinedTradeContact", "DepartmentName") {
-		k.fail("CII-SR-466", find(n, "BuyerTradeParty", "DefinedTradeContact"), "%s (the buyer contact has both a PersonName and a DepartmentName)", description["CII-SR-466"])
+		k.fail("CII-SR-466", find(n, "BuyerTradeParty", "DefinedTradeContact"), "%s (the buyer contact has both a PersonName and a DepartmentName)", k.desc("CII-SR-466"))
 	}
+	if !k.syn.ctcfr {
+		return
+	}
+	// In the EXTENDED-CTC-FR schematron, CII-SR-475 and CII-SR-476 count
+	// the names and attachments of all the documents of type 916 together.
+	if names > 1 {
+		k.fail("CII-SR-475", n, "%s (%d found)", k.desc("CII-SR-475"), names)
+	}
+	if attachments > 1 {
+		k.fail("CII-SR-476", n, "%s (%d found)", k.desc("CII-SR-476"), attachments)
+	}
+	if m := deliveryTermsExtra(n); m != nil {
+		k.fail("CII-FREXT-SR-293", m, "%s (%s)", k.desc("CII-FREXT-SR-293"), m.Name)
+	}
+}
+
+// deliveryTermsExtra returns the first child of an
+// ApplicableTradeDeliveryTerms of n other than ram:DeliveryTypeCode and
+// ram:RelevantTradeLocation, or child of its RelevantTradeLocation other
+// than ram:Name, or nil (CII-FREXT-SR-106, CII-FREXT-SR-293).
+func deliveryTermsExtra(n *xmltree.Node) *xmltree.Node {
+	for it, dt := elems(n, "ApplicableTradeDeliveryTerms"); dt != nil; dt = it.next() {
+		for _, c := range dt.Children {
+			if c.Space != rules.NSRam || (c.Name != "DeliveryTypeCode" && c.Name != "RelevantTradeLocation") {
+				return c
+			}
+		}
+		for it, loc := elems(dt, "RelevantTradeLocation"); loc != nil; loc = it.next() {
+			for _, c := range loc.Children {
+				if c.Space != rules.NSRam || c.Name != "Name" {
+					return c
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func (k *checker) syntaxDelivery(n *xmltree.Node) {
@@ -523,10 +636,23 @@ func (k *checker) syntaxSettlement(n *xmltree.Node) {
 	if p := both(n, "PayeeTradeParty"); p != nil {
 		k.failDesc("CII-SR-451", p)
 	}
+	if k.syn.ctcfr {
+		// CII-SR-470 is commented out in the EXTENDED-CTC-FR schematron.
+		for it, ex := elems(n, "TaxApplicableTradeCurrencyExchange"); ex != nil; ex = it.next() {
+			for _, c := range ex.Children {
+				switch c.Name {
+				case "SourceCurrencyCode", "TargetCurrencyCode", "ConversionRate", "ConversionRateDateTime":
+				default:
+					k.failOnce("CII-FREXT-SR-366", n, c, "%s (%s)", k.desc("CII-FREXT-SR-366"), c.Name)
+				}
+			}
+		}
+		return
+	}
 	for it, pm := elems(n, "SpecifiedTradeSettlementPaymentMeans"); pm != nil; pm = it.next() {
 		tc := trim(text(pm.Elem("TypeCode")))
 		if (tc == "30" || tc == "58") && !exists(pm, "PayeePartyCreditorFinancialAccount", "IBANID") && !exists(pm, "PayeePartyCreditorFinancialAccount", "ProprietaryID") {
-			k.fail("CII-SR-470", pm, "%s (payment means %s)", description["CII-SR-470"], tc)
+			k.fail("CII-SR-470", pm, "%s (payment means %s)", k.desc("CII-SR-470"), tc)
 		}
 	}
 }
@@ -545,12 +671,17 @@ func (k *checker) syntaxProduct(n *xmltree.Node) {
 	}
 	if o := n.Elem("OriginTradeCountry"); o != nil {
 		if c := count(n, []string{"OriginTradeCountry", "ID"}); c != 1 {
-			k.fail("CII-SR-090", o, "%s (%d found)", description["CII-SR-090"], c)
+			k.fail("CII-SR-090", o, "%s (%d found)", k.desc("CII-SR-090"), c)
 		}
 	}
 }
 
 func (k *checker) syntaxLineAgreement(n *xmltree.Node) {
+	if k.syn.ctcfr {
+		if m := deliveryTermsExtra(n); m != nil {
+			k.fail("CII-FREXT-SR-106", m, "%s (%s)", k.desc("CII-FREXT-SR-106"), m.Name)
+		}
+	}
 	hasCI, hasCIFalse, hasAmount := false, false, false
 	var at *xmltree.Node
 	for it, g := elems(n, "GrossPriceProductTradePrice"); g != nil; g = it.next() {
@@ -582,7 +713,7 @@ func (k *checker) syntaxLineSettlement(n *xmltree.Node) {
 		}
 	}
 	if c > 1 {
-		k.fail("CII-SR-474", n, "%s (%d found)", description["CII-SR-474"], c)
+		k.fail("CII-SR-474", n, "%s (%d found)", k.desc("CII-SR-474"), c)
 	}
 }
 
@@ -591,10 +722,10 @@ func (k *checker) syntaxAdditionalDoc(n *xmltree.Node) {
 		return
 	}
 	if c := countElems(n, "Name"); c > 1 {
-		k.fail("CII-SR-475", n, "%s (%d found)", description["CII-SR-475"], c)
+		k.fail("CII-SR-475", n, "%s (%d found)", k.desc("CII-SR-475"), c)
 	}
 	if c := countElems(n, "AttachmentBinaryObject"); c > 1 {
-		k.fail("CII-SR-476", n, "%s (%d found)", description["CII-SR-476"], c)
+		k.fail("CII-SR-476", n, "%s (%d found)", k.desc("CII-SR-476"), c)
 	}
 }
 
@@ -618,13 +749,14 @@ func (k *checker) syntaxRoot() {
 		k.failDesc("CII-SR-468", k.pmInfo)
 	}
 	if k.paymentRefs > 1 {
-		k.fail("CII-SR-469", root, "%s (%d found)", description["CII-SR-469"], k.paymentRefs)
+		k.fail("CII-SR-469", root, "%s (%d found)", k.desc("CII-SR-469"), k.paymentRefs)
 	}
-	if k.financialCards > 1 {
-		k.fail("CII-SR-495", root, "%s (%d found)", description["CII-SR-495"], k.financialCards)
+	// CII-SR-495 and CII-SR-496 are not in the EXTENDED-CTC-FR schematron.
+	if k.financialCards > 1 && !k.syn.ctcfr {
+		k.fail("CII-SR-495", root, "%s (%d found)", k.desc("CII-SR-495"), k.financialCards)
 	}
-	if k.debtorAccounts > 1 {
-		k.fail("CII-SR-496", root, "%s (%d found)", description["CII-SR-496"], k.debtorAccounts)
+	if k.debtorAccounts > 1 && !k.syn.ctcfr {
+		k.fail("CII-SR-496", root, "%s (%d found)", k.desc("CII-SR-496"), k.debtorAccounts)
 	}
 	if k.dueCodes > 1 {
 		for i := 0; i < k.settl.n; i++ {
