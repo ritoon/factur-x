@@ -193,6 +193,10 @@ func TestCatalogProfiles(t *testing.T) {
 		{Germany, "DE-PROFILE-01", false},
 		{Germany, "BR-DE-15", true},
 		{GermanyProfile, "BR-DE-15", false},
+		{Germany, "DE-LEITWEG-01", true},
+		{Germany, "DE-GEBA-02", true},
+		{Default, "DE-LEITWEG-01", false},
+		{GermanyProfile, "DE-GEBA-01", false},
 		{Peppol, "PEPPOL-EN16931-R001", true},
 		{Peppol, "NO-R-001", true},
 		{Default, "PEPPOL-EN16931-R001", false},
@@ -214,11 +218,14 @@ func TestUBL(t *testing.T) {
 		file    string
 		profile invoice.Profile
 		peppol  string // rules of the Peppol findings
+		other   string // rules of the other findings
 	}{
-		{"../testdata/EN16931_Einfach.ubl.xml", invoice.ProfilePeppol, einfachPeppol},
-		{"../internal/rules/peppol/testdata/peppol.ubl.xml", invoice.ProfilePeppol, ""},
-		{"../testdata/XRECHNUNG_Einfach.ubl.xml", invoice.ProfileXRechnung, ""},
-		{"../testdata/ubl-tc434-creditnote1.xml", invoice.ProfileEN16931, ""},
+		{"../testdata/EN16931_Einfach.ubl.xml", invoice.ProfilePeppol, einfachPeppol, ""},
+		{"../internal/rules/peppol/testdata/peppol.ubl.xml", invoice.ProfilePeppol, "", ""},
+		// The Leitweg-ID 04011000-12345-34 of the corpus invoice has the
+		// check digits 34 instead of 03.
+		{"../testdata/XRECHNUNG_Einfach.ubl.xml", invoice.ProfileXRechnung, "", "DE-LEITWEG-02"},
+		{"../testdata/ubl-tc434-creditnote1.xml", invoice.ProfileEN16931, "", ""},
 	} {
 		r := XML([]byte(readXML(t, c.file)), &Options{Auto: true})
 		var other, peppol []string
@@ -230,8 +237,9 @@ func TestUBL(t *testing.T) {
 			}
 		}
 		slices.Sort(peppol)
-		if other != nil || r.Profile != c.profile || strings.Join(peppol, " ") != c.peppol {
-			t.Errorf("%s: profile %s, Peppol findings %v, want %s:\n%s", c.file, r.Profile, peppol, c.peppol, r)
+		slices.Sort(other)
+		if strings.Join(other, " ") != c.other || r.Profile != c.profile || strings.Join(peppol, " ") != c.peppol {
+			t.Errorf("%s: profile %s, Peppol findings %v, want %s, other findings %v, want %s:\n%s", c.file, r.Profile, peppol, c.peppol, other, c.other, r)
 		}
 		if findings(r, "FX-") != nil || findings(r, "XSD-PROFILE") != nil {
 			t.Errorf("%s: CII rules applied to UBL:\n%s", c.file, r)

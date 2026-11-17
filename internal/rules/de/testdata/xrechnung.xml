@@ -81,7 +81,7 @@
       </ram:SpecifiedLineTradeSettlement>
     </ram:IncludedSupplyChainTradeLineItem>
     <ram:ApplicableHeaderTradeAgreement>
-      <ram:BuyerReference>04011000-12345-34</ram:BuyerReference>
+      <ram:BuyerReference>04011000-12345-03</ram:BuyerReference>
       <ram:SellerTradeParty>
         <ram:GlobalID schemeID="0088">4000001000005</ram:GlobalID>
         <ram:Name>Beispiel Flottenservice GmbH</ram:Name>

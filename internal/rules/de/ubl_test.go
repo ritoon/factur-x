@@ -33,7 +33,7 @@ const (
 	uSpec        = "<cbc:CustomizationID>" + CIUSID + "</cbc:CustomizationID>"
 	uTypeCode    = "<cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>"
 	uIssueDate   = "<cbc:IssueDate>2026-11-02</cbc:IssueDate>"
-	uBuyerRef    = "<cbc:BuyerReference>04011000-12345-34</cbc:BuyerReference>"
+	uBuyerRef    = "<cbc:BuyerReference>04011000-12345-03</cbc:BuyerReference>"
 	uARD         = "<cac:AdditionalDocumentReference>"
 	uARDEnd      = "</cac:AdditionalDocumentReference>"
 	uURI         = "<cbc:URI>https://flottenservice.example/lieferscheine/311</cbc:URI>"
