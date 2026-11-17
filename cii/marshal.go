@@ -64,11 +64,13 @@ func (e *LossError) Error() string {
 //
 // Only the elements that the target profile allows are written, in the order
 // of the profile's XML schema (Factur-X 1.09.2; XRECHNUNG and PEPPOL use the
-// EN 16931 schema and EXTENDED-CTC-FR the EXTENDED one). The specification identifier
-// BT-24 is inv.SpecificationID when it identifies the target profile (this
-// keeps, for example, the XRechnung version), the target's URN otherwise: a
-// ZUGFeRD 1.0 identifier, which only a CrossIndustryDocument carries, is
-// replaced.
+// EN 16931 schema and EXTENDED-CTC-FR the EXTENDED one). An XRECHNUNG invoice
+// keeps a single preceding invoice reference (BG-3), the CII D16B schema it is
+// validated against allowing only one; the others are lost. The specification
+// identifier BT-24 is inv.SpecificationID when it identifies the target
+// profile (this keeps, for example, the XRechnung version), the target's URN
+// otherwise: a ZUGFeRD 1.0 identifier, which only a CrossIndustryDocument
+// carries, is replaced.
 //
 // Mandatory elements of the target schema are always written, empty when the
 // invoice has no value for them, so that a validator reports the missing
@@ -796,7 +798,9 @@ func (w *writer) settlement(inv *invoice.Invoice) {
 	}
 	for i := range inv.PrecedingInvoices {
 		r := &inv.PrecedingInvoices[i]
-		if !wl {
+		// The CII D16B schema of XRechnung allows a single
+		// ram:InvoiceReferencedDocument, the Factur-X schemas several.
+		if !wl || i > 0 && w.target == invoice.ProfileXRechnung {
 			w.lose("BG-3")
 			break
 		}

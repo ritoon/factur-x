@@ -1,8 +1,8 @@
 // Package schema checks the structure of an invoice against its XML schema:
-// a CII invoice against the schema of its Factur-X profile, a UBL invoice
-// against the OASIS UBL 2.1 schema of its document (Invoice or CreditNote).
-// It checks the allowed elements, their order, cardinalities, attributes,
-// namespaces and simple types.
+// a CII invoice against the schema of its profile, a UBL invoice against the
+// OASIS UBL 2.1 schema of its document (Invoice or CreditNote). It checks
+// the allowed elements, their order, cardinalities, attributes, namespaces
+// and simple types.
 //
 // The schemas are compiled ahead of time by the generator in ./gen, so
 // validation needs no schema engine and does not allocate while the document
@@ -10,18 +10,34 @@
 //
 //   - tables_gen.go holds the schemas of the five Factur-X profiles
 //     (MINIMUM, BASIC WL, BASIC, EN 16931, EXTENDED). Types that are
-//     identical in several profiles are shared. XRECHNUNG invoices are
-//     checked against the EN 16931 schema and EXTENDED-CTC-FR invoices
-//     against the EXTENDED schema. An invoice whose profile is unknown is
-//     checked against the EXTENDED schema, the most permissive, with a
-//     warning.
+//     identical in several profiles are shared. PEPPOL invoices are checked
+//     against the EN 16931 schema and EXTENDED-CTC-FR invoices against the
+//     EXTENDED schema. An invoice whose profile is unknown is checked
+//     against the EXTENDED schema, the most permissive, with a warning.
+//   - cii_d16b_tables_gen.go holds the complete UN/CEFACT CII D16B schema
+//     of the KoSIT validator configuration for XRechnung 3.0.2, against
+//     which XRECHNUNG invoices are checked, as KoSIT does. It accepts the
+//     elements of D16B outside the EN 16931 data set, which the EN 16931
+//     syntax rules (CII-SR) report with the severities of the KoSIT
+//     configuration, and it allows a single ram:InvoiceReferencedDocument,
+//     where the Factur-X schema allows several.
 //   - ubl_tables_gen.go holds the UBL 2.1 schemas of Invoice and CreditNote
 //     (the runtime schemas of the OASIS package). The content of the UBL
 //     extensions (ext:ExtensionContent, a lax wildcard) is not checked: only
 //     the namespace and the number of its elements are.
+//
+// EXTENDED-CTC-FR invoices keep the Factur-X EXTENDED schema although the
+// FNFE-MPE package validates them against the complete CII D22B schema: the
+// EXTENDED schema is included in D22B (TestSchemaInclusion checks it on the
+// D22B tables, compiled for the tests only), so every invoice it accepts
+// passes the FNFE schema, and the FNFE EXTENDED-CTC-FR schematron restricts
+// D22B back to the EXTENDED data set, partly with fatal rules (CII-SR-009,
+// CII-SR-477 to 494...) that the D22B schema alone would let through.
 package schema
 
 //go:generate go run ./gen -o tables_gen.go ${FX_XSD_DIR}
+//go:generate go run ./gen -cii D16B -o cii_d16b_tables_gen.go
+//go:generate go run ./gen -cii D22B -o cii_d22b_tables_gen_test.go
 //go:generate go run ./gen -ubl -o ubl_tables_gen.go
 
 import (
@@ -54,13 +70,13 @@ var Catalog = []rules.RuleInfo{
 	{ID: RuleProfile, Severity: rules.Warning, Description: "The profile (BT-24) is unknown: the structure is checked against the EXTENDED schema, the most permissive."},
 	{ID: RuleRoot, Severity: rules.Error, Description: "The root element shall be rsm:CrossIndustryInvoice (CII), or Invoice or CreditNote (UBL 2.1)."},
 	{ID: RuleNamespace, Severity: rules.Error, Description: "Each element shall be in the namespace defined by the schema (rsm, ram, udt or qdt in CII; cac, cbc or ext in UBL)."},
-	{ID: RuleUnexpected, Severity: rules.Error, Description: "Each element shall be allowed in its parent by the schema (of the profile, for CII)."},
+	{ID: RuleUnexpected, Severity: rules.Error, Description: "Each element shall be allowed in its parent by the schema (for CII, the schema of the profile; the CII D16B schema for XRECHNUNG)."},
 	{ID: RuleOrder, Severity: rules.Error, Description: "Child elements shall appear in the order defined by the schema."},
 	{ID: RuleMissing, Severity: rules.Error, Description: "Elements required by the schema (minOccurs > 0) shall be present."},
 	{ID: RuleCount, Severity: rules.Error, Description: "An element shall not occur more often than allowed by the schema (maxOccurs)."},
 	{ID: RuleAttribute, Severity: rules.Error, Description: "Only the attributes declared by the schema are allowed."},
 	{ID: RuleAttributeMissing, Severity: rules.Error, Description: "Attributes required by the schema shall be present."},
-	{ID: RuleType, Severity: rules.Error, Description: "Element and attribute values shall match their simple type (xs:decimal, xs:boolean, xs:base64Binary, xs:date, xs:time, xs:language, enumerations, lengths, patterns)."},
+	{ID: RuleType, Severity: rules.Error, Description: "Element and attribute values shall match their simple type (xs:decimal, xs:boolean, xs:base64Binary, xs:date, xs:time, xs:dateTime, xs:language, enumerations, fixed values, lengths, patterns)."},
 	{ID: RuleText, Severity: rules.Error, Description: "Elements whose content is made of elements shall not contain text."},
 }
 
@@ -68,13 +84,14 @@ var Catalog = []rules.RuleInfo{
 type simpleKind uint8
 
 const (
-	kString  simpleKind = iota // xs:string, xs:token and other unconstrained string types
-	kDecimal                   // xs:decimal
-	kInteger                   // xs:integer and its derived types
-	kBoolean                   // xs:boolean
-	kBase64                    // xs:base64Binary
-	kDate                      // xs:date
-	kTime                      // xs:time
+	kString   simpleKind = iota // xs:string, xs:token and other unconstrained string types
+	kDecimal                    // xs:decimal
+	kInteger                    // xs:integer and its derived types
+	kBoolean                    // xs:boolean
+	kBase64                     // xs:base64Binary
+	kDate                       // xs:date
+	kTime                       // xs:time
+	kDateTime                   // xs:dateTime
 )
 
 // contentKind is the content model of a complex type.
@@ -164,11 +181,14 @@ func newTables(ns []string, ts []ctype, ps []particle, as []attribute, fs []face
 }
 
 var (
-	ciiTables = newTables(namespaces[:], types[:], particles[:], attributes[:], facetTable[:], true)
-	ublTables = newTables(ublNamespaces[:], ublTypes[:], ublParticles[:], ublAttributes[:], ublFacetTable[:], false)
+	ciiTables  = newTables(namespaces[:], types[:], particles[:], attributes[:], facetTable[:], true)
+	d16bTables = newTables(d16bNamespaces[:], d16bTypes[:], d16bParticles[:], d16bAttributes[:], d16bFacetTable[:], false)
+	ublTables  = newTables(ublNamespaces[:], ublTypes[:], ublParticles[:], ublAttributes[:], ublFacetTable[:], false)
 )
 
-// profileIndex returns the schema used for an invoice profile.
+// profileIndex returns the Factur-X schema used for an invoice profile. The
+// writer places the elements of an XRECHNUNG invoice by the EN 16931 schema
+// (see Root), whose content models are those of D16B, in the same order.
 func profileIndex(p invoice.Profile) int {
 	switch p {
 	case invoice.ProfileMinimum:
@@ -183,9 +203,24 @@ func profileIndex(p invoice.Profile) int {
 	return pExtended
 }
 
+// ciiSchema returns the schema a CII invoice of profile p is checked
+// against: the tables, the root element and, for the Factur-X tables, the
+// index of the profile.
+func ciiSchema(p invoice.Profile) (*tables, *particle, int) {
+	if p == invoice.ProfileXRechnung {
+		return d16bTables, &d16bRoots[0], 0
+	}
+	i := profileIndex(p)
+	return ciiTables, &roots[i], i
+}
+
 // Version returns the version of the Factur-X schemas the tables were
 // generated from.
 func Version() string { return schemaVersion }
+
+// D16BVersion returns the version of the complete UN/CEFACT CII schema
+// XRECHNUNG invoices are checked against ("D16B").
+func D16BVersion() string { return d16bSchemaVersion }
 
 // UBLVersion returns the version of the UBL schemas the tables were
 // generated from.
@@ -205,7 +240,6 @@ func Check(c *rules.Checker) {
 	if c.Doc.Root == nil {
 		return
 	}
-	p := profileIndex(c.Doc.Profile)
 	if c.Doc.Profile == invoice.ProfileUnknown {
 		at := c.Doc.Context.Find("GuidelineSpecifiedDocumentContextParameter/ID")
 		if at == nil {
@@ -214,17 +248,17 @@ func Check(c *rules.Checker) {
 		c.Fail(RuleProfile, rules.Warning, at,
 			"unknown profile (BT-24 %q): the structure is checked against the EXTENDED schema, the most permissive", c.Doc.SpecificationID())
 	}
-	v := validator{c: c, t: ciiTables, p: p}
-	r := &roots[p]
+	t, r, p := ciiSchema(c.Doc.Profile)
+	v := validator{c: c, t: t, p: p}
 	root := c.Doc.Root
 	if root.Name != r.name {
 		c.Fail(RuleRoot, rules.Error, root, "the root element is %s, expected rsm:%s", display(root), r.name)
 		return
 	}
-	if root.Space != namespaces[r.ns] {
-		c.Fail(RuleNamespace, rules.Error, root, "%s is in namespace %q, expected %q", display(root), root.Space, namespaces[r.ns])
+	if root.Space != t.namespaces[r.ns] {
+		c.Fail(RuleNamespace, rules.Error, root, "%s is in namespace %q, expected %q", display(root), root.Space, t.namespaces[r.ns])
 	}
-	v.element(root, &types[r.typ])
+	v.element(root, &t.types[r.typ])
 }
 
 // checkUBL validates the UBL document root.
@@ -631,6 +665,8 @@ func typeLabel(name string, k simpleKind) string {
 		return "xs:date"
 	case kTime:
 		return "xs:time"
+	case kDateTime:
+		return "xs:dateTime"
 	}
 	return "xs:string"
 }
@@ -694,6 +730,8 @@ func (t *tables) checkValue(s string, k simpleKind, fi uint16) string {
 		ok = validDate(trim(s))
 	case kTime:
 		ok = validTime(trim(s))
+	case kDateTime:
+		ok = validDateTime(trim(s))
 	}
 	if !ok {
 		return "is not a valid"
@@ -864,6 +902,13 @@ func validTZ(s string) bool {
 		return m <= 59 && (h < 14 || h == 14 && m == 0)
 	}
 	return false
+}
+
+// validDateTime reports whether s is an xs:dateTime lexical value: an
+// xs:date without time zone, "T" and an xs:time.
+func validDateTime(s string) bool {
+	date, tm, ok := strings.Cut(s, "T")
+	return ok && len(strings.TrimPrefix(date, "-")) == 10 && validDate(date) && validTime(tm)
 }
 
 // validTime reports whether s is an xs:time lexical value: hh:mm:ss with an

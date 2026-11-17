@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -163,7 +164,7 @@ func TestMarshalStrict(t *testing.T) {
 				"EXT SupplyChainTradeTransaction/ApplicableHeaderTradeSettlement/ApplicableTradeTax/LineTotalBasisAmount",
 				"EXT SupplyChainTradeTransaction/ApplicableHeaderTradeSettlement/SpecifiedTradePaymentTerms/ApplicableTradePaymentDiscountTerms"},
 			[]string{"BG-25", "BT-33", "BT-132", "BG-24"}},
-		{invoice.ProfileXRechnung, []string{"EXT SalesAgent"}, []string{"BG-25"}},
+		{invoice.ProfileXRechnung, []string{"EXT SalesAgent"}, []string{"BG-25", "BG-3"}},
 		{invoice.ProfileBasic,
 			[]string{"BT-33", "BG-6", "BT-11", "BT-14", "BT-15", "BG-24", "BT-17", "BT-18", "BT-82", "BT-85", "BT-86",
 				"BG-18", "BT-114", "BT-7", "BT-132", "BT-155", "BT-154", "BG-32", "BT-158", "BT-159", "BT-128", "BT-133",
@@ -215,6 +216,35 @@ func TestMarshalStrict(t *testing.T) {
 				t.Errorf("non-strict Marshal: %v", err)
 			}
 		})
+	}
+}
+
+// TestMarshalPrecedingInvoices checks that XRECHNUNG keeps a single
+// preceding invoice reference (BG-3), as the CII D16B schema of XRechnung
+// allows, and EN 16931 all of them.
+func TestMarshalPrecedingInvoices(t *testing.T) {
+	inv := fullInvoice()
+	inv.PrecedingInvoices = append(inv.PrecedingInvoices, invoice.DocumentReference{ID: "F-2026-001", IssueDate: dt("2026-10-15")})
+	for _, tc := range []struct {
+		profile invoice.Profile
+		want    []string
+	}{
+		{invoice.ProfileXRechnung, []string{"F-2026-000"}},
+		{invoice.ProfileEN16931, []string{"F-2026-000", "F-2026-001"}},
+	} {
+		back := mustParse(t, mustMarshal(t, inv, &MarshalOptions{Profile: tc.profile}))
+		var got []string
+		for _, r := range back.PrecedingInvoices {
+			got = append(got, r.ID)
+		}
+		if strings.Join(got, " ") != strings.Join(tc.want, " ") {
+			t.Errorf("%s: BG-3 = %v, want %v", tc.profile, got, tc.want)
+		}
+	}
+	_, err := Marshal(inv, &MarshalOptions{Profile: invoice.ProfileXRechnung, Strict: true})
+	var le *LossError
+	if !errors.As(err, &le) || !slices.Contains(le.Terms, "BG-3") {
+		t.Errorf("strict XRECHNUNG: error = %v, want BG-3 lost", err)
 	}
 }
 
