@@ -981,16 +981,25 @@ func TestEmbedTestdata(t *testing.T) {
 	}
 }
 
+// unstructuredPDF tells whether rel, a path relative to FX_CORPUS, is in the
+// unstructured directory of the corpus: plain PDF invoices (RE-E-974-Hetzner,
+// Apache FOP, PDF 1.4) without any embedded file, so without invoice XML.
+func unstructuredPDF(rel string) bool {
+	first, _, _ := strings.Cut(filepath.ToSlash(rel), "/")
+	return first == "unstructured"
+}
+
 // TestCorpus extracts the invoice of every PDF of FX_CORPUS and compares it
 // with the reference XML of FX_CORPUS_XML (same relative path, .xml), when
 // present. Some references lack the final end of line of the attachment.
+// The PDFs of the unstructured directory have no invoice: ErrNoInvoice.
 func TestCorpus(t *testing.T) {
 	root := os.Getenv("FX_CORPUS")
 	if root == "" {
 		t.Skip("FX_CORPUS not set")
 	}
 	refs := os.Getenv("FX_CORPUS_XML")
-	var total, compared int
+	var total, unstructured, compared int
 	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.EqualFold(filepath.Ext(p), ".pdf") {
 			return err
@@ -1007,6 +1016,13 @@ func TestCorpus(t *testing.T) {
 			return nil
 		}
 		_, x, st, err := c.invoice()
+		if unstructuredPDF(rel) {
+			unstructured++
+			if !errors.Is(err, ErrNoInvoice) {
+				t.Errorf("%s: unstructured PDF, want ErrNoInvoice, got %d bytes and error %v", rel, len(x), err)
+			}
+			return nil
+		}
 		if err != nil {
 			t.Errorf("%s: %v", rel, err)
 			return nil
@@ -1038,5 +1054,5 @@ func TestCorpus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("%d PDFs, %d compared with a reference", total, compared)
+	t.Logf("%d PDFs (%d unstructured), %d compared with a reference", total, unstructured, compared)
 }
