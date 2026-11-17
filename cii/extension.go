@@ -4,8 +4,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ritoon/factur-x/internal/xmltree"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/internal/xmltree"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 // This file holds the serialization of the extensions: the elements of a

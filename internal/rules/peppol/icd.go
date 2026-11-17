@@ -3,7 +3,7 @@ package peppol
 import (
 	"regexp"
 
-	"github.com/ritoon/factur-x/internal/xmltree"
+	"github.com/ritoon/zerechnung/internal/xmltree"
 )
 
 // identifier checks a ram:URIID, ram:ID or ram:GlobalID against the format

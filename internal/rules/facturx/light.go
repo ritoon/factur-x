@@ -4,10 +4,10 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/ritoon/factur-x/internal/codes"
-	"github.com/ritoon/factur-x/internal/rules"
-	"github.com/ritoon/factur-x/internal/xmltree"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/internal/codes"
+	"github.com/ritoon/zerechnung/internal/rules"
+	"github.com/ritoon/zerechnung/internal/xmltree"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 // This file holds the rules of the MINIMUM and BASIC WL schematrons. Each

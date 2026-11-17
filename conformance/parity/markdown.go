@@ -111,7 +111,7 @@ func markdown(all []comparison, unused []string) string {
 	}
 	sort.Strings(names)
 	if len(names) > 0 {
-		b.WriteString("\n### Cas négatifs officiels\n\nFactures invalides à dessein : dossiers `fail` du corpus ZUGFeRD et exemple `not_validating` de `XML-Rechnung/UBL`. Erreurs levées, parmi les règles comparées.\n\n| Facture | factur-x |")
+		b.WriteString("\n### Cas négatifs officiels\n\nFactures invalides à dessein : dossiers `fail` du corpus ZUGFeRD et exemple `not_validating` de `XML-Rechnung/UBL`. Erreurs levées, parmi les règles comparées.\n\n| Facture | ZeRechnung |")
 		for _, ref := range references {
 			fmt.Fprintf(&b, " %s |", ref.Key)
 		}
@@ -159,7 +159,7 @@ func markdown(all []comparison, unused []string) string {
 			unexpectedLines = append(unexpectedLines, fmt.Sprintf("| %s | `%s` | %s |", c.Reference, strings.TrimPrefix(c.Invoice, "corpus/"), strings.Join(ds, " ")))
 		}
 	}
-	const legend = "`+` : erreur levée par factur-x seul ; `-` : erreur levée par la référence seule ; entre parenthèses, le niveau auquel l'autre côté lève la règle quand ce n'est pas une erreur.\n\n"
+	const legend = "`+` : erreur levée par ZeRechnung seul ; `-` : erreur levée par la référence seule ; entre parenthèses, le niveau auquel l'autre côté lève la règle quand ce n'est pas une erreur.\n\n"
 	if len(knownLines) > 0 {
 		b.WriteString("\n### Écarts justifiés\n\n" + legend + "| Référence | Facture | Écart | Raison |\n|---|---|---|---|\n")
 		b.WriteString(strings.Join(knownLines, "\n") + "\n")

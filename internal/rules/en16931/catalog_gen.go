@@ -9,7 +9,7 @@
 
 package en16931
 
-import "github.com/ritoon/factur-x/internal/rules"
+import "github.com/ritoon/zerechnung/internal/rules"
 
 // Release is the release of the EN 16931 validation artefacts the rules
 // implement.

@@ -41,7 +41,7 @@ jobs:
         # such as the rule sets exercised through package validate.
         run: go test -race -coverpkg=./... -coverprofile=coverage.out ./...
       - name: Build the command
-        run: go build ./cmd/facturx
+        run: go build ./cmd/zerechnung
       - name: Upload the coverage to Codecov
         if: matrix.go == 'stable'
         uses: codecov/codecov-action@v7

@@ -1,8 +1,8 @@
 package en16931
 
 import (
-	"github.com/ritoon/factur-x/internal/xmltree"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/internal/xmltree"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 // VAT category rules: BR-S, BR-Z, BR-E, BR-AE, BR-IC (K), BR-G, BR-O, BR-IP

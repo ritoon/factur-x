@@ -10,7 +10,7 @@
 
 package en16931
 
-import "github.com/ritoon/factur-x/internal/rules"
+import "github.com/ritoon/zerechnung/internal/rules"
 
 // CTCFRRelease is the release of the FNFE-MPE France_RFE package whose
 // EXTENDED-CTC-FR syntax rules the package implements.

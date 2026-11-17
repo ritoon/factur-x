@@ -1,8 +1,8 @@
 package fr
 
 import (
-	"github.com/ritoon/factur-x/internal/rules"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/internal/rules"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 // Identifiers of the profile checks of the French reform. The FNFE-MPE

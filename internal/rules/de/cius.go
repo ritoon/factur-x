@@ -3,8 +3,8 @@ package de
 import (
 	"strings"
 
-	"github.com/ritoon/factur-x/internal/rules"
-	"github.com/ritoon/factur-x/internal/xmltree"
+	"github.com/ritoon/zerechnung/internal/rules"
+	"github.com/ritoon/zerechnung/internal/xmltree"
 )
 
 // Rules of the pattern cii-pattern: the XRechnung CIUS.

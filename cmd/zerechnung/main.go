@@ -1,13 +1,13 @@
-// Command facturx reads, validates and creates Factur-X / ZUGFeRD /
+// Command zerechnung reads, validates and creates Factur-X / ZUGFeRD /
 // XRechnung invoices. validate and json also accept a CII or UBL 2.1 XML
 // invoice, whose syntax is detected from the root element.
 //
-//	facturx extract [-o out.xml] invoice.pdf
-//	facturx info invoice.pdf
-//	facturx validate [-fr] [-de] [-peppol] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-json] invoice.pdf|invoice.xml
-//	facturx embed -xml invoice.xml [-profile p] [-attach file]... [-o out.pdf] input.pdf
-//	facturx json invoice.pdf|invoice.xml
-//	facturx rules [-fr] [-de] [-choruspro] [-peppol]
+//	zerechnung extract [-o out.xml] invoice.pdf
+//	zerechnung info invoice.pdf
+//	zerechnung validate [-fr] [-de] [-peppol] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-json] invoice.pdf|invoice.xml
+//	zerechnung embed -xml invoice.xml [-profile p] [-attach file]... [-o out.pdf] input.pdf
+//	zerechnung json invoice.pdf|invoice.xml
+//	zerechnung rules [-fr] [-de] [-choruspro] [-peppol]
 //
 // validate exits with status 1 when the invoice has errors.
 package main
@@ -24,24 +24,24 @@ import (
 	"strings"
 	"time"
 
-	facturx "github.com/ritoon/factur-x"
-	"github.com/ritoon/factur-x/cii"
-	"github.com/ritoon/factur-x/internal/xmltree"
-	"github.com/ritoon/factur-x/invoice"
-	"github.com/ritoon/factur-x/ubl"
-	"github.com/ritoon/factur-x/validate"
+	"github.com/ritoon/zerechnung"
+	"github.com/ritoon/zerechnung/cii"
+	"github.com/ritoon/zerechnung/internal/xmltree"
+	"github.com/ritoon/zerechnung/invoice"
+	"github.com/ritoon/zerechnung/ubl"
+	"github.com/ritoon/zerechnung/validate"
 )
 
-const usage = `facturx reads, validates and creates Factur-X / ZUGFeRD / XRechnung invoices.
+const usage = `zerechnung reads, validates and creates Factur-X / ZUGFeRD / XRechnung invoices.
 validate and json also accept an XML invoice in CII or UBL 2.1 syntax.
 
 Usage:
-  facturx extract [-o out.xml] invoice.pdf
-  facturx info invoice.pdf
-  facturx validate [-fr] [-de] [-peppol] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-json] invoice.pdf|invoice.xml
-  facturx embed -xml invoice.xml [-profile p] [-attach file]... [-o out.pdf] input.pdf
-  facturx json invoice.pdf|invoice.xml
-  facturx rules [-fr] [-de] [-choruspro] [-peppol]
+  zerechnung extract [-o out.xml] invoice.pdf
+  zerechnung info invoice.pdf
+  zerechnung validate [-fr] [-de] [-peppol] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-json] invoice.pdf|invoice.xml
+  zerechnung embed -xml invoice.xml [-profile p] [-attach file]... [-o out.pdf] input.pdf
+  zerechnung json invoice.pdf|invoice.xml
+  zerechnung rules [-fr] [-de] [-choruspro] [-peppol]
 
 Profiles: minimum, basicwl, basic, en16931, extended, xrechnung, extended-ctc-fr, peppol.
 `
@@ -71,11 +71,11 @@ func main() {
 		fmt.Print(usage)
 		return
 	default:
-		fmt.Fprintf(os.Stderr, "facturx: unknown command %q\n\n%s", cmd, usage)
+		fmt.Fprintf(os.Stderr, "zerechnung: unknown command %q\n\n%s", cmd, usage)
 		os.Exit(2)
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "facturx:", err)
+		fmt.Fprintln(os.Stderr, "zerechnung:", err)
 		os.Exit(2)
 	}
 	os.Exit(code)
@@ -118,7 +118,7 @@ func extract(args []string) error {
 	if err != nil {
 		return err
 	}
-	att, err := facturx.Extract(data)
+	att, err := zerechnung.Extract(data)
 	if err != nil {
 		return err
 	}
@@ -131,7 +131,7 @@ func info(args []string) error {
 	if err != nil {
 		return err
 	}
-	att, err := facturx.Extract(data)
+	att, err := zerechnung.Extract(data)
 	if err != nil {
 		return err
 	}
@@ -207,7 +207,7 @@ func validateCmd(args []string, w io.Writer) (int, error) {
 	opts.PublicBuyer = validate.PublicBuyer{ServiceCodeRequired: *serviceRequired, EngagementRequired: *engagementRequired}
 	var r *validate.Report
 	if isPDF(data) {
-		r, _, err = facturx.Check(data, opts)
+		r, _, err = zerechnung.Check(data, opts)
 		if err != nil {
 			return 0, err
 		}
@@ -266,20 +266,20 @@ func embed(args []string) error {
 	if err != nil {
 		return err
 	}
-	opts := &facturx.EmbedOptions{Relationship: *rel}
+	opts := &zerechnung.EmbedOptions{Relationship: *rel}
 	for _, p := range attach {
 		data, err := os.ReadFile(p)
 		if err != nil {
 			return err
 		}
-		opts.Attachments = append(opts.Attachments, facturx.File{Name: filepath.Base(p), Data: data})
+		opts.Attachments = append(opts.Attachments, zerechnung.File{Name: filepath.Base(p), Data: data})
 	}
 	if *profile != "" {
 		if opts.Profile = invoice.ParseProfile(*profile); opts.Profile == invoice.ProfileUnknown {
 			return fmt.Errorf("unknown profile %q", *profile)
 		}
 	}
-	res, err := facturx.Embed(pdf, xml, opts)
+	res, err := zerechnung.Embed(pdf, xml, opts)
 	if err != nil {
 		return err
 	}
@@ -293,7 +293,7 @@ func jsonCmd(args []string) error {
 		return err
 	}
 	if isPDF(data) {
-		att, err := facturx.Extract(data)
+		att, err := zerechnung.Extract(data)
 		if err != nil {
 			return err
 		}
@@ -304,7 +304,7 @@ func jsonCmd(args []string) error {
 		return err
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "facturx: warning:", err)
+		fmt.Fprintln(os.Stderr, "zerechnung: warning:", err)
 	}
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")

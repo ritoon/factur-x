@@ -1,7 +1,7 @@
 package cii
 
 import (
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 var (

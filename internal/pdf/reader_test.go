@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ritoon/factur-x/internal/pdf"
-	"github.com/ritoon/factur-x/internal/pdf/pdftest"
+	"github.com/ritoon/zerechnung/internal/pdf"
+	"github.com/ritoon/zerechnung/internal/pdf/pdftest"
 )
 
 // sample builds a document with a catalog, a page tree, an info dictionary

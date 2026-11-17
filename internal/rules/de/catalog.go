@@ -1,6 +1,6 @@
 package de
 
-import "github.com/ritoon/factur-x/internal/rules"
+import "github.com/ritoon/zerechnung/internal/rules"
 
 // Catalog lists the 52 assertions of the XRechnung CII schematron, in the
 // order of the schematron, with the severity of their flag. Check applies

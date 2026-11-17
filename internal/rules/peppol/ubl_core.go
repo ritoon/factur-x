@@ -4,7 +4,7 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/ritoon/factur-x/internal/xmltree"
+	"github.com/ritoon/zerechnung/internal/xmltree"
 )
 
 // Rules of the first patterns of the UBL schematron: empty elements

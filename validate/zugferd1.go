@@ -5,9 +5,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/ritoon/factur-x/cii"
-	"github.com/ritoon/factur-x/internal/xmltree"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/cii"
+	"github.com/ritoon/zerechnung/internal/xmltree"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 // ZUGFeRD 1.0 invoices get a minimal structural check. ZUGFeRD 1.0 predates

@@ -1,7 +1,7 @@
 package en16931
 
 import (
-	"github.com/ritoon/factur-x/internal/xmltree"
+	"github.com/ritoon/zerechnung/internal/xmltree"
 )
 
 // walk visits n and its descendants in document order. t is the trie node of

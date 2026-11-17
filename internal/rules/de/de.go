@@ -102,8 +102,8 @@
 package de
 
 import (
-	"github.com/ritoon/factur-x/internal/rules"
-	"github.com/ritoon/factur-x/internal/xmltree"
+	"github.com/ritoon/zerechnung/internal/rules"
+	"github.com/ritoon/zerechnung/internal/xmltree"
 )
 
 // Specification identifiers (BT-24) of XRechnung 3.0.

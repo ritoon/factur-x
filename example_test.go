@@ -1,4 +1,4 @@
-package facturx_test
+package zerechnung_test
 
 import (
 	"bytes"
@@ -7,10 +7,10 @@ import (
 	"os"
 	"time"
 
-	facturx "github.com/ritoon/factur-x"
-	"github.com/ritoon/factur-x/cii"
-	"github.com/ritoon/factur-x/invoice"
-	"github.com/ritoon/factur-x/validate"
+	"github.com/ritoon/zerechnung"
+	"github.com/ritoon/zerechnung/cii"
+	"github.com/ritoon/zerechnung/invoice"
+	"github.com/ritoon/zerechnung/validate"
 )
 
 // newInvoice builds a French B2B invoice for services at the EN 16931
@@ -73,7 +73,7 @@ func Example() {
 	}
 
 	inv := newInvoice()
-	pdf, err := facturx.Create(host, inv, &facturx.CreateOptions{
+	pdf, err := zerechnung.Create(host, inv, &zerechnung.CreateOptions{
 		Calculate: true, // line amounts, totals and VAT breakdown
 		Validate:  &validate.Options{Rules: validate.Default | validate.France},
 	})
@@ -81,14 +81,14 @@ func Example() {
 		log.Fatal(err)
 	}
 
-	back, att, err := facturx.Read(pdf)
+	back, att, err := zerechnung.Read(pdf)
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println(att.Filename, att.Relationship, att.Metadata.ConformanceLevel)
 	fmt.Println(back.Number, back.Totals.TaxBasisTotal, back.Totals.TaxTotal, back.Totals.DuePayable, back.Currency)
 
-	report, _, err := facturx.Check(pdf, &validate.Options{Rules: validate.Default | validate.France})
+	report, _, err := zerechnung.Check(pdf, &validate.Options{Rules: validate.Default | validate.France})
 	if err != nil {
 		log.Fatal(err)
 	}

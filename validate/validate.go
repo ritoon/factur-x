@@ -31,18 +31,18 @@
 package validate
 
 import (
-	"github.com/ritoon/factur-x/cii"
-	"github.com/ritoon/factur-x/internal/rules"
-	"github.com/ritoon/factur-x/internal/rules/choruspro"
-	"github.com/ritoon/factur-x/internal/rules/de"
-	"github.com/ritoon/factur-x/internal/rules/en16931"
-	"github.com/ritoon/factur-x/internal/rules/facturx"
-	"github.com/ritoon/factur-x/internal/rules/fr"
-	"github.com/ritoon/factur-x/internal/rules/peppol"
-	"github.com/ritoon/factur-x/internal/rules/ubl"
-	"github.com/ritoon/factur-x/internal/schema"
-	"github.com/ritoon/factur-x/internal/xmltree"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/cii"
+	"github.com/ritoon/zerechnung/internal/rules"
+	"github.com/ritoon/zerechnung/internal/rules/choruspro"
+	"github.com/ritoon/zerechnung/internal/rules/de"
+	"github.com/ritoon/zerechnung/internal/rules/en16931"
+	"github.com/ritoon/zerechnung/internal/rules/facturx"
+	"github.com/ritoon/zerechnung/internal/rules/fr"
+	"github.com/ritoon/zerechnung/internal/rules/peppol"
+	"github.com/ritoon/zerechnung/internal/rules/ubl"
+	"github.com/ritoon/zerechnung/internal/schema"
+	"github.com/ritoon/zerechnung/internal/xmltree"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 // Finding is a rule violation.

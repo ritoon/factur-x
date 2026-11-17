@@ -1,8 +1,8 @@
 package en16931
 
 import (
-	"github.com/ritoon/factur-x/internal/xmltree"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/internal/xmltree"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 // Rules of the pattern EN16931-CII-Model, except the VAT category rules

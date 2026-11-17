@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ritoon/factur-x/internal/rules"
-	"github.com/ritoon/factur-x/internal/xmltree"
+	"github.com/ritoon/zerechnung/internal/rules"
+	"github.com/ritoon/zerechnung/internal/xmltree"
 )
 
 // checkUBLData parses a UBL document and runs Check on it.

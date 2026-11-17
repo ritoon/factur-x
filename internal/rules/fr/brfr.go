@@ -3,7 +3,7 @@ package fr
 import (
 	"strings"
 
-	"github.com/ritoon/factur-x/internal/xmltree"
+	"github.com/ritoon/zerechnung/internal/xmltree"
 )
 
 // Code lists of the schematron functions.

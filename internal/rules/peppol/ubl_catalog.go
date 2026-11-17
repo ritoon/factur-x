@@ -1,6 +1,6 @@
 package peppol
 
-import "github.com/ritoon/factur-x/internal/rules"
+import "github.com/ritoon/zerechnung/internal/rules"
 
 // UBLCatalog lists the 165 assertions of PEPPOL-EN16931-UBL.sch, in the
 // order of the schematron, with the severity of their flag. The descriptions

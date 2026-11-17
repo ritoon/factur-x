@@ -4,8 +4,8 @@ import (
 	"iter"
 	"strings"
 
-	"github.com/ritoon/factur-x/internal/rules"
-	"github.com/ritoon/factur-x/internal/xmltree"
+	"github.com/ritoon/zerechnung/internal/rules"
+	"github.com/ritoon/zerechnung/internal/xmltree"
 )
 
 // The rules of PEPPOL-EN16931-UBL.sch, checked on the UBL document itself.

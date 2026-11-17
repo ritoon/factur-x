@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 const zf1Invoice = "../testdata/ZUGFeRD_1p0_COMFORT_SEPA_Prenotification.xml" // ZUGFeRD 1.0 COMFORT, seller in Germany
