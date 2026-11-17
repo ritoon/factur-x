@@ -3,8 +3,8 @@ package cii
 import "github.com/ritoon/factur-x/invoice"
 
 // level is the data set of a profile: each level carries the elements of the
-// levels below it. XRECHNUNG uses the EN 16931 set, EXTENDED-CTC-FR the
-// EXTENDED set.
+// levels below it. XRECHNUNG and PEPPOL use the EN 16931 set, EXTENDED-CTC-FR
+// the EXTENDED set.
 type level uint8
 
 const (

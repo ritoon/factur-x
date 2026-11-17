@@ -1,8 +1,8 @@
 // Package validate checks CII invoices against the XML schema of their
 // Factur-X profile, the EN 16931 business rules, the Factur-X profile rules,
 // and optionally the French (BR-FR) and German (BR-DE) rules, the profiles
-// that France and Germany admit, and the checks of Chorus Pro for French B2G
-// invoices.
+// that France and Germany admit, the checks of Chorus Pro for French B2G
+// invoices, and the Peppol BIS Billing 3.0 rules.
 //
 // Validation never stops at the first problem: every finding is collected in
 // a Report. A document that is not well-formed XML, or not a CII invoice,
@@ -16,6 +16,7 @@ import (
 	"github.com/ritoon/factur-x/internal/rules/en16931"
 	"github.com/ritoon/factur-x/internal/rules/facturx"
 	"github.com/ritoon/factur-x/internal/rules/fr"
+	"github.com/ritoon/factur-x/internal/rules/peppol"
 	"github.com/ritoon/factur-x/internal/schema"
 	"github.com/ritoon/factur-x/internal/xmltree"
 	"github.com/ritoon/factur-x/invoice"
@@ -50,6 +51,7 @@ const (
 	SourcePDF     = rules.SourcePDF
 
 	SourceChorusPro = rules.SourceChorusPro
+	SourcePeppol    = rules.SourcePeppol
 )
 
 // RuleSet selects groups of rules.
@@ -64,9 +66,12 @@ const (
 	Germany                            // German rules BR-DE (XRechnung)
 	GermanyProfile                     // profiles the BMF accepts as e-invoices (DE-PROFILE-01: not MINIMUM nor BASIC WL)
 	ChorusPro                          // French B2G checks for Chorus Pro (CPRO-*), see Options.PublicBuyer
+	Peppol                             // Peppol BIS Billing 3.0 rules (PEPPOL-*) and their national rules (NO, DK, IT, SE, NL)
 
 	// Default is the set used when Options.Rules is zero: schema, EN 16931
-	// and profile rules, plus the German rules for XRECHNUNG invoices.
+	// and profile rules, plus the German rules for XRECHNUNG invoices and
+	// the Peppol rules for invoices whose BT-24 is the Peppol BIS Billing
+	// 3.0 identifier.
 	Default = Schema | EN16931 | FacturX
 )
 
@@ -78,9 +83,11 @@ type Options struct {
 	Rules RuleSet
 	// Auto adds the national rules of the seller's country (BT-40): the
 	// French rules (France) for a seller in France, the BMF profile check
-	// (GermanyProfile) for a seller in Germany. The German rules BR-DE need
-	// no option: they apply to XRECHNUNG invoices, which declare themselves
-	// in BT-24.
+	// (GermanyProfile) for a seller in Germany. The German rules BR-DE and
+	// the Peppol rules need no option: they apply to XRECHNUNG and Peppol
+	// invoices, which declare themselves in BT-24. Auto never adds the
+	// Peppol rules otherwise: most Factur-X and ZUGFeRD invoices do not meet
+	// them (no electronic address, no buyer reference).
 	Auto bool
 	// RejectBasicWL makes the French rules report the profile BASIC WL as an
 	// error (FR-PROFILE-03). The reform admits BASIC WL for now, and no end
@@ -154,6 +161,7 @@ func Tree(root *xmltree.Node, opts *Options) *Report {
 			EngagementRequired:  opts.PublicBuyer.EngagementRequired,
 		})
 	})
+	run(Peppol, SourcePeppol, peppol.Check)
 	return r
 }
 
@@ -162,8 +170,11 @@ func RulesFor(doc *rules.Doc, opts *Options) RuleSet {
 	set := opts.Rules
 	if set == 0 {
 		set = Default
-		if doc.Profile == invoice.ProfileXRechnung {
+		switch doc.Profile {
+		case invoice.ProfileXRechnung:
 			set |= Germany
+		case invoice.ProfilePeppol:
+			set |= Peppol
 		}
 	}
 	if opts.Auto {
@@ -193,5 +204,6 @@ func Catalog(set RuleSet) []RuleInfo {
 	add(Germany, de.Catalog)
 	add(GermanyProfile, de.ProfileCatalog)
 	add(ChorusPro, choruspro.Catalog)
+	add(Peppol, peppol.Catalog)
 	return out
 }

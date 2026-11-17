@@ -136,7 +136,7 @@ func (k *checker) profile() {
 		if p, fixed := legacyProfile(urn); p != invoice.ProfileUnknown {
 			k.fail("FX-PROFILE-03", loc, "the specification identifier (BT-24) %q is an obsolete spelling of %q (profile %s); current validators do not recognize it", urn, fixed, p)
 		} else {
-			k.fail("FX-PROFILE-02", loc, "the specification identifier (BT-24) %q is not a known Factur-X, ZUGFeRD or XRechnung identifier (Factur-X profiles: %s, %s, %s, %s, %s)",
+			k.fail("FX-PROFILE-02", loc, "the specification identifier (BT-24) %q is not a known Factur-X, ZUGFeRD, XRechnung or Peppol identifier (Factur-X profiles: %s, %s, %s, %s, %s)",
 				urn, invoice.URNMinimum, invoice.URNBasicWL, invoice.URNBasic, invoice.URNEN16931, invoice.URNExtended)
 		}
 		return
@@ -150,11 +150,11 @@ func (k *checker) profile() {
 }
 
 // specializes reports whether invoices declaring profile declared conform to
-// profile checked: EXTENDED-CTC-FR is a subset of EXTENDED and XRECHNUNG a
-// CIUS of EN 16931.
+// profile checked: EXTENDED-CTC-FR is a subset of EXTENDED, XRECHNUNG and
+// PEPPOL are CIUS of EN 16931.
 func specializes(declared, checked invoice.Profile) bool {
 	return declared == invoice.ProfileExtendedCTCFR && checked == invoice.ProfileExtended ||
-		declared == invoice.ProfileXRechnung && checked == invoice.ProfileEN16931
+		(declared == invoice.ProfileXRechnung || declared == invoice.ProfilePeppol) && checked == invoice.ProfileEN16931
 }
 
 // facturXProfile reports whether p is one of the five Factur-X profiles,

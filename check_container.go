@@ -425,11 +425,14 @@ func xmlProfile(root, id string) (p invoice.Profile, zf1 bool) {
 	return invoice.ProfileFromURN(id), false
 }
 
-// sameLevel maps EXTENDED-CTC-FR to EXTENDED: the Factur-X specification
-// defines no XMP ConformanceLevel of its own for it.
+// sameLevel maps EXTENDED-CTC-FR to EXTENDED and PEPPOL to EN 16931: the
+// Factur-X specification defines no XMP ConformanceLevel of their own.
 func sameLevel(p invoice.Profile) invoice.Profile {
-	if p == invoice.ProfileExtendedCTCFR {
+	switch p {
+	case invoice.ProfileExtendedCTCFR:
 		return invoice.ProfileExtended
+	case invoice.ProfilePeppol:
+		return invoice.ProfileEN16931
 	}
 	return p
 }

@@ -61,8 +61,8 @@ func (e *LossError) Error() string {
 // Marshal writes inv as a CII document for the profile chosen in opts.
 //
 // Only the elements that the target profile allows are written, in the order
-// of the profile's XML schema (Factur-X 1.09.2; XRECHNUNG uses the EN 16931
-// schema and EXTENDED-CTC-FR the EXTENDED one). The specification identifier
+// of the profile's XML schema (Factur-X 1.09.2; XRECHNUNG and PEPPOL use the
+// EN 16931 schema and EXTENDED-CTC-FR the EXTENDED one). The specification identifier
 // BT-24 is inv.SpecificationID when it identifies the target profile (this
 // keeps, for example, the XRechnung version), the target's URN otherwise.
 //
