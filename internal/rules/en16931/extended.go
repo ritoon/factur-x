@@ -53,6 +53,56 @@ var extendedRules = func() map[string]bool {
 	return m
 }()
 
+// basicSyntax and en16931Syntax are the CII syntax rules that the Factur-X
+// 1.09.2 schematrons of BASIC and EN 16931 keep, read from their rule
+// identifiers (CII-SR-471 there is CII-SR-472 of the CEN rules, and their
+// CII-SR-472 no longer exists in them), plus CII-DT-097: the schematron of
+// EXTENDED keeps this check of the dates in format 102, those of BASIC and
+// EN 16931 do not, and this package keeps it for the three profiles. The
+// other CEN syntax rules restrict CII to the EN 16931 data set: the XML
+// schema of the profile does it for the elements, and the Factur-X
+// schematrons admit the attributes that the CII-DT rules forbid, such as a
+// currencyID on an amount other than the total VAT amount (CII-DT-031).
+var (
+	basicSyntax = map[string]bool{
+		"CII-SR-463": true, "CII-SR-464": true, "CII-SR-465": true, "CII-SR-466": true,
+		"CII-SR-467": true, "CII-SR-468": true, "CII-SR-469": true, "CII-SR-470": true,
+		"CII-SR-472": true, "CII-SR-473": true, "CII-DT-097": true,
+	}
+	en16931Syntax = func() map[string]bool {
+		m := map[string]bool{"CII-SR-474": true, "CII-SR-475": true, "CII-SR-476": true}
+		for id := range basicSyntax {
+			m[id] = true
+		}
+		return m
+	}()
+)
+
+// facturXSyntax reports whether the CII syntax rule id is kept by the
+// Factur-X schematron of the profile of mode m (modeBasic or
+// modeEN16931FX).
+func facturXSyntax(m mode, id string) bool {
+	if m == modeBasic {
+		return basicSyntax[id]
+	}
+	return en16931Syntax[id]
+}
+
+// notReported, as a level of facturXLevels, drops the rule.
+const notReported rules.Severity = 0
+
+// facturXLevels are the severities of the Factur-X 1.09.2 schematrons of
+// BASIC, EN 16931 and EXTENDED that differ from the CEN ones: CII-SR-465 and
+// CII-SR-466 (a contact with both a person and a department name) carry no
+// flag there and are fatal, where the CEN marks them as warnings; the test
+// of CII-SR-464 there cannot fail (it asserts "A or B or (not A and not
+// B)"), so the rule is not reported.
+var facturXLevels = map[string]rules.Severity{
+	"CII-SR-464": notReported,
+	"CII-SR-465": rules.Error,
+	"CII-SR-466": rules.Error,
+}
+
 // xrechnungLevels are the severities that the KoSIT validator configuration
 // for XRechnung 3.0.2 (scenarios.xml, customLevel) gives to CEN rules, per
 // scenario: XRechnung, XRechnung extension and XRechnung CVD.

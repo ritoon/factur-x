@@ -118,9 +118,6 @@ var corpusXMLErrors = map[string]string{
 	"zugferd_2p1_EN16931_Reisekostenabrechnung_XRechnung_embedded.xml":    "CII-SR-465",
 	// EAS code 9930 used as an ICD scheme for the seller identifier.
 	"MustangGnuaccountingBeispielRE-20190610_507.xml": "BR-CL-11",
-	// Unknown specification identifier, hence the full CEN rules, and
-	// currencyID attributes on amounts other than BT-110 and BT-111.
-	"Avoir_FR_type381_BASIC.xml": "CII-DT-031",
 }
 
 // TestCorpusXML checks the XML invoices extracted from the PDF corpus: the

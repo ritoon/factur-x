@@ -4,7 +4,7 @@
 //
 //	facturx extract [-o out.xml] invoice.pdf
 //	facturx info invoice.pdf
-//	facturx validate [-fr] [-de] [-peppol] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-json] invoice.pdf|invoice.xml
+//	facturx validate [-fr] [-de] [-peppol] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-hybrid] [-json] invoice.pdf|invoice.xml
 //	facturx embed -xml invoice.xml [-profile p] [-attach file]... [-o out.pdf] input.pdf
 //	facturx json invoice.pdf|invoice.xml
 //	facturx rules [-fr] [-de] [-choruspro] [-peppol]
@@ -38,7 +38,7 @@ validate and json also accept an XML invoice in CII or UBL 2.1 syntax.
 Usage:
   facturx extract [-o out.xml] invoice.pdf
   facturx info invoice.pdf
-  facturx validate [-fr] [-de] [-peppol] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-json] invoice.pdf|invoice.xml
+  facturx validate [-fr] [-de] [-peppol] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-hybrid] [-json] invoice.pdf|invoice.xml
   facturx embed -xml invoice.xml [-profile p] [-attach file]... [-o out.pdf] input.pdf
   facturx json invoice.pdf|invoice.xml
   facturx rules [-fr] [-de] [-choruspro] [-peppol]
@@ -178,12 +178,13 @@ func validateCmd(args []string, w io.Writer) (int, error) {
 	engagementRequired := fs.Bool("engagement-required", false, "with -choruspro: the public buyer requires an engagement number (BT-13)")
 	pep := fs.Bool("peppol", false, "apply the Peppol BIS Billing 3.0 rules (applied anyway when BT-24 is the Peppol identifier)")
 	profile := fs.String("profile", "", "validate against this profile instead of BT-24")
+	hybrid := fs.Bool("hybrid", false, "the XML is the invoice of a Factur-X PDF: check an EN 16931 invoice against the Factur-X schematron (always the case for a PDF)")
 	asJSON := fs.Bool("json", false, "print the report as JSON")
 	_, data, err := oneFile(fs, args)
 	if err != nil {
 		return 0, err
 	}
-	opts := &validate.Options{Auto: *auto, RejectBasicWL: *rejectBasicWL}
+	opts := &validate.Options{Auto: *auto, RejectBasicWL: *rejectBasicWL, Hybrid: *hybrid}
 	if *profile != "" {
 		if opts.Profile = invoice.ParseProfile(*profile); opts.Profile == invoice.ProfileUnknown {
 			return 0, fmt.Errorf("unknown profile %q", *profile)

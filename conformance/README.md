@@ -23,8 +23,9 @@ Ce dossier mesure l'exactitude du package sur les artefacts officiels, à chaque
 | [OpenPEPPOL/peppol-bis-invoice-3](https://github.com/OpenPEPPOL/peppol-bis-invoice-3) | `3.0.22`, commit `38d693d` | commit | `FX_PEPPOL` |
 | Paquet OASIS [UBL-2.1.zip](https://docs.oasis-open.org/ubl/os-UBL-2.1/UBL-2.1.zip) | 2.1 | SHA-256 | `FX_UBL_ZIP` |
 | XSD Factur-X : BASIC, EN 16931 et EXTENDED du paquet FeRD ZUGFeRD 2.5.2, MINIMUM et BASIC WL du paquet FNFE-MPE 1.09 | 1.09.2 | SHA-256 de chacun des 20 fichiers | `FX_XSD`, `FX_XSD_DIR` |
+| Schematrons Factur-X de BASIC, EN 16931 et EXTENDED et leurs listes de codes (`FACTUR-X_<profil>.sch`, `FACTUR-X_<profil>_codedb.xml`) du paquet FeRD ZUGFeRD 2.5.2 | 1.09.2 | SHA-256 de chacun des 6 fichiers | `FX_FACTURX_SCH` |
 
-FeRD et FNFE-MPE ne distribuent leurs paquets qu'au travers d'un formulaire : les 20 XSD viennent de deux copies publiques de ces paquets sous Apache-2.0 ([LandrixSoftware/validator-configuration-zugferd](https://github.com/LandrixSoftware/validator-configuration-zugferd), [backoffice-plus/e-invoice-validator](https://github.com/backoffice-plus/e-invoice-validator)), à des commits figés. Chaque fichier est vérifié par le SHA-256 du fichier officiel, celui-là même dont `internal/schema/tables_gen.go` a été généré.
+FeRD et FNFE-MPE ne distribuent leurs paquets qu'au travers d'un formulaire : les 20 XSD et les 6 fichiers de schematron viennent de deux copies publiques de ces paquets sous Apache-2.0 ([LandrixSoftware/validator-configuration-zugferd](https://github.com/LandrixSoftware/validator-configuration-zugferd), [backoffice-plus/e-invoice-validator](https://github.com/backoffice-plus/e-invoice-validator)), à des commits figés. Chaque XSD est vérifié par le SHA-256 du fichier officiel, celui-là même dont `internal/schema/tables_gen.go` a été généré. Les schematrons et leurs listes de codes sont ceux que Mustang 2.26.0 embarque (`schematron/ZF_250`) et que contient le paquet officiel, aux fins de ligne près (CRLF dans le paquet et dans Mustang, LF dans la copie git) : leur SHA-256, sur le texte en LF, est vérifié par `fetch.sh` et par le générateur `internal/rules/facturx/gen`, dont `codedb_gen.go` est la sortie.
 
 Les validateurs de référence, téléchargés par `parity.sh` depuis leurs publications GitHub, sont vérifiés de la même façon ; KoSIT s'exécute avec la configuration XRechnung 3.0.2 du 2026-08-31 récupérée par `fetch.sh` :
 
@@ -51,7 +52,7 @@ KoSIT reçoit les factures XML et ne vérifie que celles qu'un scénario de sa c
 Pour chaque facture et chaque référence, l'outil compare les règles levées **en erreur** de part et d'autre, celles qui décident du verdict :
 
 - les règles des schematrons officiels, sous leur identifiant : EN 16931 (BR, BR-CO, BR-CL, BR-DEC, règles par catégorie de TVA, CII-SR, CII-DT, UBL-CR, UBL-SR, UBL-DT), Factur-X (FX-SCH, BR-FXEXT), XRechnung (BR-DE, BR-DEX, BR-TMP) et Peppol (dont les règles que reprennent les schematrons XRechnung) ;
-- les assertions des schematrons Factur-X 1.09.2 qui vérifient une liste de codes avec leurs propres listes (codedb), rapprochées de la règle BR-CL du CEN sur le même élément, et celles sur BT-24, rapprochées de FX-PROFILE (table `equivalents` de [`parity/compare.go`](parity/compare.go)) ;
+- les assertions du schematron Factur-X 1.09.2 d'EN 16931 qui vérifient une liste de codes (codedb), que Mustang applique à un XML EN 16931 seul, rapprochées de la règle BR-CL du CEN sur le même élément, que le package lui applique comme KoSIT, et celles sur BT-24, rapprochées de FX-PROFILE (table `equivalents` de [`parity/compare.go`](parity/compare.go)) ;
 - les erreurs de schéma XSD, dont les messages diffèrent d'un validateur à l'autre, qui comptent pour une seule règle, `SCHEMA`.
 
 Les niveaux sont ceux que donne chaque validateur ; pour KoSIT, ceux que fixe le scénario (`customLevel`, CII-SR-465 en erreur et BR-CL-21 en avertissement pour XRechnung par exemple), comme dans son évaluation du document. Une règle en erreur d'un côté et en avertissement de l'autre est un écart.
@@ -72,7 +73,7 @@ Avec KoSIT, toutes les factures comparées ont les mêmes erreurs.
 Les écarts avec Mustang viennent de différences entre les références elles-mêmes :
 
 - Mustang n'applique pas Peppol BIS 3.0 aux factures UBL Peppol du corpus, ni la configuration KoSIT aux factures XRechnung (niveaux des règles, et XSD CII D16B complet là où Mustang garde le XSD Factur-X EN 16931), et embarque le schematron XRechnung 2.4.0, quand KoSIT et le package appliquent la version 2.6.0 ;
-- Mustang applique aux factures Factur-X les schematrons Factur-X 1.09.2 ; le package leur applique, pour BASIC et EN 16931, les règles CEN 1.3.17, comme KoSIT. Les schematrons Factur-X omettent CII-DT-031, lèvent CII-SR-464 à 466 en erreur et vérifient les listes de codes avec leurs propres listes, que le package n'implémente pas : il signale en avertissement, pour EXTENDED, les codes hors des listes CEN.
+- Mustang applique les schematrons Factur-X 1.09.2 à toute facture CII de profil Factur-X ; le package les applique à BASIC et EXTENDED, et à EN 16931 dans un PDF Factur-X, mais applique à un XML EN 16931 seul les règles CEN 1.3.17, comme KoSIT (voir [Factur-X ou CEN](../README.md#factur-x-ou-cen)).
 
 ### Cas négatifs
 

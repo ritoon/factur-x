@@ -91,6 +91,22 @@ EXTENDED $FERD/4_Factur-X_1.09.2_EXTENDED  Factur-X_1.09.2_EXTENDED$R.xsd  83cef
 EXTENDED $FERD/4_Factur-X_1.09.2_EXTENDED  Factur-X_1.09.2_EXTENDED$U.xsd  c6c9f7b3f36c821999f20d7b7fff30db64112bc7b2a8f132e3d048d859855d00
 EOF
 
+# Factur-X 1.09.2 schematrons of BASIC, EN 16931 and EXTENDED and their code
+# lists (FX_FACTURX_SCH), from the same copy of the FeRD package: the code
+# list assertions of internal/rules/facturx are generated from them, and
+# internal/rules/facturx/gen checks the same sums (line ends normalized to
+# LF; the official package and Mustang 2.26.0 have CRLF).
+while read -r dir name sum; do
+	fetch_file "$DEST/facturx-sch/$name" "$FERD/$dir/$name" "$sum"
+done <<EOF
+2_Factur-X_1.09.2_BASIC     FACTUR-X_BASIC.sch            b2a84cee0e497733bf595c435db18ba720a9f2e16f6741a972667a2f277f6bed
+2_Factur-X_1.09.2_BASIC     FACTUR-X_BASIC_codedb.xml     a150b48359a72e1c1629edddb147d5133aabd03adb6ce8b3d287d0c2a6936d21
+3_Factur-X_1.09.2_EN16931   FACTUR-X_EN16931.sch          ef8c8380b499d1267b2dcf1fa709b45631a77d6d5f220c6cc2ade2fdade59473
+3_Factur-X_1.09.2_EN16931   FACTUR-X_EN16931_codedb.xml   70339a41d71b02bb97683f8eea04acbd764e077a88a446b32860d89c3351b62f
+4_Factur-X_1.09.2_EXTENDED  FACTUR-X_EXTENDED.sch         5b9039e31f86e90f1a34925e84d3fad206efa3ca5639bb98a0cefd3661d3e36a
+4_Factur-X_1.09.2_EXTENDED  FACTUR-X_EXTENDED_codedb.xml  6e23aedbba0e3b32b3b1211d145186193215f56f755201555306c42327e75fbc
+EOF
+
 # Reference XML of the valid PDFs of the corpus (FX_CORPUS_XML), extracted by
 # pdfdetach: the attachment named factur-x.xml, xrechnung.xml or
 # zugferd-invoice.xml (any case), else the only XML attachment. Each file has
@@ -127,6 +143,7 @@ vars=(
 	"FX_UBL_ZIP=$DEST/UBL-2.1.zip"
 	"FX_XSD=$DEST/xsd"
 	"FX_XSD_DIR=$DEST/xsd"
+	"FX_FACTURX_SCH=$DEST/facturx-sch"
 )
 for v in "${vars[@]}"; do
 	printf 'export %q\n' "$v"

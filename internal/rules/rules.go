@@ -193,6 +193,36 @@ type Doc struct {
 	// findings are located in the UBL document. It is nil for a CII invoice.
 	UBL    *xmltree.Node
 	origin map[*xmltree.Node]*xmltree.Node
+
+	// Hybrid tells that the invoice is the XML of a Factur-X or ZUGFeRD
+	// PDF: the Factur-X schematron then applies to the EN 16931 profile too
+	// (see FacturX).
+	Hybrid bool
+}
+
+// FacturX reports whether the invoice is checked against the Factur-X
+// 1.09.2 schematron of its profile rather than against the CEN rules alone.
+//
+// MINIMUM, BASIC WL, BASIC and EXTENDED only exist in Factur-X and ZUGFeRD:
+// their specification identifier (BT-24) says that the invoice is a Factur-X
+// invoice, and their official schematron is the Factur-X one. The
+// identifier of the EN 16931 profile, urn:cen.eu:en16931:2017, is also the
+// one of any CII invoice that follows EN 16931 without a CIUS: a CII
+// invoice that carries it is an EN 16931 invoice, checked against the CEN
+// rules as the KoSIT validator does, unless it is the XML of a Factur-X PDF
+// (Hybrid). EXTENDED-CTC-FR, XRECHNUNG and PEPPOL have their own reference
+// rules, and the UBL syntax has no Factur-X schematron.
+func (d *Doc) FacturX() bool {
+	if d == nil || d.UBL != nil {
+		return false
+	}
+	switch d.Profile {
+	case invoice.ProfileMinimum, invoice.ProfileBasicWL, invoice.ProfileBasic, invoice.ProfileExtended:
+		return true
+	case invoice.ProfileEN16931:
+		return d.Hybrid
+	}
+	return false
 }
 
 // NewDoc wraps the root element of a CII invoice. The profile is read from

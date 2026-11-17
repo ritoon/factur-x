@@ -25,6 +25,17 @@
 // follow them, do not apply, which the warning ZF1-04 says whatever the rule
 // sets.
 //
+// A CII invoice of the BASIC or EXTENDED profile is checked against the
+// Factur-X 1.09.2 schematron of its profile, the reference of these
+// profiles, which only exist in Factur-X and ZUGFeRD: the CEN rules it
+// keeps, with its severities, and its code lists (FX-SCH-A-*). So is an
+// invoice of the EN 16931 profile when it is the XML of a Factur-X PDF
+// (Options.Hybrid, which facturx.Check sets). Otherwise an EN 16931 CII
+// invoice, whose specification identifier urn:cen.eu:en16931:2017 says
+// nothing more than "EN 16931 without a CIUS", is checked against the CEN
+// rules, as the KoSIT validator does. See packages internal/rules/en16931
+// and internal/rules/facturx.
+//
 // Validation never stops at the first problem: every finding is collected in
 // a Report. A document that is not well-formed XML, or neither a CII, a
 // ZUGFeRD 1.0 nor a UBL invoice, gives a report with a single syntax error.
@@ -120,6 +131,15 @@ type Options struct {
 	// date has been published: set it to refuse BASIC WL already, or once
 	// the profile is no longer admitted.
 	RejectBasicWL bool
+	// Hybrid tells that the XML is the invoice of a Factur-X or ZUGFeRD PDF.
+	// An EN 16931 invoice is then checked against the Factur-X 1.09.2
+	// schematron of the EN 16931 profile instead of the CEN rules alone:
+	// its specification identifier (BT-24) does not tell a Factur-X invoice
+	// from a plain EN 16931 CII invoice, the PDF does. facturx.Check and
+	// facturx.Create set it; set it when validating the XML of a Factur-X
+	// PDF extracted by other means. BASIC and EXTENDED invoices are checked
+	// against their Factur-X schematron whatever Hybrid.
+	Hybrid bool
 
 	// PublicBuyer gives the settings of the public buyer in the Chorus Pro
 	// directory, used by the ChorusPro rules.
@@ -164,6 +184,7 @@ func Tree(root *xmltree.Node, opts *Options) *Report {
 	switch {
 	case root.Name == "CrossIndustryInvoice" && root.Space == rules.NSRsm:
 		doc = rules.NewDoc(root, opts.Profile)
+		doc.Hybrid = opts.Hybrid
 	case ubl.IsUBL(root):
 		doc = ubl.View(root, opts.Profile)
 	case cii.IsZUGFeRD1(root):

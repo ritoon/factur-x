@@ -22,8 +22,9 @@ type negativeCase struct {
 // negativeCases are the invoices of ZUGFeRDv2/fail and the not_validating
 // samples of XML-Rechnung, with the verdicts of KoSIT 1.6.3 and Mustang 2.26.0
 // measured by the parity job (conformance/README.md). FX-SCH-A-* are the
-// assertions of the Factur-X 1.09.2 schematrons that Mustang applies; SCHEMA
-// stands for an error of the XML schema.
+// assertions of the Factur-X 1.09.2 schematrons that Mustang applies, and
+// that the package applies to the XML of a PDF too; SCHEMA stands for an
+// error of the XML schema.
 var negativeCases = map[string]negativeCase{
 	"XML-Rechnung/CII/not_validating_full_invoice_based_onTest_EeISI_300_CENfullmodel.cii.xml": {
 		ref: "KoSIT et Mustang : aucune erreur", valid: "no reference validator raises an error either",
@@ -32,10 +33,10 @@ var negativeCases = map[string]negativeCase{
 		rules: []string{"BR-CO-10", "BR-CO-15"}, ref: "Mustang : BR-CO-10, BR-CO-15",
 	},
 	"ZUGFeRDv2/fail/FNFE-factur-x-examples/Avoir_FR_type380_BASIC.pdf": {
-		rules: []string{"CII-DT-031", "FX-PROFILE-03"}, ref: "Mustang : FX-SCH-A-000493 (BT-24)",
+		rules: []string{"FX-PROFILE-03"}, ref: "Mustang : FX-SCH-A-000493 (BT-24)",
 	},
 	"ZUGFeRDv2/fail/FNFE-factur-x-examples/Avoir_FR_type380_EN16931.pdf": {
-		rules: []string{"CII-DT-031"}, ref: "Mustang : aucune erreur (CII-DT-031 absente du schematron Factur-X)",
+		rules: []string{"PDF-35"}, ref: "Mustang : aucune erreur",
 	},
 	"ZUGFeRDv2/fail/FNFE-factur-x-examples/Avoir_FR_type380_MINIMUM.pdf": {
 		rules: []string{"XSD-UNEXPECTED"}, ref: "Mustang : SCHEMA",
@@ -44,28 +45,28 @@ var negativeCases = map[string]negativeCase{
 		rules: []string{"PDF-35"}, ref: "Mustang : aucune erreur",
 	},
 	"ZUGFeRDv2/fail/FNFE-factur-x-examples/Avoir_FR_type381_EN16931.pdf": {
-		rules: []string{"CII-DT-031"}, ref: "Mustang : aucune erreur (CII-DT-031 absente du schematron Factur-X)",
+		rules: []string{"PDF-35"}, ref: "Mustang : aucune erreur",
 	},
 	"ZUGFeRDv2/fail/FNFE-factur-x-examples/Avoir_FR_type381_MINIMUM.pdf": {
 		rules: []string{"XSD-UNEXPECTED"}, ref: "Mustang : SCHEMA",
 	},
 	"ZUGFeRDv2/fail/FNFE-factur-x-examples/Facture_DOM_BASIC.pdf": {
-		rules: []string{"CII-DT-031", "FX-PROFILE-03"}, ref: "Mustang : FX-SCH-A-000493 (BT-24)",
+		rules: []string{"FX-PROFILE-03"}, ref: "Mustang : FX-SCH-A-000493 (BT-24)",
 	},
 	"ZUGFeRDv2/fail/FNFE-factur-x-examples/Facture_DOM_EN16931.pdf": {
-		rules: []string{"CII-DT-031"}, ref: "Mustang : aucune erreur (CII-DT-031 absente du schematron Factur-X)",
+		rules: []string{"PDF-35"}, ref: "Mustang : aucune erreur",
 	},
 	"ZUGFeRDv2/fail/FNFE-factur-x-examples/Facture_FR_BASIC.pdf": {
-		rules: []string{"CII-DT-031", "FX-PROFILE-03"}, ref: "Mustang : FX-SCH-A-000493 (BT-24)",
+		rules: []string{"FX-PROFILE-03"}, ref: "Mustang : FX-SCH-A-000493 (BT-24)",
 	},
 	"ZUGFeRDv2/fail/FNFE-factur-x-examples/Facture_FR_EN16931.pdf": {
-		rules: []string{"CII-DT-031"}, ref: "Mustang : aucune erreur (CII-DT-031 absente du schematron Factur-X)",
+		rules: []string{"PDF-35"}, ref: "Mustang : aucune erreur",
 	},
 	"ZUGFeRDv2/fail/FNFE-factur-x-examples/Facture_UE_BASIC.pdf": {
-		rules: []string{"BR-IC-11", "BR-IC-12", "CII-DT-031", "FX-PROFILE-03"}, ref: "Mustang : BR-IC-11, BR-IC-12, FX-SCH-A-000493 (BT-24)",
+		rules: []string{"BR-IC-11", "BR-IC-12", "FX-PROFILE-03"}, ref: "Mustang : BR-IC-11, BR-IC-12, FX-SCH-A-000493 (BT-24)",
 	},
 	"ZUGFeRDv2/fail/FNFE-factur-x-examples/Facture_UE_EN16931.pdf": {
-		rules: []string{"BR-IC-11", "CII-DT-031"}, ref: "Mustang : BR-IC-11",
+		rules: []string{"BR-IC-11"}, ref: "Mustang : BR-IC-11",
 	},
 	"ZUGFeRDv2/fail/FX-With-UBL-REC50304330.pdf": {
 		rules: []string{"CII"}, ref: "Mustang : UBL interdit dans un PDF Factur-X (message de type 17)",
@@ -80,7 +81,7 @@ var negativeCases = map[string]negativeCase{
 		rules: []string{"XSD-NAMESPACE", "XSD-UNEXPECTED"}, ref: "Mustang : SCHEMA",
 	},
 	"ZUGFeRDv2/fail/Mustangproject/MustangGnuaccountingBeispielRE-20190610_507b.pdf": {
-		rules: []string{"BR-CL-11", "XSD-NAMESPACE", "XSD-UNEXPECTED"}, ref: "Mustang : FX-SCH-A-000581 (schéma de BT-30), SCHEMA",
+		rules: []string{"FX-SCH-A-000581", "XSD-NAMESPACE", "XSD-UNEXPECTED"}, ref: "Mustang : FX-SCH-A-000581 (schéma de BT-30), SCHEMA",
 	},
 	"ZUGFeRDv2/fail/Mustangproject/factur-x-invalid-xml-encoding-attribute.pdf": {
 		rules: []string{"XML"}, ref: "Mustang : SCHEMA",
@@ -96,14 +97,14 @@ var negativeCases = map[string]negativeCase{
 		rules: []string{"BR-DE-18"}, ref: "KoSIT : BR-DE-18 ; Mustang : BR-DE-18, SCHEMA (XSD Factur-X EN 16931, quand KoSIT et le package appliquent le XSD CII D16B)",
 	},
 	"ZUGFeRDv2/fail/ZUGFeRD_2.0_fully_compliant_complete.pdf": {
-		rules: []string{"BR-CL-23", "BR-S-02"}, ref: "Mustang : BR-S-02, FX-SCH-A-000612 et 000613 (unités)",
+		rules: []string{"BR-S-02", "FX-SCH-A-000612", "FX-SCH-A-000613"}, ref: "Mustang : BR-S-02, FX-SCH-A-000612 et 000613 (unités)",
 	},
 	"ZUGFeRDv2/fail/ZUGFeRD_2_fully_compliant_complete.pdf": {
 		ref:   "Mustang : PDF/A (veraPDF, ISO 19005-3 6.2.11.4.2), XML valide",
 		valid: "the CIDSet of an embedded font does not list all its glyphs (ISO 19005-3 6.2.11.4.2), which only veraPDF checks",
 	},
 	"ZUGFeRDv2/fail/python-factur-x/python-factur-x.pdf": {
-		rules: []string{"CII-DT-031", "PDF-28", "XSD-UNEXPECTED"}, ref: "Mustang : FX-SCH-A-000493 (BT-24), SCHEMA",
+		rules: []string{"FX-PROFILE-03", "PDF-28", "XSD-UNEXPECTED"}, ref: "Mustang : FX-SCH-A-000493 (BT-24), SCHEMA",
 	},
 }
 

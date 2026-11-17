@@ -4,17 +4,20 @@ import "github.com/ritoon/factur-x/internal/rules"
 
 // Profile masks of the rules: the profiles whose official schematron holds
 // the rule. mExt stands for EXTENDED and EXTENDED-CTC-FR, which get the
-// BR-FXEXT rules of the EXTENDED schematron; mOther for the other profiles
-// (BASIC, EN 16931, XRECHNUNG), which only get the profile identification
-// rules here.
+// BR-FXEXT rules of the EXTENDED schematron (the code list assertions of
+// mBasic, mEN and mExt only apply where the Factur-X schematron of the
+// profile does, see Check); mOther for the other profiles (XRECHNUNG,
+// PEPPOL), which only get the profile identification rules here.
 const (
 	mMin uint8 = 1 << iota
 	mBWL
-	mOther
+	mBasic
+	mEN
 	mExt
+	mOther
 
 	mLight = mMin | mBWL
-	mAny   = mMin | mBWL | mOther | mExt
+	mAny   = mMin | mBWL | mBasic | mEN | mExt | mOther
 )
 
 // rule describes a rule of the package.
@@ -35,7 +38,7 @@ var table = []rule{
 	// Profile identification, all profiles.
 	{"FX-PROFILE-01", rules.Error, mAny, "", "The specification identifier (BT-24) is present, so that the Factur-X profile can be determined."},
 	{"FX-PROFILE-02", rules.Error, mAny, "", "The specification identifier (BT-24) is a known Factur-X, ZUGFeRD, XRechnung or Peppol identifier."},
-	{"FX-PROFILE-03", rules.Warning, mAny, "", "The specification identifier (BT-24) uses an obsolete spelling of a known identifier."},
+	{"FX-PROFILE-03", rules.Error, mAny, "", "The specification identifier (BT-24) uses an obsolete spelling of a known identifier: an error where the Factur-X schematron applies, whose code list of BT-24 holds the current identifiers only (FX-SCH-A-000493, 000556, 000636), a warning for an EN 16931 invoice checked against the CEN rules."},
 	{"FX-SCH-A-000026", rules.Error, mAny, "FX-SCH-A-000026", "The specification identifier (BT-24) is exactly an identifier of the profile the invoice is checked against."},
 
 	// Invoice level.
@@ -290,13 +293,15 @@ var table = []rule{
 	{"FX-NOT-USED", rules.Warning, mLight, "", "The element or attribute is marked as not used in the profile by the official schematron: receivers ignore it."},
 }
 
-// Catalog lists the rules implemented by this package.
+// Catalog lists the rules implemented by this package: those of table, then
+// the code list assertions of BASIC, EN 16931 and EXTENDED (see codedb.go).
 var Catalog []rules.RuleInfo
 
 // byID indexes table.
 var byID map[string]*rule
 
 func init() {
+	table = append(table, codeCatalog()...)
 	byID = make(map[string]*rule, len(table))
 	Catalog = make([]rules.RuleInfo, 0, len(table))
 	for i := range table {
