@@ -1,6 +1,10 @@
 package cii
 
-import "github.com/ritoon/factur-x/invoice"
+import (
+	"strings"
+
+	"github.com/ritoon/factur-x/invoice"
+)
 
 // level is the data set of a profile: each level carries the elements of the
 // levels below it. XRECHNUNG and PEPPOL use the EN 16931 set, EXTENDED-CTC-FR
@@ -32,6 +36,13 @@ func levelOf(p invoice.Profile) level {
 // detectProfile returns the profile identified by a specification identifier
 // (BT-24), accepting the non-standard spellings found in the wild.
 func detectProfile(urn string) invoice.Profile { return invoice.DetectProfile(urn) }
+
+// zugferd1URN reports whether urn is a ZUGFeRD 1.0 specification identifier
+// (urn:ferd:…), in any case.
+func zugferd1URN(urn string) bool {
+	u := strings.TrimSpace(urn)
+	return len(u) >= 9 && strings.EqualFold(u[:9], "urn:ferd:")
+}
 
 // role is the role of a trade party; the elements a party may carry depend on
 // it.

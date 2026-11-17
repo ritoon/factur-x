@@ -9,6 +9,11 @@
 // already parsed with internal/xmltree, so that a caller that also validates
 // the document parses the XML only once.
 //
+// Parse also reads ZUGFeRD 1.0 invoices, whose rsm:CrossIndustryDocument
+// syntax predates CII D16B, through a CII D16B view of the document (see
+// IsZUGFeRD1). They are read only: Marshal writes CII D16B, which converts
+// a ZUGFeRD 1.0 invoice to Factur-X.
+//
 // Marshal writes an invoice for a target Factur-X profile. Only the elements
 // that the profile allows are written, in the exact order of the profile's
 // XML schema. Data that the profile cannot carry is dropped, or reported as a

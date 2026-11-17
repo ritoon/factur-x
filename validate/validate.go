@@ -17,12 +17,21 @@
 // (see the UBLCatalog of each package). The Chorus Pro rules run on a CII
 // view of the UBL document. All findings are located in the UBL document.
 //
+// A ZUGFeRD 1.0 invoice (rsm:CrossIndustryDocument, see cii.IsZUGFeRD1)
+// gets a minimal structural check, part of the Schema rule set: a ZUGFeRD
+// 1.0 specification identifier (ZF1-01), values that can be read (ZF1-02)
+// and the data that identifies an invoice (ZF1-03). ZUGFeRD 1.0 predates
+// EN 16931 and CII D16B: the other rule sets, written for invoices that
+// follow them, do not apply, which the warning ZF1-04 says whatever the rule
+// sets.
+//
 // Validation never stops at the first problem: every finding is collected in
-// a Report. A document that is not well-formed XML, or neither a CII nor a
-// UBL invoice, gives a report with a single syntax error.
+// a Report. A document that is not well-formed XML, or neither a CII, a
+// ZUGFeRD 1.0 nor a UBL invoice, gives a report with a single syntax error.
 package validate
 
 import (
+	"github.com/ritoon/factur-x/cii"
 	"github.com/ritoon/factur-x/internal/rules"
 	"github.com/ritoon/factur-x/internal/rules/choruspro"
 	"github.com/ritoon/factur-x/internal/rules/de"
@@ -73,7 +82,7 @@ type RuleSet uint
 
 // Rule sets.
 const (
-	Schema         RuleSet = 1 << iota // structure against the XML schema: of the profile (CII), UBL 2.1 (UBL)
+	Schema         RuleSet = 1 << iota // structure against the XML schema: of the profile (CII), UBL 2.1 (UBL); minimal structural check of ZUGFeRD 1.0
 	EN16931                            // CEN business rules and code lists, and the UBL syntax rules for UBL
 	FacturX                            // Factur-X / ZUGFeRD profile rules (CII only)
 	France                             // French rules BR-FR (2026 reform) and the profiles the reform admits (FR-PROFILE-*)
@@ -130,7 +139,7 @@ type PublicBuyer struct {
 	EngagementRequired bool
 }
 
-// XML validates a CII or UBL invoice.
+// XML validates a CII or UBL invoice, or a ZUGFeRD 1.0 invoice.
 func XML(data []byte, opts *Options) *Report {
 	if opts == nil {
 		opts = &Options{}
@@ -144,7 +153,8 @@ func XML(data []byte, opts *Options) *Report {
 	return Tree(root, opts)
 }
 
-// Tree validates an already parsed CII or UBL invoice.
+// Tree validates an already parsed CII or UBL invoice, or a ZUGFeRD 1.0
+// invoice.
 func Tree(root *xmltree.Node, opts *Options) *Report {
 	if opts == nil {
 		opts = &Options{}
@@ -156,10 +166,13 @@ func Tree(root *xmltree.Node, opts *Options) *Report {
 		doc = rules.NewDoc(root, opts.Profile)
 	case ubl.IsUBL(root):
 		doc = ubl.View(root, opts.Profile)
+	case cii.IsZUGFeRD1(root):
+		checkZUGFeRD1(root, opts, r)
+		return r
 	default:
 		r.Add(Finding{Rule: "CII", Severity: Error, Source: SourceSyntax, Path: "/" + root.Name, Line: root.Line,
 			Message: "the root element is neither rsm:CrossIndustryInvoice in namespace " + rules.NSRsm +
-				" nor a UBL 2.1 Invoice or CreditNote"})
+				", a ZUGFeRD 1.0 rsm:CrossIndustryDocument, nor a UBL 2.1 Invoice or CreditNote"})
 		return r
 	}
 	r.Profile = doc.Profile
@@ -237,6 +250,7 @@ func Catalog(set RuleSet) []RuleInfo {
 		}
 	}
 	add(Schema, schema.Catalog)
+	add(Schema, zugferd1Catalog)
 	add(EN16931, en16931.Catalog)
 	add(EN16931, ubl.Catalog)
 	add(FacturX, facturx.Catalog)

@@ -144,7 +144,8 @@ func TestParseRejects(t *testing.T) {
 		{"empty", "", false},
 		{"not xml", "%PDF-1.7 garbage", false},
 		{"truncated", ciiHead + "<rsm:ExchangedDocument>", false},
-		{"zugferd1", `<rsm:CrossIndustryDocument xmlns:rsm="urn:ferd:CrossIndustryDocument:invoice:1p0"/>`, true},
+		{"CrossIndustryDocument, wrong namespace", `<rsm:CrossIndustryDocument xmlns:rsm="urn:ferd:CrossIndustryDocument:order:1p0"/>`, true},
+		{"Invoice, not the ZUGFeRD 1.0 release candidate", `<rsm:Invoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CBFBUY:6"/>`, true},
 		{"ubl", `<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"/>`, true},
 		{"wrong namespace", `<CrossIndustryInvoice xmlns="urn:example"/>`, true},
 		{"xmp", `<x:xmpmeta xmlns:x="adobe:ns:meta/"/>`, true},
@@ -163,9 +164,9 @@ func TestParseRejects(t *testing.T) {
 			t.Errorf("%s: errors.Is(err, ErrNotCII) = %v (%v)", c.name, got, err)
 		}
 	}
-	root, _ := xmltree.Parse([]byte(`<rsm:CrossIndustryDocument xmlns:rsm="urn:ferd:CrossIndustryDocument:invoice:1p0"/>`))
+	root, _ := xmltree.Parse([]byte(`<rsm:CrossIndustryDocument xmlns:rsm="urn:ferd:CrossIndustryDocument:order:1p0"/>`))
 	if inv, issues := ParseTree(root); inv != nil || len(issues) != 1 {
-		t.Errorf("ParseTree(ZUGFeRD 1) = %v, %v", inv, issues)
+		t.Errorf("ParseTree(CrossIndustryDocument, wrong namespace) = %v, %v", inv, issues)
 	}
 	if inv, issues := ParseTree(nil); inv != nil || len(issues) != 1 {
 		t.Errorf("ParseTree(nil) = %v, %v", inv, issues)

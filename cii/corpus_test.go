@@ -16,9 +16,10 @@ import (
 
 // The corpus test reads every CII document it can find:
 //
-//   - FX_CORPUS: the ZUGFeRD corpus (XML-Rechnung/CII/*.cii.xml and the
-//     ZUGFeRDv2/correct tree; ZUGFeRDv1 documents must be refused);
-//   - FX_CORPUS_XML: any tree of XML files extracted from PDF/A-3 invoices;
+//   - FX_CORPUS: the ZUGFeRD corpus (XML-Rechnung/CII/*.cii.xml, and the
+//     XML files of the ZUGFeRDv2/correct and ZUGFeRDv1/correct trees);
+//   - FX_CORPUS_XML: any tree of XML files extracted from PDF/A-3 invoices,
+//     such as the ZUGFeRD 1.0 invoices of the PDFs of ZUGFeRDv1;
 //   - ../testdata/*.xml.
 //
 // For each document it checks the round trip Parse → Marshal (same profile)
@@ -27,6 +28,10 @@ import (
 // hold the whole tree of the original (see canonTree for the forms that are
 // normalized). It also measures which leaves of the original document are
 // missing from the rewritten ones: none may be missing silently.
+//
+// A ZUGFeRD 1.0 document is compared through its CII D16B view (see
+// zugferd1View): Marshal converts it to Factur-X, and the output must hold
+// the view, BT-24 aside, whose ZUGFeRD 1.0 identifier is replaced.
 
 // corpusFile is a document of the corpus. Documents of FX_CORPUS and
 // testdata must be well-formed (strict); extracted ones may be broken.
@@ -56,7 +61,7 @@ func corpusFiles() []corpusFile {
 	if root := os.Getenv("FX_CORPUS"); root != "" {
 		walk(root, "XML-Rechnung/CII", isXML)
 		walk(root, "ZUGFeRDv2/correct", isXML)
-		walk(root, "ZUGFeRDv1", isXML)
+		walk(root, "ZUGFeRDv1/correct", isXML)
 	}
 	walk("../testdata", ".", isXML)
 	if root := os.Getenv("FX_CORPUS_XML"); root != "" {
@@ -123,7 +128,7 @@ func TestCorpusRoundTrip(t *testing.T) {
 		read, notXML, zugferd1, otherRoot, withIssues, withLosses int
 		trees, extTrees                                           int
 		invalid                                                   int
-		unexpected, profile, notFacturX                           lossStats
+		unexpected, profile, notFacturX, unreadable               lossStats
 		added                                                     lossStats
 		perProfile                                                = map[invoice.Profile]int{}
 	)
@@ -134,16 +139,13 @@ func TestCorpusRoundTrip(t *testing.T) {
 		}
 		inv, err := Parse(data)
 		var ie *IssuesError
+		issues := errors.As(err, &ie)
 		switch {
 		case errors.As(err, &ie):
 			withIssues++
 			t.Logf("%s: %v", f.name, ie.Issues)
 		case errors.Is(err, ErrNotCII):
-			if strings.Contains(err.Error(), "ZUGFeRD 1") {
-				zugferd1++
-			} else {
-				otherRoot++
-			}
+			otherRoot++
 			continue
 		case err != nil:
 			if f.strict {
@@ -152,8 +154,17 @@ func TestCorpusRoundTrip(t *testing.T) {
 			notXML++
 			continue
 		}
-		if f.strict && strings.Contains(f.name, "ZUGFeRDv1") {
-			t.Errorf("%s: ZUGFeRD 1 document not refused", f.name)
+		// orig is the document, or the CII D16B view of a ZUGFeRD 1.0 one.
+		orig, _ := xmltree.Parse(data)
+		zf1 := IsZUGFeRD1(orig)
+		if zf1 {
+			zugferd1++
+			orig, _ = zugferd1View(orig)
+			if f.strict && inv.Profile == invoice.ProfileUnknown {
+				t.Errorf("%s: no profile matched to the ZUGFeRD 1.0 identifier %q", f.name, inv.SpecificationID)
+			}
+		} else if f.strict && strings.Contains(f.name, "ZUGFeRDv1") {
+			t.Errorf("%s: not read as a ZUGFeRD 1.0 document", f.name)
 		}
 		read++
 		perProfile[inv.Profile]++
@@ -179,6 +190,13 @@ func TestCorpusRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Errorf("%s: re-reading the output: %v", f.name, err)
 			continue
+		}
+		if zf1 {
+			// Marshal writes the Factur-X identifier of the profile.
+			if back.SpecificationID != target.URN() {
+				t.Errorf("%s: BT-24 of the converted ZUGFeRD 1.0 invoice is %q, want %q", f.name, back.SpecificationID, target.URN())
+			}
+			back.SpecificationID = inv.SpecificationID
 		}
 		if !lossy {
 			if d := diffInvoices(inv, back); d != "" {
@@ -212,14 +230,15 @@ func TestCorpusRoundTrip(t *testing.T) {
 		// Leaves of the original missing from the outputs: those missing
 		// from the EXTENDED output are not carried by the model; those only
 		// missing from the same-profile output are outside that profile.
-		orig, _ := xmltree.Parse(data)
 		same, _ := xmltree.Parse(out)
 		full, _ := xmltree.Parse(ext)
-		norm := treeNorm{cur: inv.Currency, taxCur: inv.TaxCurrency, spec: true}
+		norm := treeNorm{cur: inv.Currency, taxCur: inv.TaxCurrency, spec: !zf1}
 		// Marshal may only add what the target schema requires (an empty
 		// mandatory element, a missing indicator…): the leaves added are
 		// listed below.
-		if !lossy {
+		// The values that cannot be read are lost: such a document is not
+		// compared with its outputs.
+		if !lossy && !issues {
 			trees++
 			if d := diffTrees(orig, same, norm); len(d.missing) > 0 || d.order != "" {
 				t.Errorf("%s: the %v output does not hold the tree of the original:\n%v", f.name, target, d)
@@ -227,7 +246,7 @@ func TestCorpusRoundTrip(t *testing.T) {
 		}
 		// The model carries the whole tree of any document that follows a
 		// Factur-X profile: the EXTENDED output holds it, BT-24 aside.
-		if !outsideFacturX {
+		if !outsideFacturX && !issues {
 			extTrees++
 			norm.spec = false
 			if d := diffTrees(orig, full, norm); len(d.missing) > 0 || d.order != "" {
@@ -247,6 +266,10 @@ func TestCorpusRoundTrip(t *testing.T) {
 				case strings.HasSuffix(p, "/@schemaLocation"),
 					strings.HasSuffix(p, "/@currencyID") && (l.text == inv.Currency || l.text == inv.TaxCurrency):
 					// Normalized forms, see canonTree.
+				case issues:
+					// Reported by Parse as unreadable, or in a document that
+					// has unreadable values.
+					unreadable.add(p, f.name)
 				case outsideFacturX:
 					// Reported by Marshal: the source breaks the Factur-X
 					// rules (e.g. a reference type on a non-130 document).
@@ -269,11 +292,12 @@ func TestCorpusRoundTrip(t *testing.T) {
 			}
 		}
 	}
-	t.Logf("%d documents read (%v), %d with unreadable values, %d not fitting their profile, %d not fitting any profile; skipped: %d not XML, %d ZUGFeRD 1 (refused), %d other roots",
-		read, perProfile, withIssues, withLosses, invalid, notXML, zugferd1, otherRoot)
+	t.Logf("%d documents read (%v), %d of them ZUGFeRD 1.0, %d with unreadable values, %d not fitting their profile, %d not fitting any profile; skipped: %d not XML, %d other roots",
+		read, perProfile, zugferd1, withIssues, withLosses, invalid, notXML, otherRoot)
 	t.Logf("leaves outside the profile of their document (reported as losses):\n%s", profile.report())
 	t.Logf("%d documents rewritten with their whole tree in their profile, %d in EXTENDED", trees, extTrees)
 	t.Logf("leaves no Factur-X profile allows (reported as losses):\n%s", notFacturX.report())
+	t.Logf("leaves of documents with unreadable values:\n%s", unreadable.report())
 	t.Logf("leaves added or rewritten by Marshal:\n%s", added.report())
 	if len(unexpected.count) > 0 {
 		t.Errorf("unexpected losses:\n%s", unexpected.report())

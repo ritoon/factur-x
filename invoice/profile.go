@@ -45,6 +45,17 @@ const (
 	urnExtendedCTCFR2 = "urn:cen.eu:en16931:2017#conformant#urn:cpro.gouv.fr:1p0:extended-ctc-fr"
 )
 
+// Specification identifiers of ZUGFeRD 1.0, in the
+// rsm:CrossIndustryDocument syntax that predates CII D16B. They are read,
+// never written (see ProfileFromZUGFeRD1URN).
+const (
+	URNZUGFeRD1Basic    = "urn:ferd:CrossIndustryDocument:invoice:1p0:basic"
+	URNZUGFeRD1Comfort  = "urn:ferd:CrossIndustryDocument:invoice:1p0:comfort"
+	URNZUGFeRD1Extended = "urn:ferd:CrossIndustryDocument:invoice:1p0:extended"
+	urnZUGFeRD1         = "urn:ferd:CrossIndustryDocument:invoice:1p0:"
+	urnZUGFeRD1RC       = "urn:ferd:invoice:rc:" // release candidate (2014)
+)
+
 // String returns the profile name as written in the XMP ConformanceLevel
 // ("BASIC WL", "EN 16931"), or "PEPPOL", "EXTENDED-CTC-FR" and "UNKNOWN".
 func (p Profile) String() string {
@@ -201,13 +212,43 @@ func ProfileFromURN(urn string) Profile {
 	return ProfileUnknown
 }
 
+// ProfileFromZUGFeRD1URN returns the profile matched to a ZUGFeRD 1.0
+// specification identifier: BASIC for basic, EN 16931 for comfort, EXTENDED
+// for extended. ZUGFeRD 1.0 predates EN 16931: the match is the profile with
+// the same data set, not a conformance claim. The identifiers of the
+// ZUGFeRD 1.0 release candidate (urn:ferd:invoice:rc:basic, comfort,
+// extended) are recognized too. Surrounding white space is ignored; any
+// other identifier gives ProfileUnknown.
+func ProfileFromZUGFeRD1URN(urn string) Profile {
+	u := strings.TrimSpace(urn)
+	level, ok := strings.CutPrefix(u, urnZUGFeRD1)
+	if !ok {
+		if level, ok = strings.CutPrefix(u, urnZUGFeRD1RC); !ok {
+			return ProfileUnknown
+		}
+	}
+	switch level {
+	case "basic":
+		return ProfileBasic
+	case "comfort":
+		return ProfileEN16931
+	case "extended":
+		return ProfileExtended
+	}
+	return ProfileUnknown
+}
+
 // DetectProfile is a lenient ProfileFromURN: when the identifier is not one
-// of the official ones, it looks for a profile name in it, which recognizes
-// spellings found in older or non-conforming invoices such as
+// of the official ones, it recognizes the ZUGFeRD 1.0 identifiers (see
+// ProfileFromZUGFeRD1URN), then looks for a profile name in it, which
+// recognizes spellings found in older or non-conforming invoices such as
 // "urn:cen.eu:en16931:2017:compliant:factur-x.eu:1p0:basic". Use it to read
 // invoices; validators report such identifiers with ProfileFromURN.
 func DetectProfile(urn string) Profile {
 	if p := ProfileFromURN(urn); p != ProfileUnknown {
+		return p
+	}
+	if p := ProfileFromZUGFeRD1URN(urn); p != ProfileUnknown {
 		return p
 	}
 	u := strings.ToLower(strings.TrimSpace(urn))
