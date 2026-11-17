@@ -1,0 +1,208 @@
+package peppol
+
+import "github.com/ritoon/factur-x/internal/rules"
+
+// UBLCatalog lists the 165 assertions of PEPPOL-EN16931-UBL.sch, in the
+// order of the schematron, with the severity of their flag. The descriptions
+// are the messages of the schematron, with their white space normalized.
+// The rules that both schematrons define have the same identifier, but their
+// messages, and for DK-R-003 their severity, may differ.
+var UBLCatalog = []rules.RuleInfo{
+	// Empty elements.
+	{ID: "PEPPOL-EN16931-R008", Severity: rules.Error, Description: "Document MUST not contain empty elements."},
+
+	// Peppol rules (PEPPOL-EN16931-R*).
+	{ID: "PEPPOL-EN16931-R080", Severity: rules.Error, Description: "Only one project reference is allowed on document level"},
+	{ID: "PEPPOL-EN16931-R001", Severity: rules.Error, Description: "Business process MUST be provided."},
+	{ID: "PEPPOL-EN16931-R007", Severity: rules.Error, Description: "Business process MUST have an approved identifier."},
+	{ID: "PEPPOL-EN16931-R002", Severity: rules.Error, Description: "No more than one note is allowed on document level, unless both the buyer and seller are German organizations."},
+	{ID: "PEPPOL-EN16931-R003", Severity: rules.Error, Description: "A buyer reference or purchase order reference MUST be provided."},
+	{ID: "PEPPOL-EN16931-R004", Severity: rules.Error, Description: "Specification identifier MUST begin with the value 'urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0' and follow the format rules for the identifier."},
+	{ID: "PEPPOL-EN16931-R053", Severity: rules.Error, Description: "Only one tax total with tax subtotals MUST be provided."},
+	{ID: "PEPPOL-EN16931-R054", Severity: rules.Error, Description: "Only one tax total without tax subtotals MUST be provided when tax currency code is provided."},
+	{ID: "PEPPOL-EN16931-R055", Severity: rules.Error, Description: "Invoice total VAT amount and Invoice total VAT amount in accounting currency MUST have the same operational sign"},
+	{ID: "PEPPOL-EN16931-R005", Severity: rules.Error, Description: "VAT accounting currency code MUST be different from invoice currency code when provided."},
+	{ID: "PEPPOL-EN16931-R010", Severity: rules.Error, Description: "Buyer electronic address MUST be provided"},
+	{ID: "PEPPOL-EN16931-R020", Severity: rules.Error, Description: "Seller electronic address MUST be provided"},
+	{ID: "PEPPOL-EN16931-R041", Severity: rules.Error, Description: "Allowance/charge base amount MUST be provided when allowance/charge percentage is provided."},
+	{ID: "PEPPOL-EN16931-R042", Severity: rules.Error, Description: "Allowance/charge percentage MUST be provided when allowance/charge base amount is provided."},
+	{ID: "PEPPOL-EN16931-R040", Severity: rules.Error, Description: "Allowance/charge amount must equal base amount * percentage/100 if base amount and percentage exists"},
+	{ID: "PEPPOL-EN16931-R043", Severity: rules.Error, Description: "Allowance/charge ChargeIndicator value MUST equal 'true' or 'false'"},
+	{ID: "PEPPOL-EN16931-R061", Severity: rules.Error, Description: "Mandate reference MUST be provided for direct debit."},
+	{ID: "PEPPOL-EN16931-R051", Severity: rules.Error, Description: "All currencyID attributes must have the same value as the invoice currency code (BT-5), except for the invoice total VAT amount in accounting currency (BT-111)."},
+	{ID: "PEPPOL-EN16931-R110", Severity: rules.Error, Description: "Start date of line period MUST be within invoice period."},
+	{ID: "PEPPOL-EN16931-R111", Severity: rules.Error, Description: "End date of line period MUST be within invoice period."},
+	{ID: "PEPPOL-EN16931-R120", Severity: rules.Error, Description: "Invoice line net amount MUST equal (Invoiced quantity * (Item net price/item price base quantity) + Sum of invoice line charge amount - sum of invoice line allowance amount"},
+	{ID: "PEPPOL-EN16931-R121", Severity: rules.Error, Description: "Base quantity MUST be a positive number above zero."},
+	{ID: "PEPPOL-EN16931-R100", Severity: rules.Error, Description: "Only one invoiced object is allowed pr line"},
+	{ID: "PEPPOL-EN16931-R101", Severity: rules.Error, Description: "Element Document reference can only be used for Invoice line object"},
+	{ID: "PEPPOL-EN16931-R044", Severity: rules.Error, Description: "Charge on price level is NOT allowed. Only value 'false' allowed."},
+	{ID: "PEPPOL-EN16931-R046", Severity: rules.Error, Description: "Item net price MUST equal (Gross price - Allowance amount) when gross price is provided."},
+	{ID: "PEPPOL-EN16931-R130", Severity: rules.Error, Description: "Unit code of price base quantity MUST be same as invoiced quantity."},
+
+	// Identifiers by ICD scheme (PEPPOL-COMMON-R*).
+	{ID: "PEPPOL-COMMON-R040", Severity: rules.Error, Description: "GLN must have a valid format according to GS1 rules."},
+	{ID: "PEPPOL-COMMON-R041", Severity: rules.Error, Description: "Norwegian organization number MUST be stated in the correct format."},
+	{ID: "PEPPOL-COMMON-R042", Severity: rules.Error, Description: "Danish organization number (CVR) MUST be stated in the correct format."},
+	{ID: "PEPPOL-COMMON-R052", Severity: rules.Error, Description: "Danish chamber of commerce number (P) MUST be stated in the correct format."},
+	{ID: "PEPPOL-COMMON-R053", Severity: rules.Error, Description: "Danish ERSTORG number (SE) MUST be stated in the correct format."},
+	{ID: "PEPPOL-COMMON-R043", Severity: rules.Error, Description: "Belgian enterprise number MUST be stated in the correct format."},
+	{ID: "PEPPOL-COMMON-R044", Severity: rules.Warning, Description: "IPA Code (Codice Univoco Unità Organizzativa) must be stated in the correct format"},
+	{ID: "PEPPOL-COMMON-R045", Severity: rules.Warning, Description: "Tax Code (Codice Fiscale) must be stated in the correct format"},
+	{ID: "PEPPOL-COMMON-R046", Severity: rules.Warning, Description: "Tax Code (Codice Fiscale) must be stated in the correct format"},
+	{ID: "PEPPOL-COMMON-R047", Severity: rules.Warning, Description: "Italian VAT Code (Partita Iva) must be stated in the correct format"},
+	{ID: "PEPPOL-COMMON-R049", Severity: rules.Error, Description: "Swedish organization number MUST be stated in the correct format."},
+	{ID: "PEPPOL-COMMON-R050", Severity: rules.Error, Description: "Australian Business Number (ABN) MUST be stated in the correct format."},
+	{ID: "PEPPOL-COMMON-R054", Severity: rules.Warning, Description: "Dutch Chamber of Commerce (KVK) numbers (0106) MUST be stated in the correct format (12345678)."},
+	{ID: "PEPPOL-COMMON-R055", Severity: rules.Warning, Description: "Dutch organization identification numbers (0190) MUST be stated in the correct format (12345678901234567890)."},
+	{ID: "PEPPOL-COMMON-R056-1", Severity: rules.Warning, Description: "Dutch VAT numbers (9944) MUST be stated in the correct format (NL123456789B12)."},
+	{ID: "PEPPOL-COMMON-R056-2", Severity: rules.Warning, Description: "Dutch VAT numbers MUST have the format (NL123456789B12)."},
+	{ID: "PEPPOL-COMMON-R057", Severity: rules.Warning, Description: "Dutch Chamber of Commerce Establishment numbers (0217) MUST be stated in the correct format (123456789012)."},
+
+	// Norway.
+	{ID: "NO-R-002", Severity: rules.Warning, Description: "For Norwegian suppliers, most invoice issuers are required to append \"Foretaksregisteret\" to their invoice. \"Dersom selger er aksjeselskap, allmennaksjeselskap eller filial av utenlandsk selskap skal også ordet «Foretaksregisteret» fremgå av salgsdokumentet, jf. foretaksregisterloven § 10-2.\""},
+	{ID: "NO-R-001", Severity: rules.Error, Description: "For Norwegian suppliers, a VAT number MUST be the country code prefix NO followed by a valid Norwegian organization number (nine numbers) followed by the letters MVA."},
+
+	// Denmark.
+	{ID: "DK-R-002", Severity: rules.Error, Description: "Danish suppliers MUST provide legal entity (CVR-number)"},
+	{ID: "DK-R-014", Severity: rules.Error, Description: "For Danish Suppliers it is mandatory to specify schemeID as \"0184\" (DK CVR-number) when PartyLegalEntity/CompanyID is used for AccountingSupplierParty"},
+	{ID: "DK-R-016", Severity: rules.Error, Description: "For Danish Suppliers, a Credit note cannot have a negative total (PayableAmount)"},
+	{ID: "DK-R-013", Severity: rules.Error, Description: "For Danish Suppliers it is mandatory to use schemeID when PartyIdentification/ID is used for AccountingCustomerParty or AccountingSupplierParty"},
+	{ID: "DK-R-005", Severity: rules.Error, Description: "For Danish suppliers the following Payment means codes are allowed: 1, 10, 31, 42, 48, 49, 50, 58, 59, 93 and 97"},
+	{ID: "DK-R-006", Severity: rules.Error, Description: "For Danish suppliers bank account and registration account is mandatory if payment means is 31 or 42"},
+	{ID: "DK-R-007", Severity: rules.Error, Description: "For Danish suppliers PaymentMandate/ID and PayerFinancialAccount/ID are mandatory when payment means is 49"},
+	{ID: "DK-R-008", Severity: rules.Error, Description: "For Danish Suppliers PaymentID is mandatory and MUST start with 01#, 04# or 15# (kortartkode), and PayeeFinancialAccount/ID (Giro kontonummer) is mandatory and must be 7 or 8 numerical characters long, when payment means equals 50 (Giro)"},
+	{ID: "DK-R-009", Severity: rules.Error, Description: "For Danish Suppliers if the PaymentID is prefixed with 04# or 15# the 16 digits instruction Id must be added to the PaymentID eg. \"04#1234567890123456\" when Payment means equals 50 (Giro)"},
+	{ID: "DK-R-010", Severity: rules.Error, Description: "For Danish Suppliers using PaymentMeansCode 93, PaymentID is mandatory. The first three characters of the PaymentID MUST be 71#, 73# or 75# (kortartskode), and PayeeFinancialAccount/ID MUST be exactly 8 characters long."},
+	{ID: "DK-R-011", Severity: rules.Error, Description: "For Danish Suppliers if the PaymentID is prefixed with 71# or 75# the 15-16 digits instruction Id must be added to the PaymentID eg. \"71#1234567890123456\" when payment Method equals 93 (FIK)"},
+	{ID: "DK-R-017", Severity: rules.Error, Description: "For Danish Customers it is mandatory to specify schemeID as \"0184\" (DK CVR-number) when PartyLegalEntity/CompanyID is used for AccountingCustomerParty"},
+	{ID: "DK-R-003", Severity: rules.Error, Description: "If ItemClassification is provided from Danish suppliers, UNSPSC version 19.05.01 or 26.08.01 should be used."},
+	{ID: "DK-R-004", Severity: rules.Error, Description: "When specifying non-VAT Taxes for Danish customers, Danish suppliers MUST use the AllowanceChargeReasonCode=\"ZZZ\" and MUST be specified in AllowanceChargeReason; Either as the 4-digit Tax category or must include a #, but the # is not allowed as first and last character"},
+
+	// Italy.
+	{ID: "IT-R-001", Severity: rules.Error, Description: "BT-32 (Seller tax registration identifier) - For Italian suppliers BT-32 minimum length 11 and maximum length shall be 16. Per i fornitori italiani il BT-32 deve avere una lunghezza tra 11 e 16 caratteri"},
+	{ID: "IT-R-002", Severity: rules.Error, Description: "BT-35 (Seller address line 1) - Italian suppliers MUST provide the postal address line 1 - I fornitori italiani devono indicare l'indirizzo postale."},
+	{ID: "IT-R-003", Severity: rules.Error, Description: "BT-37 (Seller city) - Italian suppliers MUST provide the postal address city - I fornitori italiani devono indicare la città di residenza."},
+	{ID: "IT-R-004", Severity: rules.Error, Description: "BT-38 (Seller post code) - Italian suppliers MUST provide the postal address post code - I fornitori italiani devono indicare il CAP di residenza."},
+
+	// Sweden.
+	{ID: "SE-R-001", Severity: rules.Error, Description: "For Swedish suppliers, Swedish VAT-numbers must consist of 14 characters."},
+	{ID: "SE-R-002", Severity: rules.Error, Description: "For Swedish suppliers, the Swedish VAT-numbers must have the trailing 12 characters in numeric form"},
+	{ID: "SE-R-003", Severity: rules.Error, Description: "Swedish organisation numbers should be numeric."},
+	{ID: "SE-R-004", Severity: rules.Error, Description: "Swedish organisation numbers consist of 10 characters."},
+	{ID: "SE-R-013", Severity: rules.Error, Description: "The last digit of a Swedish organization number must be valid according to the Luhn algorithm."},
+	{ID: "SE-R-005", Severity: rules.Error, Description: "For Swedish suppliers, when using Seller tax registration identifier, 'Godkänd för F-skatt' must be stated"},
+	{ID: "SE-R-006", Severity: rules.Error, Description: "For Swedish suppliers, only standard VAT rate of 6, 12 or 25 are used"},
+	{ID: "SE-R-007", Severity: rules.Warning, Description: "For Swedish suppliers using Plusgiro, the Account ID must be numeric"},
+	{ID: "SE-R-010", Severity: rules.Warning, Description: "For Swedish suppliers using Plusgiro, the Account ID must have 2-8 characters"},
+	{ID: "SE-R-008", Severity: rules.Warning, Description: "For Swedish suppliers using Bankgiro, the Account ID must be numeric"},
+	{ID: "SE-R-009", Severity: rules.Warning, Description: "For Swedish suppliers using Bankgiro, the Account ID must have 7-8 characters"},
+	{ID: "SE-R-011", Severity: rules.Warning, Description: "For Swedish suppliers using Swedish Bankgiro or Plusgiro, the proper way to indicate this is to use Code 30 for PaymentMeans and FinancialInstitutionBranch ID with code SE:BANKGIRO or SE:PLUSGIRO"},
+	{ID: "SE-R-012", Severity: rules.Warning, Description: "For domestic transactions between Swedish trading partners, credit transfer should be indicated by PaymentMeansCode=\"30\""},
+
+	// Greece.
+	{ID: "GR-R-001-1", Severity: rules.Error, Description: "When the Supplier is Greek, the Invoice Id should consist of 6 segments"},
+	{ID: "GR-R-001-2", Severity: rules.Error, Description: "When the Supplier is Greek, the Invoice Id first segment must be a valid TIN Number and match either the Supplier's or the Tax Representative's Tin Number"},
+	{ID: "GR-R-001-3", Severity: rules.Error, Description: "When the Supplier is Greek, the Invoice Id second segment must be a valid Date that matches the invoice Issue Date"},
+	{ID: "GR-R-001-4", Severity: rules.Error, Description: "When Supplier is Greek, the Invoice Id third segment must be a positive integer"},
+	{ID: "GR-R-001-5", Severity: rules.Error, Description: "When Supplier is Greek, the Invoice Id in the fourth segment must be a valid greek document type"},
+	{ID: "GR-R-001-6", Severity: rules.Error, Description: "When Supplier is Greek, the Invoice Id fifth segment must not be empty"},
+	{ID: "GR-R-001-7", Severity: rules.Error, Description: "When Supplier is Greek, the Invoice Id sixth segment must not be empty"},
+	{ID: "GR-R-002", Severity: rules.Error, Description: "Greek Suppliers must provide their full name as they are registered in the Greek Business Registry (G.E.MH.) as a legal entity or in the Tax Registry as a natural person"},
+	{ID: "GR-S-011", Severity: rules.Warning, Description: "Greek suppliers must provide their Seller Tax Registration Number, prefixed by the country code"},
+	{ID: "GR-R-003", Severity: rules.Error, Description: "For the Greek Suppliers, the VAT must start with 'EL' and must be a valid TIN number"},
+	{ID: "GR-R-004-1", Severity: rules.Error, Description: "When Supplier is Greek, there must be one MARK Number"},
+	{ID: "GR-S-008-1", Severity: rules.Warning, Description: "When Supplier is Greek, there should be one invoice url"},
+	{ID: "GR-R-008-2", Severity: rules.Error, Description: "When Supplier is Greek, there should be no more than one invoice url"},
+	{ID: "GR-R-004-2", Severity: rules.Error, Description: "When Supplier is Greek, the MARK Number must be a positive integer"},
+	{ID: "GR-R-008-3", Severity: rules.Error, Description: "When Supplier is Greek and the INVOICE URL Document reference exists, the External Reference URI should be present"},
+	{ID: "GR-R-005", Severity: rules.Error, Description: "Greek Suppliers must provide the full name of the buyer"},
+	{ID: "GR-R-009", Severity: rules.Error, Description: "Greek suppliers that send an invoice through the PEPPOL network must use a correct TIN number as an electronic address according to PEPPOL Electronic Address Identifier scheme (schemeID 9933)."},
+	{ID: "GR-R-006", Severity: rules.Error, Description: "Greek Suppliers must provide the VAT number of the buyer, if the buyer is Greek"},
+	{ID: "GR-R-010", Severity: rules.Error, Description: "Greek Suppliers that send an invoice through the PEPPOL network to a greek buyer must use a correct TIN number as an electronic address according to PEPPOL Electronic Address Identifier scheme (SchemeID 9933)"},
+
+	// Iceland.
+	{ID: "IS-R-001", Severity: rules.Warning, Description: "If seller is icelandic then invoice type should be 380 or 381 — Ef seljandi er íslenskur þá ætti gerð reiknings (BT-3) að vera sölureikningur (380) eða kreditreikningur (381)."},
+	{ID: "IS-R-002", Severity: rules.Error, Description: "If seller is icelandic then it shall contain sellers legal id — Ef seljandi er íslenskur þá skal reikningur innihalda íslenska kennitölu seljanda (BT-30)."},
+	{ID: "IS-R-003", Severity: rules.Error, Description: "If seller is icelandic then it shall contain his address with street name and zip code — Ef seljandi er íslenskur þá skal heimilisfang seljanda innihalda götuheiti og póstnúmer (BT-35 og BT-38)."},
+	{ID: "IS-R-006", Severity: rules.Error, Description: "If seller is icelandic and payment means code is 9 then a 12 digit account id must exist — Ef seljandi er íslenskur og greiðslumáti (BT-81) er krafa (kóti 9) þá skal koma fram 12 stafa númer (bankanúmer, höfuðbók 66 og reikningsnúmer) (BT-84)"},
+	{ID: "IS-R-007", Severity: rules.Error, Description: "If seller is icelandic and payment means code is 42 then a 12 digit account id must exist — Ef seljandi er íslenskur og greiðslumáti (BT-81) er millifærsla (kóti 42) þá skal koma fram 12 stafa reikningnúmer (BT-84)"},
+	{ID: "IS-R-008", Severity: rules.Error, Description: "If seller is icelandic and invoice contains supporting description EINDAGI then the id form must be YYYY-MM-DD — Ef seljandi er íslenskur þá skal eindagi (BT-122, DocumentDescription = EINDAGI) vera á forminu YYYY-MM-DD."},
+	{ID: "IS-R-009", Severity: rules.Error, Description: "If seller is icelandic and invoice contains supporting description EINDAGI invoice must have due date — Ef seljandi er íslenskur þá skal reikningur sem inniheldur eindaga (BT-122, DocumentDescription = EINDAGI) einnig hafa gjalddaga (BT-9)."},
+	{ID: "IS-R-010", Severity: rules.Error, Description: "If seller is icelandic and invoice contains supporting description EINDAGI the id date must be same or later than due date — Ef seljandi er íslenskur þá skal eindagi (BT-122, DocumentDescription = EINDAGI) skal vera sami eða síðar en gjalddagi (BT-9) ef eindagi er til staðar."},
+	{ID: "IS-R-004", Severity: rules.Error, Description: "If seller and buyer are icelandic then the invoice shall contain the buyers icelandic legal identifier — Ef seljandi og kaupandi eru íslenskir þá skal reikningurinn innihalda íslenska kennitölu kaupanda (BT-47)."},
+	{ID: "IS-R-005", Severity: rules.Error, Description: "If seller and buyer are icelandic then the invoice shall contain the buyers address with street name and zip code — Ef seljandi og kaupandi eru íslenskir þá skal heimilisfang kaupanda innihalda götuheiti og póstnúmer (BT-50 og BT-53)"},
+
+	// Netherlands.
+	{ID: "NL-R-001", Severity: rules.Error, Description: "For suppliers in the Netherlands, if the document is a creditnote, the document MUST contain an invoice reference (cac:BillingReference/cac:InvoiceDocumentReference/cbc:ID)"},
+	{ID: "NL-R-002", Severity: rules.Error, Description: "For suppliers in the Netherlands the supplier's address (cac:AccountingSupplierParty/cac:Party/cac:PostalAddress) MUST contain street name (cbc:StreetName), city (cbc:CityName) and post code (cbc:PostalZone)"},
+	{ID: "NL-R-003", Severity: rules.Error, Description: "For suppliers in the Netherlands, the legal entity identifier MUST be either a KVK or OIN number (schemeID 0106 or 0190)"},
+	{ID: "NL-R-004", Severity: rules.Error, Description: "For suppliers in the Netherlands, if the customer is in the Netherlands, the customer address (cac:AccountingCustomerParty/cac:Party/cac:PostalAddress) MUST contain the street name (cbc:StreetName), the city (cbc:CityName) and post code (cbc:PostalZone)"},
+	{ID: "NL-R-005", Severity: rules.Error, Description: "For suppliers in the Netherlands, if the customer is in the Netherlands, the customer's legal entity identifier MUST be either a KVK or OIN number (schemeID 0106 or 0190)"},
+	{ID: "NL-R-006", Severity: rules.Error, Description: "For suppliers in the Netherlands, if the fiscal representative is in the Netherlands, the representative's address (cac:TaxRepresentativeParty/cac:PostalAddress) MUST contain street name (cbc:StreetName), city (cbc:CityName) and post code (cbc:PostalZone)"},
+	{ID: "NL-R-007", Severity: rules.Error, Description: "For suppliers in the Netherlands, the supplier MUST provide a means of payment (cac:PaymentMeans) if the payment is from customer to supplier"},
+	{ID: "NL-R-008", Severity: rules.Error, Description: "For suppliers in the Netherlands, if the customer is in the Netherlands, the payment means code (cac:PaymentMeans/cbc:PaymentMeansCode) MUST be one of 30, 48, 49, 57, 58 or 59"},
+	{ID: "NL-R-009", Severity: rules.Error, Description: "For suppliers in the Netherlands, if an order line reference (cac:OrderLineReference/cbc:LineID) is used, there must be an order reference on the document level (cac:OrderReference/cbc:ID)"},
+
+	// Germany.
+	{ID: "DE-R-001", Severity: rules.Error, Description: "If both supplier and customer are located in Germany, an invoice shall contain information on \"PAYMENT INSTRUCTIONS\" (BG-16)."},
+	{ID: "DE-R-015", Severity: rules.Error, Description: "If both supplier and customer are located in Germany, the element \"Buyer reference\" (BT-10) shall be provided."},
+	{ID: "DE-R-016", Severity: rules.Error, Description: "If both supplier and customer are located in Germany, and if one of the VAT codes S, Z, E, AE, K, G, L, or M is used, an invoice shall contain at least one of the following elements: \"Seller VAT identifier\" (BT-31) or \"Seller tax registration identifier\" (BT-32) or \"SELLER TAX REPRESENTATIVE PARTY\" (BG-11)."},
+	{ID: "DE-R-017", Severity: rules.Warning, Description: "If both supplier and customer are located in Germany, the element \"Invoice type code\" (BT-3) should only contain the following values from code list UNTDID 1001: 326 (Partial invoice), 380 (Commercial invoice), 384 (Corrected invoice), 389 (Self-billed invoice), 381 (Credit note), 875 (Partial construction invoice), 876 (Partial final construction invoice), 877 (Final construction invoice)."},
+	{ID: "DE-R-018", Severity: rules.Error, Description: "If both supplier and customer are located in Germany, information on cash discounts for prompt payment (Skonto) shall be provided within the element \"Payment terms\" BT-20 in the following way: First segment \"SKONTO\", second segment amount of days (\"TAGE=N\"), third segment percentage (\"PROZENT=N\"). Percentage must be separated by dot with two decimal places. In case the base value of the invoiced amount is not provided in BT-115 but as a partial amount, the base value shall be provided as fourth segment \"BASISBETRAG=N\" as semantic data type amount. Each entry shall start with a #, the segments must be separated by # and a row shall end with a #. A complete statement on cash discount for prompt payment shall end with a XML-conformant line break. All statements on cash discount for prompt payment shall be given in capital letters. Additional whitespaces (blanks, tabulators or line breaks) are not allowed. Other characters or texts than defined above are not allowed."},
+	{ID: "DE-R-022", Severity: rules.Error, Description: "If both supplier and customer are located in Germany, attached documents provided with an invoice in \"ADDITIONAL SUPPORTING DOCUMENTS\" (BG-24) shall have a unique filename (non case-sensitive) within the element ″Attached document″ (BT-125)."},
+	{ID: "DE-R-026", Severity: rules.Warning, Description: "If both supplier and customer are located in Germany, and if \"Invoice type code\" (BT-3) contains the code 384 (Corrected invoice), \"PRECEDING INVOICE REFERENCE\" (BG-3) should be provided at least once."},
+	{ID: "DE-R-030", Severity: rules.Error, Description: "If both supplier and customer are located in Germany, and if the group \"DIRECT DEBIT\" (BG-19) is delivered, the element \"Bank assigned creditor identifier\" (BT-90) shall be provided."},
+	{ID: "DE-R-031", Severity: rules.Error, Description: "If both supplier and customer are located in Germany, and if the group \"DIRECT DEBIT\" (BG-19) is delivered, the element \"Debited account identifier\" (BT-91) shall be provided."},
+	{ID: "DE-R-T02", Severity: rules.Warning, Description: "If both supplier and customer are located in Germany, BT-124 \"External document location\" must contain an absolute URL with valid scheme."},
+	{ID: "DE-R-002", Severity: rules.Error, Description: "If both supplier and customer are located in Germany, the group \"SELLER CONTACT\" (BG-6) shall be provided."},
+	{ID: "DE-R-003", Severity: rules.Error, Description: "If both supplier and customer are located in Germany, the element \"Seller city\" (BT-37) shall be provided."},
+	{ID: "DE-R-004", Severity: rules.Error, Description: "If both supplier and customer are located in Germany, the element \"Seller post code\" (BT-38) shall be provided."},
+	{ID: "DE-R-005", Severity: rules.Error, Description: "If both supplier and customer are located in Germany, the element \"Seller contact point\" (BT-41) shall be provided."},
+	{ID: "DE-R-006", Severity: rules.Error, Description: "If both supplier and customer are located in Germany, the element \"Seller contact telephone number\" (BT-42) shall be provided."},
+	{ID: "DE-R-007", Severity: rules.Error, Description: "If both supplier and customer are located in Germany, the element \"Seller contact email address\" (BT-43) shall be provided."},
+	{ID: "DE-R-027", Severity: rules.Warning, Description: "If both supplier and customer are located in Germany, \"Seller contact telephone number\" (BT-42) should contain a valid telephone number. A valid telephone should consist of 3 digits minimum."},
+	{ID: "DE-R-028", Severity: rules.Warning, Description: "If both supplier and customer are located in Germany, \"Seller contact email address\" (BT-43) should contain exactly one @-sign, which should not be framed by a whitespace or a dot but by at least two characters on each side. A dot should not be the first or last character."},
+	{ID: "DE-R-008", Severity: rules.Error, Description: "If both supplier and customer are located in Germany, the element \"Buyer city\" (BT-52) shall be provided."},
+	{ID: "DE-R-009", Severity: rules.Error, Description: "If both supplier and customer are located in Germany, the element \"Buyer post code\" (BT-53) shall be provided."},
+	{ID: "DE-R-010", Severity: rules.Error, Description: "If both supplier and customer are located in Germany, the element \"Deliver to city\" (BT-77) shall be provided if the group \"DELIVER TO ADDRESS\" (BG-15) is delivered."},
+	{ID: "DE-R-011", Severity: rules.Error, Description: "If both supplier and customer are located in Germany, the element \"Deliver to post code\" (BT-78) shall be provided if the group \"DELIVER TO ADDRESS\" (BG-15) is delivered."},
+	{ID: "DE-R-019", Severity: rules.Warning, Description: "If both supplier and customer are located in Germany, the element \"Payment account identifier\" (BT-84) should contain a valid IBAN if code 58 SEPA is provided in \"Payment means type code\" (BT-81)."},
+	{ID: "DE-R-023-1", Severity: rules.Error, Description: "If both supplier and customer are German, if \"Payment means type code\" (BT-81) contains a code for credit transfer (30, 58), \"CREDIT TRANSFER\" (BG-17) shall be provided."},
+	{ID: "DE-R-023-2", Severity: rules.Error, Description: "If both supplier and customer are located in Germany, and if \"Payment means type code\" (BT-81) contains a code for credit transfer (30, 58), BG-18 and BG-19 shall not be provided."},
+	{ID: "DE-R-024-1", Severity: rules.Error, Description: "If both supplier and customer are located in Germany, and if \"Payment means type code\" (BT-81) contains a code for payment card (48, 54, 55), \"PAYMENT CARD INFORMATION\" (BG-18) shall be provided."},
+	{ID: "DE-R-024-2", Severity: rules.Error, Description: "If both supplier and customer are located in Germany, and if \"Payment means type code\" (BT-81) contains a code for payment card (48, 54, 55), BG-17 and BG-19 shall not be provided."},
+	{ID: "DE-R-020", Severity: rules.Warning, Description: "If both supplier and customer are located in Germany, the element \"Debited account identifier\" (BT-91) should contain a valid IBAN if code 59 SEPA is provided in \"Payment means type code\" (BT-81)."},
+	{ID: "DE-R-025-1", Severity: rules.Error, Description: "If both supplier and customer are located in Germany, and if \"Payment means type code\" (BT-81) contains a code for direct debit (59), \"DIRECT DEBIT\" (BG-19) shall be provided."},
+	{ID: "DE-R-025-2", Severity: rules.Error, Description: "If both supplier and customer are located in Germany, and if \"Payment means type code\" (BT-81) contains a code for direct debit (59), BG-17 and BG-18 shall not be provided."},
+	{ID: "DE-R-014", Severity: rules.Error, Description: "If both supplier and customer are located in Germany, the element \"VAT category rate\" (BT-119) shall be provided."},
+
+	// Restricted code lists and formatting.
+	{ID: "PEPPOL-EN16931-CL001", Severity: rules.Error, Description: "Mime code must be according to subset of IANA code list."},
+	{ID: "PEPPOL-EN16931-CL002", Severity: rules.Error, Description: "Reason code MUST be according to subset of UNCL 5189 D.16B."},
+	{ID: "PEPPOL-EN16931-CL003", Severity: rules.Error, Description: "Reason code MUST be according to UNCL 7161 D.16B."},
+	{ID: "PEPPOL-EN16931-CL006", Severity: rules.Error, Description: "Invoice period description code must be according to UNCL 2005 D.16B."},
+	{ID: "PEPPOL-EN16931-CL007", Severity: rules.Error, Description: "Currency code must be according to ISO 4217:2005"},
+	{ID: "PEPPOL-EN16931-P0100", Severity: rules.Error, Description: "Invoice type code MUST be set according to the profile."},
+	{ID: "PEPPOL-EN16931-P0112", Severity: rules.Error, Description: "Invoice type codes 326 and 389 are only allowed when both buyer and seller are German organizations. Invoice type code 384 is only allowed when both buyer and seller are German organizations or both are Slovak organizations."},
+	{ID: "PEPPOL-EN16931-P0101", Severity: rules.Error, Description: "Credit note type code MUST be set according to the profile."},
+	{ID: "PEPPOL-EN16931-F001", Severity: rules.Error, Description: "A date MUST be formatted YYYY-MM-DD."},
+	{ID: "PEPPOL-EN16931-CL008", Severity: rules.Error, Description: "Electronic address identifier scheme must be from the codelist \"Electronic Address Identifier Scheme\""},
+	{ID: "PEPPOL-EN16931-P0104", Severity: rules.Error, Description: "Tax Category G MUST be used when exemption reason code is VATEX-EU-G"},
+	{ID: "PEPPOL-EN16931-P0105", Severity: rules.Error, Description: "Tax Category O MUST be used when exemption reason code is VATEX-EU-O"},
+	{ID: "PEPPOL-EN16931-P0106", Severity: rules.Error, Description: "Tax Category K MUST be used when exemption reason code is VATEX-EU-IC"},
+	{ID: "PEPPOL-EN16931-P0107", Severity: rules.Error, Description: "Tax Category AE MUST be used when exemption reason code is VATEX-EU-AE"},
+	{ID: "PEPPOL-EN16931-P0108", Severity: rules.Error, Description: "Tax Category E MUST be used when exemption reason code is VATEX-EU-D"},
+	{ID: "PEPPOL-EN16931-P0109", Severity: rules.Error, Description: "Tax Category E MUST be used when exemption reason code is VATEX-EU-F"},
+	{ID: "PEPPOL-EN16931-P0110", Severity: rules.Error, Description: "Tax Category E MUST be used when exemption reason code is VATEX-EU-I"},
+	{ID: "PEPPOL-EN16931-P0111", Severity: rules.Error, Description: "Tax Category E MUST be used when exemption reason code is VATEX-EU-J"},
+}
+
+// ublByID indexes UBLCatalog.
+var ublByID = func() map[string]*rules.RuleInfo {
+	m := make(map[string]*rules.RuleInfo, len(UBLCatalog))
+	for i := range UBLCatalog {
+		m[UBLCatalog[i].ID] = &UBLCatalog[i]
+	}
+	return m
+}()

@@ -176,7 +176,7 @@ func validateCmd(args []string, w io.Writer) (int, error) {
 	cpro := fs.Bool("choruspro", false, "apply the Chorus Pro checks of French B2G invoices")
 	serviceRequired := fs.Bool("service-required", false, "with -choruspro: the public buyer requires a service code (BT-10)")
 	engagementRequired := fs.Bool("engagement-required", false, "with -choruspro: the public buyer requires an engagement number (BT-13)")
-	pep := fs.Bool("peppol", false, "apply the Peppol BIS Billing 3.0 rules to a CII invoice (applied anyway when BT-24 is the Peppol identifier)")
+	pep := fs.Bool("peppol", false, "apply the Peppol BIS Billing 3.0 rules (applied anyway when BT-24 is the Peppol identifier)")
 	profile := fs.String("profile", "", "validate against this profile instead of BT-24")
 	asJSON := fs.Bool("json", false, "print the report as JSON")
 	_, data, err := oneFile(fs, args)
