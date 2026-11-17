@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ritoon/factur-x/internal/rules"
+	"github.com/ritoon/factur-x/internal/rules/ubl"
 	"github.com/ritoon/factur-x/internal/xmltree"
 	"github.com/ritoon/factur-x/invoice"
 )
@@ -557,8 +558,9 @@ func TestEmpty(t *testing.T) {
 	}
 }
 
-// TestCorpus runs Check on the CII files of the corpus (FX_CORPUS_XML and
-// FX_CORPUS): no panic, and every reported rule is in Catalog.
+// TestCorpus runs Check on the CII and UBL files of the corpus (FX_CORPUS_XML
+// and FX_CORPUS): no panic, and every reported rule is in Catalog (CII) or
+// UBLCatalog (UBL).
 func TestCorpus(t *testing.T) {
 	var dirs []string
 	for _, env := range []string{"FX_CORPUS_XML", "FX_CORPUS"} {
@@ -569,7 +571,7 @@ func TestCorpus(t *testing.T) {
 	if len(dirs) == 0 {
 		t.Skip("FX_CORPUS_XML and FX_CORPUS are not set")
 	}
-	files, valid := 0, 0
+	files, ublFiles, valid := 0, 0, 0
 	counts := map[string]int{}
 	for _, dir := range dirs {
 		err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
@@ -581,13 +583,27 @@ func TestCorpus(t *testing.T) {
 				return err
 			}
 			root, err := xmltree.Parse(data)
-			if err != nil || root.Name != "CrossIndustryInvoice" {
+			if err != nil {
 				return nil
 			}
-			files++
+			var doc *rules.Doc
+			switch {
+			case root.Name == "CrossIndustryInvoice":
+				doc = rules.NewDoc(root, invoice.ProfileUnknown)
+				files++
+			case ubl.IsUBL(root):
+				doc = ubl.View(root, invoice.ProfileUnknown)
+				ublFiles++
+			default:
+				return nil
+			}
 			r := &rules.Report{}
-			Check(&rules.Checker{Doc: rules.NewDoc(root, invoice.ProfileUnknown), Report: r, Source: rules.SourceFR})
-			checkFindings(t, r)
+			Check(&rules.Checker{Doc: doc, Report: r, Source: rules.SourceFR})
+			if doc.UBL != nil {
+				checkUBLFindings(t, r)
+			} else {
+				checkFindings(t, r)
+			}
 			if len(r.Findings) == 0 {
 				valid++
 			}
@@ -600,7 +616,7 @@ func TestCorpus(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	t.Logf("%d CII files, %d without BR-FR finding, rules reported: %v", files, valid, counts)
+	t.Logf("%d CII files, %d UBL files, %d without BR-FR finding, rules reported: %v", files, ublFiles, valid, counts)
 }
 
 func BenchmarkCheck(b *testing.B) {
