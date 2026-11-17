@@ -5,15 +5,16 @@
 // Chorus Pro for French B2G invoices, and the Peppol BIS Billing 3.0 rules.
 //
 // The syntax is detected from the root element. A UBL 2.1 Invoice or
-// CreditNote is checked against the EN 16931 rules of the UBL artefacts:
-// the business rules and code lists, and the UBL syntax rules UBL-CR, UBL-SR
-// and UBL-DT. The Factur-X profile rules, which are CII rules, do not apply.
-// The French, German and Chorus Pro rules run on a CII view of the UBL
-// document, with the rule identifiers of their CII schematrons; their
-// findings are located in the UBL document. The UBL 2.1 XML schema is not
-// checked: the Schema rule set only reports it (XSD-UBL, information). Nor
-// are the Peppol rules, which implement the CII schematron of Peppol BIS
-// Billing 3.0, whose contexts and tests differ from the UBL one: the Peppol
+// CreditNote is checked against the OASIS UBL 2.1 XML schema of its document
+// (the Schema rule set, with the same XSD-* rules as CII; the content of the
+// UBL extensions is not checked) and against the EN 16931 rules of the UBL
+// artefacts: the business rules and code lists, and the UBL syntax rules
+// UBL-CR, UBL-SR and UBL-DT. The Factur-X profile rules, which are CII
+// rules, do not apply. The French, German and Chorus Pro rules run on a CII
+// view of the UBL document, with the rule identifiers of their CII
+// schematrons; their findings are located in the UBL document. The Peppol
+// rules, which implement the CII schematron of Peppol BIS Billing 3.0, whose
+// contexts and tests differ from the UBL one, are not applied: the Peppol
 // rule set only reports it (PEPPOL-UBL, information).
 //
 // Validation never stops at the first problem: every finding is collected in
@@ -72,7 +73,7 @@ type RuleSet uint
 
 // Rule sets.
 const (
-	Schema         RuleSet = 1 << iota // structure against the XML schema of the profile (CII only)
+	Schema         RuleSet = 1 << iota // structure against the XML schema: of the profile (CII), UBL 2.1 (UBL)
 	EN16931                            // CEN business rules and code lists, and the UBL syntax rules for UBL
 	FacturX                            // Factur-X / ZUGFeRD profile rules (CII only)
 	France                             // French rules BR-FR (2026 reform) and the profiles the reform admits (FR-PROFILE-*)
@@ -126,13 +127,6 @@ type PublicBuyer struct {
 	EngagementRequired bool
 }
 
-// RuleUBLSchema is the information reported by the Schema rule set for a
-// UBL invoice, whose XML schema is not checked.
-const RuleUBLSchema = "XSD-UBL"
-
-var ublSchemaInfo = RuleInfo{ID: RuleUBLSchema, Severity: Info,
-	Description: "The structure of a UBL invoice is not checked against the UBL 2.1 XML schema; the UBL syntax rules (UBL-CR, UBL-SR, UBL-DT) check the elements EN 16931 uses."}
-
 // RuleUBLPeppol is the information reported by the Peppol rule set for a UBL
 // invoice, to which the Peppol rules (CII schematron) do not apply.
 const RuleUBLPeppol = "PEPPOL-UBL"
@@ -180,17 +174,13 @@ func Tree(root *xmltree.Node, opts *Options) *Report {
 			check(&rules.Checker{Doc: doc, Report: r, Source: source})
 		}
 	}
+	run(Schema, SourceSyntax, schema.Check)
 	if isUBL {
-		if set&Schema != 0 {
-			r.Add(Finding{Rule: RuleUBLSchema, Severity: Info, Source: SourceSyntax, Path: "/" + root.Name, Line: root.Line,
-				Message: "the structure of the UBL invoice is not checked against the UBL 2.1 XML schema"})
-		}
 		run(EN16931, SourceEN16931, func(c *rules.Checker) {
 			en16931.Check(c)
 			ubl.Check(c)
 		})
 	} else {
-		run(Schema, SourceSyntax, schema.Check)
 		run(EN16931, SourceEN16931, en16931.Check)
 		run(FacturX, SourceFacturX, facturx.Check)
 	}
@@ -252,7 +242,6 @@ func Catalog(set RuleSet) []RuleInfo {
 		}
 	}
 	add(Schema, schema.Catalog)
-	add(Schema, []RuleInfo{ublSchemaInfo})
 	add(EN16931, en16931.Catalog)
 	add(EN16931, ubl.Catalog)
 	add(FacturX, facturx.Catalog)
