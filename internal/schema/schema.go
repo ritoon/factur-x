@@ -1,20 +1,28 @@
-// Package schema checks the structure of a CII invoice against the XML
-// schema of its Factur-X profile: allowed elements, order, cardinalities,
-// attributes, namespaces and simple types.
+// Package schema checks the structure of an invoice against its XML schema:
+// a CII invoice against the schema of its Factur-X profile, a UBL invoice
+// against the OASIS UBL 2.1 schema of its document (Invoice or CreditNote).
+// It checks the allowed elements, their order, cardinalities, attributes,
+// namespaces and simple types.
 //
-// The schemas of the five Factur-X profiles (MINIMUM, BASIC WL, BASIC,
-// EN 16931, EXTENDED) are compiled ahead of time into the tables of
-// tables_gen.go by the generator in ./gen, so validation needs no schema
-// engine and does not allocate while the document is valid. Types that are
-// identical in several profiles are shared.
+// The schemas are compiled ahead of time by the generator in ./gen, so
+// validation needs no schema engine and does not allocate while the document
+// is valid:
 //
-// XRECHNUNG invoices are checked against the EN 16931 schema and
-// EXTENDED-CTC-FR invoices against the EXTENDED schema. An invoice whose
-// profile is unknown is checked against the EXTENDED schema, the most
-// permissive, with a warning.
+//   - tables_gen.go holds the schemas of the five Factur-X profiles
+//     (MINIMUM, BASIC WL, BASIC, EN 16931, EXTENDED). Types that are
+//     identical in several profiles are shared. XRECHNUNG invoices are
+//     checked against the EN 16931 schema and EXTENDED-CTC-FR invoices
+//     against the EXTENDED schema. An invoice whose profile is unknown is
+//     checked against the EXTENDED schema, the most permissive, with a
+//     warning.
+//   - ubl_tables_gen.go holds the UBL 2.1 schemas of Invoice and CreditNote
+//     (the runtime schemas of the OASIS package). The content of the UBL
+//     extensions (ext:ExtensionContent, a lax wildcard) is not checked: only
+//     the namespace and the number of its elements are.
 package schema
 
 //go:generate go run ./gen -o tables_gen.go ${FX_XSD_DIR}
+//go:generate go run ./gen -ubl -o ubl_tables_gen.go
 
 import (
 	"regexp"
@@ -29,7 +37,7 @@ import (
 // Rule identifiers.
 const (
 	RuleProfile          = "XSD-PROFILE"           // unknown profile: checked against EXTENDED (warning)
-	RuleRoot             = "XSD-ROOT"              // the root element is not rsm:CrossIndustryInvoice
+	RuleRoot             = "XSD-ROOT"              // the root element is not the one of the schema
 	RuleNamespace        = "XSD-NAMESPACE"         // element in the wrong namespace
 	RuleUnexpected       = "XSD-UNEXPECTED"        // element not allowed in its parent
 	RuleOrder            = "XSD-ORDER"             // element allowed in its parent, but misplaced
@@ -44,15 +52,15 @@ const (
 // Catalog lists the rules implemented by this package.
 var Catalog = []rules.RuleInfo{
 	{ID: RuleProfile, Severity: rules.Warning, Description: "The profile (BT-24) is unknown: the structure is checked against the EXTENDED schema, the most permissive."},
-	{ID: RuleRoot, Severity: rules.Error, Description: "The root element shall be rsm:CrossIndustryInvoice."},
-	{ID: RuleNamespace, Severity: rules.Error, Description: "Each element shall be in the namespace defined by the schema (rsm, ram, udt or qdt)."},
-	{ID: RuleUnexpected, Severity: rules.Error, Description: "Each element shall be allowed in its parent by the schema of the profile."},
+	{ID: RuleRoot, Severity: rules.Error, Description: "The root element shall be rsm:CrossIndustryInvoice (CII), or Invoice or CreditNote (UBL 2.1)."},
+	{ID: RuleNamespace, Severity: rules.Error, Description: "Each element shall be in the namespace defined by the schema (rsm, ram, udt or qdt in CII; cac, cbc or ext in UBL)."},
+	{ID: RuleUnexpected, Severity: rules.Error, Description: "Each element shall be allowed in its parent by the schema (of the profile, for CII)."},
 	{ID: RuleOrder, Severity: rules.Error, Description: "Child elements shall appear in the order defined by the schema."},
 	{ID: RuleMissing, Severity: rules.Error, Description: "Elements required by the schema (minOccurs > 0) shall be present."},
 	{ID: RuleCount, Severity: rules.Error, Description: "An element shall not occur more often than allowed by the schema (maxOccurs)."},
 	{ID: RuleAttribute, Severity: rules.Error, Description: "Only the attributes declared by the schema are allowed."},
 	{ID: RuleAttributeMissing, Severity: rules.Error, Description: "Attributes required by the schema shall be present."},
-	{ID: RuleType, Severity: rules.Error, Description: "Element and attribute values shall match their simple type (xs:decimal, xs:boolean, xs:base64Binary, enumerations, lengths, patterns)."},
+	{ID: RuleType, Severity: rules.Error, Description: "Element and attribute values shall match their simple type (xs:decimal, xs:boolean, xs:base64Binary, xs:date, xs:time, xs:language, enumerations, lengths, patterns)."},
 	{ID: RuleText, Severity: rules.Error, Description: "Elements whose content is made of elements shall not contain text."},
 }
 
@@ -66,6 +74,7 @@ const (
 	kBoolean                   // xs:boolean
 	kBase64                    // xs:base64Binary
 	kDate                      // xs:date
+	kTime                      // xs:time
 )
 
 // contentKind is the content model of a complex type.
@@ -75,6 +84,7 @@ const (
 	contentEmpty    contentKind = iota // no element, no text
 	contentElements                    // a sequence or a choice of elements
 	contentSimple                      // text of a simple type, with attributes
+	contentAny                         // elements matching a wildcard (xs:any), content not checked
 )
 
 // unbounded is the maxOccurs value meaning "unbounded".
@@ -97,8 +107,9 @@ type ctype struct {
 	name       string // type name, with the conventional prefix ("ram:TradePartyType")
 	content    contentKind
 	choice     bool  // the elements form a choice rather than a sequence
-	min, max   uint8 // occurrences of the choice
+	min, max   uint8 // occurrences of the choice, or of the wildcard
 	simple     simpleKind
+	other      uint8  // wildcard: index in namespaces of the namespace excluded by ##other
 	facets     uint16 // index in facetTable, 0 = none
 	simpleName string // name of the simple type, for messages
 	first, n   uint16 // particles[first : first+n]
@@ -130,16 +141,32 @@ type facets struct {
 	collapse       bool
 }
 
-// facetRegexps holds the compiled patterns of facetTable.
-var facetRegexps = func() [][]*regexp.Regexp {
-	out := make([][]*regexp.Regexp, len(facetTable))
-	for i, f := range facetTable {
+// tables is a compiled schema set: the Factur-X profiles or UBL 2.1.
+type tables struct {
+	namespaces []string
+	types      []ctype
+	particles  []particle
+	attributes []attribute
+	facetTable []facets
+	regexps    [][]*regexp.Regexp // compiled patterns of facetTable
+	profiles   bool               // types carry the profiles using them (Factur-X)
+}
+
+func newTables(ns []string, ts []ctype, ps []particle, as []attribute, fs []facets, profiles bool) *tables {
+	t := &tables{namespaces: ns, types: ts, particles: ps, attributes: as, facetTable: fs, profiles: profiles}
+	t.regexps = make([][]*regexp.Regexp, len(fs))
+	for i, f := range fs {
 		for _, p := range f.patterns {
-			out[i] = append(out[i], regexp.MustCompile("^(?:"+p+")$"))
+			t.regexps[i] = append(t.regexps[i], regexp.MustCompile("^(?:"+p+")$"))
 		}
 	}
-	return out
-}()
+	return t
+}
+
+var (
+	ciiTables = newTables(namespaces[:], types[:], particles[:], attributes[:], facetTable[:], true)
+	ublTables = newTables(ublNamespaces[:], ublTypes[:], ublParticles[:], ublAttributes[:], ublFacetTable[:], false)
+)
 
 // profileIndex returns the schema used for an invoice profile.
 func profileIndex(p invoice.Profile) int {
@@ -160,10 +187,22 @@ func profileIndex(p invoice.Profile) int {
 // generated from.
 func Version() string { return schemaVersion }
 
-// Check validates the structure of c.Doc against the schema of c.Doc.Profile
-// and records the findings in c.Report.
+// UBLVersion returns the version of the UBL schemas the tables were
+// generated from.
+func UBLVersion() string { return ublSchemaVersion }
+
+// Check validates the structure of c.Doc and records the findings in
+// c.Report: a CII invoice against the schema of c.Doc.Profile, a UBL invoice
+// (c.Doc.UBL) against the UBL 2.1 schema of its root element.
 func Check(c *rules.Checker) {
-	if c.Doc == nil || c.Doc.Root == nil {
+	if c.Doc == nil {
+		return
+	}
+	if c.Doc.UBL != nil {
+		checkUBL(c, c.Doc.UBL)
+		return
+	}
+	if c.Doc.Root == nil {
 		return
 	}
 	p := profileIndex(c.Doc.Profile)
@@ -175,7 +214,7 @@ func Check(c *rules.Checker) {
 		c.Fail(RuleProfile, rules.Warning, at,
 			"unknown profile (BT-24 %q): the structure is checked against the EXTENDED schema, the most permissive", c.Doc.SpecificationID())
 	}
-	v := validator{c: c, p: p}
+	v := validator{c: c, t: ciiTables, p: p}
 	r := &roots[p]
 	root := c.Doc.Root
 	if root.Name != r.name {
@@ -188,9 +227,24 @@ func Check(c *rules.Checker) {
 	v.element(root, &types[r.typ])
 }
 
+// checkUBL validates the UBL document root.
+func checkUBL(c *rules.Checker, root *xmltree.Node) {
+	v := validator{c: c, t: ublTables}
+	for i := range ublRoots {
+		r := &ublRoots[i]
+		if root.Name == r.name && root.Space == ublNamespaces[r.ns] {
+			v.element(root, &ublTypes[r.typ])
+			return
+		}
+	}
+	c.Fail(RuleRoot, rules.Error, root, "the root element is %s in namespace %q, expected Invoice in namespace %q or CreditNote in namespace %q",
+		display(root), root.Space, ublNamespaces[ublRoots[0].ns], ublNamespaces[ublRoots[1].ns])
+}
+
 type validator struct {
 	c *rules.Checker
-	p int // profile index
+	t *tables
+	p int // profile index (Factur-X)
 }
 
 func (v *validator) fail(rule string, n *xmltree.Node, format string, args ...any) {
@@ -207,7 +261,7 @@ func (v *validator) element(n *xmltree.Node, t *ctype) {
 			v.fail(RuleUnexpected, n.Children[0], "%s is not allowed: %s holds a value, not elements", display(n.Children[0]), display(n))
 		}
 		if t.simple != kString || t.facets != 0 {
-			if msg := checkValue(n.Text, t.simple, t.facets); msg != "" {
+			if msg := v.t.checkValue(n.Text, t.simple, t.facets); msg != "" {
 				v.fail(RuleType, n, "%s: value %q %s %s", display(n), short(n.Text), msg, typeLabel(t.simpleName, t.simple))
 			}
 		}
@@ -216,10 +270,38 @@ func (v *validator) element(n *xmltree.Node, t *ctype) {
 	if !blank(n.Text) {
 		v.fail(RuleText, n, "%s holds elements only, text %q is not allowed", display(n), short(n.Text))
 	}
-	if t.choice {
+	switch {
+	case t.content == contentAny:
+		v.wildcard(n, t)
+	case t.choice:
 		v.choice(n, t)
-	} else {
+	default:
 		v.sequence(n, t)
+	}
+}
+
+// wildcard validates the children of n against the wildcard of t
+// (xs:any namespace="##other"): elements in a namespace, other than the one
+// t excludes, whose content is not checked.
+func (v *validator) wildcard(n *xmltree.Node, t *ctype) {
+	other := v.t.namespaces[t.other]
+	matched := 0
+	for _, ch := range n.Children {
+		if ch.Space == other || ch.Space == "" {
+			v.fail(RuleUnexpected, ch, "%s is not allowed in %s; expected here: an element in a namespace other than %q", display(ch), display(n), other)
+			continue
+		}
+		matched++
+		if t.max != unbounded && matched > int(t.max) {
+			if t.max == 1 {
+				v.fail(RuleCount, ch, "%s: %s holds only one element", display(ch), display(n))
+			} else {
+				v.fail(RuleCount, ch, "%s: %s holds at most %d elements", display(ch), display(n), t.max)
+			}
+		}
+	}
+	if matched < int(t.min) && matched == len(n.Children) {
+		v.fail(RuleMissing, n, "an element in a namespace other than %q is missing in %s", other, display(n))
 	}
 }
 
@@ -231,7 +313,7 @@ func (v *validator) element(n *xmltree.Node, t *ctype) {
 // the error is classified (missing, misplaced, unexpected) and matching
 // resumes so that a single mistake gives a single finding.
 func (v *validator) sequence(n *xmltree.Node, t *ctype) {
-	ps := particles[t.first : t.first+t.n]
+	ps := v.t.particles[t.first : t.first+t.n]
 	pi, cnt := 0, 0 // current particle and its occurrences so far
 	kids := n.Children
 	for k, ch := range kids {
@@ -253,7 +335,7 @@ func (v *validator) sequence(n *xmltree.Node, t *ctype) {
 					have = cnt
 				}
 				if have < int(ps[s].min) && !hasChild(kids[k+1:], ps[s].name) {
-					v.fail(RuleMissing, n, "%s is missing in %s (expected before %s)", ps[s].display(), display(n), ps[j].display())
+					v.fail(RuleMissing, n, "%s is missing in %s (expected before %s)", v.t.display(&ps[s]), display(n), v.t.display(&ps[j]))
 				}
 			}
 			pi, cnt = j, 1
@@ -262,7 +344,7 @@ func (v *validator) sequence(n *xmltree.Node, t *ctype) {
 		}
 		if e := find(ps[:min(pi, len(ps))], ch.Name); e >= 0 {
 			// Name the first preceding sibling that must follow ch.
-			before := ps[pi].display()
+			before := v.t.display(&ps[pi])
 			for _, prev := range kids[:k] {
 				if find(ps, prev.Name) > e {
 					before = display(prev)
@@ -270,12 +352,12 @@ func (v *validator) sequence(n *xmltree.Node, t *ctype) {
 				}
 			}
 			v.fail(RuleOrder, ch, "%s is not allowed at this position in %s: it must come before %s; expected here: %s",
-				display(ch), display(n), before, expected(ps, pi, cnt))
+				display(ch), display(n), before, v.t.expected(ps, pi, cnt))
 			v.namespace(ch, &ps[e])
-			v.element(ch, &types[ps[e].typ])
+			v.element(ch, &v.t.types[ps[e].typ])
 			continue
 		}
-		v.unexpected(n, t, ch, expected(ps, pi, cnt))
+		v.unexpected(n, t, ch, v.t.expected(ps, pi, cnt))
 	}
 	for s := pi; s < len(ps); s++ {
 		have := 0
@@ -283,7 +365,7 @@ func (v *validator) sequence(n *xmltree.Node, t *ctype) {
 			have = cnt
 		}
 		if have < int(ps[s].min) {
-			v.fail(RuleMissing, n, "%s is missing in %s", ps[s].display(), display(n))
+			v.fail(RuleMissing, n, "%s is missing in %s", v.t.display(&ps[s]), display(n))
 		}
 	}
 }
@@ -292,34 +374,34 @@ func (v *validator) sequence(n *xmltree.Node, t *ctype) {
 // children matching the same alternative, within its maxOccurs, form one
 // occurrence of the choice.
 func (v *validator) choice(n *xmltree.Node, t *ctype) {
-	ps := particles[t.first : t.first+t.n]
+	ps := v.t.particles[t.first : t.first+t.n]
 	occ, alt, cnt := 0, -1, 0
 	for _, ch := range n.Children {
 		j := find(ps, ch.Name)
 		if j < 0 {
-			v.unexpected(n, t, ch, alternatives(ps))
+			v.unexpected(n, t, ch, v.t.alternatives(ps))
 			continue
 		}
 		if j == alt && (ps[j].max == unbounded || cnt < int(ps[j].max)) {
 			cnt++
 		} else {
 			if alt >= 0 && cnt < int(ps[alt].min) {
-				v.fail(RuleMissing, n, "%s is missing in %s", ps[alt].display(), display(n))
+				v.fail(RuleMissing, n, "%s is missing in %s", v.t.display(&ps[alt]), display(n))
 			}
 			alt, cnt = j, 1
 			occ++
 			if t.max != unbounded && occ > int(t.max) {
-				v.fail(RuleCount, ch, "%s: only %d of %s allowed in %s", display(ch), t.max, alternatives(ps), display(n))
+				v.fail(RuleCount, ch, "%s: only %d of %s allowed in %s", display(ch), t.max, v.t.alternatives(ps), display(n))
 			}
 		}
 		v.namespace(ch, &ps[j])
-		v.element(ch, &types[ps[j].typ])
+		v.element(ch, &v.t.types[ps[j].typ])
 	}
 	if alt >= 0 && cnt < int(ps[alt].min) {
-		v.fail(RuleMissing, n, "%s is missing in %s", ps[alt].display(), display(n))
+		v.fail(RuleMissing, n, "%s is missing in %s", v.t.display(&ps[alt]), display(n))
 	}
 	if occ < int(t.min) {
-		v.fail(RuleMissing, n, "%s is missing in %s", alternatives(ps), display(n))
+		v.fail(RuleMissing, n, "%s is missing in %s", v.t.alternatives(ps), display(n))
 	}
 }
 
@@ -333,12 +415,12 @@ func (v *validator) matched(n, ch *xmltree.Node, p *particle, cnt int) {
 		}
 	}
 	v.namespace(ch, p)
-	v.element(ch, &types[p.typ])
+	v.element(ch, &v.t.types[p.typ])
 }
 
 func (v *validator) namespace(ch *xmltree.Node, p *particle) {
-	if ch.Space != namespaces[p.ns] {
-		v.fail(RuleNamespace, ch, "%s is in namespace %q, expected %q (%s)", display(ch), ch.Space, namespaces[p.ns], p.display())
+	if ns := v.t.namespaces[p.ns]; ch.Space != ns {
+		v.fail(RuleNamespace, ch, "%s is in namespace %q, expected %q (%s)", display(ch), ch.Space, ns, v.t.display(p))
 	}
 }
 
@@ -354,15 +436,18 @@ func (v *validator) unexpected(n *xmltree.Node, t *ctype, ch *xmltree.Node, want
 }
 
 // allowedFrom returns the smallest profile above the current one whose
-// version of type t declares a child named name, or -1.
+// version of type t declares a child named name, or -1 (always for UBL).
 func (v *validator) allowedFrom(t *ctype, name string) int {
+	if !v.t.profiles {
+		return -1
+	}
 	for q := v.p + 1; q < numProfiles; q++ {
-		for i := range types {
-			u := &types[i]
+		for i := range v.t.types {
+			u := &v.t.types[i]
 			if u.profiles&(1<<q) == 0 || u.name != t.name {
 				continue
 			}
-			if find(particles[u.first:u.first+u.n], name) >= 0 {
+			if find(v.t.particles[u.first:u.first+u.n], name) >= 0 {
 				return q
 			}
 		}
@@ -372,7 +457,7 @@ func (v *validator) allowedFrom(t *ctype, name string) int {
 
 // attributes validates the attributes of n against those of t.
 func (v *validator) attributes(n *xmltree.Node, t *ctype) {
-	as := attributes[t.afirst : t.afirst+t.an]
+	as := v.t.attributes[t.afirst : t.afirst+t.an]
 	for i := range n.Attrs {
 		a := &n.Attrs[i]
 		if a.Prefix != "" {
@@ -396,7 +481,7 @@ func (v *validator) attributes(n *xmltree.Node, t *ctype) {
 			continue
 		}
 		if as[d].kind != kString || as[d].facets != 0 {
-			if msg := checkValue(a.Value, as[d].kind, as[d].facets); msg != "" {
+			if msg := v.t.checkValue(a.Value, as[d].kind, as[d].facets); msg != "" {
 				v.fail(RuleType, n, "attribute %s of %s: value %q %s %s", a.Name, display(n), short(a.Value), msg, typeLabel("", as[d].kind))
 			}
 		}
@@ -411,9 +496,9 @@ func (v *validator) attributes(n *xmltree.Node, t *ctype) {
 	}
 }
 
-// display returns the name of a particle with its conventional prefix.
-func (p *particle) display() string {
-	if pre := nsPrefix(namespaces[p.ns]); pre != "" {
+// display returns the name of a particle of t with its conventional prefix.
+func (t *tables) display(p *particle) string {
+	if pre := nsPrefix(t.namespaces[p.ns]); pre != "" {
 		return pre + ":" + p.name
 	}
 	return p.name
@@ -441,13 +526,28 @@ func nsPrefix(ns string) string {
 		return "udt"
 	case rules.NSQdt:
 		return "qdt"
+	case nsCac:
+		return "cac"
+	case nsCbc:
+		return "cbc"
+	case nsExt:
+		return "ext"
 	}
 	return ""
 }
 
+// UBL namespaces of the elements that have a conventional prefix. The
+// elements of the document namespaces (Invoice-2 and CreditNote-2) are
+// displayed with the prefix of the document, usually none.
+const (
+	nsCac = "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+	nsCbc = "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+	nsExt = "urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2"
+)
+
 // expected lists the elements that may come next in a sequence, the current
 // particle being pi with cnt occurrences.
-func expected(ps []particle, pi, cnt int) string {
+func (t *tables) expected(ps []particle, pi, cnt int) string {
 	var names []string
 	for s := pi; s < len(ps); s++ {
 		have := 0
@@ -455,7 +555,7 @@ func expected(ps []particle, pi, cnt int) string {
 			have = cnt
 		}
 		if ps[s].max == unbounded || have < int(ps[s].max) {
-			names = append(names, ps[s].display())
+			names = append(names, t.display(&ps[s]))
 		}
 		if have < int(ps[s].min) {
 			break
@@ -467,10 +567,10 @@ func expected(ps []particle, pi, cnt int) string {
 	return orList(names)
 }
 
-func alternatives(ps []particle) string {
+func (t *tables) alternatives(ps []particle) string {
 	names := make([]string, len(ps))
 	for i := range ps {
-		names[i] = ps[i].display()
+		names[i] = t.display(&ps[i])
 	}
 	return orList(names)
 }
@@ -529,6 +629,8 @@ func typeLabel(name string, k simpleKind) string {
 		return "xs:base64Binary"
 	case kDate:
 		return "xs:date"
+	case kTime:
+		return "xs:time"
 	}
 	return "xs:string"
 }
@@ -569,10 +671,11 @@ func trim(s string) string {
 	return s[i:j]
 }
 
-// checkValue checks a value against a simple type. It returns "" when the
-// value is valid, else the reason ("is not a valid", "is not one of"...),
-// completed by the caller with the type name.
-func checkValue(s string, k simpleKind, fi uint16) string {
+// checkValue checks a value against a simple type, whose facets are
+// t.facetTable[fi]. It returns "" when the value is valid, else the reason
+// ("is not a valid", "is not one of"...), completed by the caller with the
+// type name.
+func (t *tables) checkValue(s string, k simpleKind, fi uint16) string {
 	ok := true
 	switch k {
 	case kDecimal:
@@ -589,6 +692,8 @@ func checkValue(s string, k simpleKind, fi uint16) string {
 		ok = validBase64(s)
 	case kDate:
 		ok = validDate(trim(s))
+	case kTime:
+		ok = validTime(trim(s))
 	}
 	if !ok {
 		return "is not a valid"
@@ -596,11 +701,7 @@ func checkValue(s string, k simpleKind, fi uint16) string {
 	if fi == 0 {
 		return ""
 	}
-	return checkFacets(s, fi)
-}
-
-func checkFacets(s string, fi uint16) string {
-	return facetTable[fi].check(s, facetRegexps[fi])
+	return t.facetTable[fi].check(s, t.regexps[fi])
 }
 
 // check checks s against the facets; res are the compiled patterns. It
@@ -716,7 +817,7 @@ var base64Alphabet = func() (t [256]bool) {
 }()
 
 // validDate reports whether s is an xs:date lexical value
-// (-?YYYY-MM-DD with an optional time zone).
+// (-?YYYY-MM-DD with an optional time zone), the day existing in the month.
 func validDate(s string) bool {
 	if strings.HasPrefix(s, "-") {
 		s = s[1:]
@@ -729,17 +830,80 @@ func validDate(s string) bool {
 			return false
 		}
 	}
+	y := int(s[0]-'0')*1000 + int(s[1]-'0')*100 + int(s[2]-'0')*10 + int(s[3]-'0')
 	m := int(s[5]-'0')*10 + int(s[6]-'0')
 	d := int(s[8]-'0')*10 + int(s[9]-'0')
-	if m < 1 || m > 12 || d < 1 || d > 31 {
+	if m < 1 || m > 12 || d < 1 || d > daysIn(m, y) {
 		return false
 	}
-	switch tz := s[10:]; {
-	case tz == "", tz == "Z":
+	return validTZ(s[10:])
+}
+
+// daysIn returns the number of days of month m (1 to 12) of year y.
+func daysIn(m, y int) int {
+	switch m {
+	case 2:
+		if y%4 == 0 && (y%100 != 0 || y%400 == 0) {
+			return 29
+		}
+		return 28
+	case 4, 6, 9, 11:
+		return 30
+	}
+	return 31
+}
+
+// validTZ reports whether s is empty or an XML Schema time zone: Z, or
+// +hh:mm or -hh:mm from -14:00 to +14:00.
+func validTZ(s string) bool {
+	switch {
+	case s == "", s == "Z":
 		return true
-	case len(tz) == 6 && (tz[0] == '+' || tz[0] == '-') && tz[3] == ':' &&
-		isDigit(tz[1]) && isDigit(tz[2]) && isDigit(tz[4]) && isDigit(tz[5]):
-		return true
+	case len(s) == 6 && (s[0] == '+' || s[0] == '-') && s[3] == ':' &&
+		isDigit(s[1]) && isDigit(s[2]) && isDigit(s[4]) && isDigit(s[5]):
+		h := int(s[1]-'0')*10 + int(s[2]-'0')
+		m := int(s[4]-'0')*10 + int(s[5]-'0')
+		return m <= 59 && (h < 14 || h == 14 && m == 0)
 	}
 	return false
+}
+
+// validTime reports whether s is an xs:time lexical value: hh:mm:ss with an
+// optional fraction of second and an optional time zone; 24:00:00 is the
+// end of the day.
+func validTime(s string) bool {
+	if len(s) < 8 || s[2] != ':' || s[5] != ':' {
+		return false
+	}
+	for _, i := range []int{0, 1, 3, 4, 6, 7} {
+		if !isDigit(s[i]) {
+			return false
+		}
+	}
+	h := int(s[0]-'0')*10 + int(s[1]-'0')
+	m := int(s[3]-'0')*10 + int(s[4]-'0')
+	sec := int(s[6]-'0')*10 + int(s[7]-'0')
+	rest := s[8:]
+	zero := true // the fraction of second is zero
+	if strings.HasPrefix(rest, ".") {
+		i := 1
+		for i < len(rest) && isDigit(rest[i]) {
+			if rest[i] != '0' {
+				zero = false
+			}
+			i++
+		}
+		if i == 1 {
+			return false
+		}
+		rest = rest[i:]
+	}
+	if h == 24 {
+		if m != 0 || sec != 0 || !zero {
+			return false
+		}
+	} else if h > 23 || m > 59 || sec > 59 {
+		return false
+	}
+	return validTZ(rest)
 }

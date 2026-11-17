@@ -8,6 +8,7 @@ import (
 	"github.com/ritoon/factur-x/cii"
 	"github.com/ritoon/factur-x/internal/rules"
 	"github.com/ritoon/factur-x/internal/rules/ubl"
+	"github.com/ritoon/factur-x/internal/schema"
 	"github.com/ritoon/factur-x/internal/xmltree"
 	"github.com/ritoon/factur-x/invoice"
 )
@@ -199,8 +200,8 @@ func TestUBL(t *testing.T) {
 		if !r.Valid() || r.Profile != c.profile {
 			t.Errorf("%s: profile %s, valid %v:\n%s", c.file, r.Profile, r.Valid(), r)
 		}
-		if !r.Has(RuleUBLSchema) {
-			t.Errorf("%s: no %s", c.file, RuleUBLSchema)
+		if n := len(r.Findings) - len(findings(r, RuleUBLPeppol)); n > 0 {
+			t.Errorf("%s: findings:\n%s", c.file, r)
 		}
 		if findings(r, "FX-") != nil || findings(r, "XSD-PROFILE") != nil || findings(r, "PEPPOL-EN16931") != nil {
 			t.Errorf("%s: CII rules applied to UBL:\n%s", c.file, r)
@@ -213,7 +214,7 @@ func TestUBL(t *testing.T) {
 	// The findings are located in the UBL document.
 	doc := strings.Replace(readXML(t, "../testdata/EN16931_Einfach.ubl.xml"), ">529.87</cbc:PayableAmount>", ">1.234</cbc:PayableAmount>", 1)
 	r := XML([]byte(doc), nil)
-	if got, want := strings.Join(r.Rules(), " "), "BR-CO-16 BR-DEC-18 PEPPOL-UBL UBL-DT-01 XSD-UBL"; got != want {
+	if got, want := strings.Join(r.Rules(), " "), "BR-CO-16 BR-DEC-18 PEPPOL-UBL UBL-DT-01"; got != want {
 		t.Errorf("rules = %s, want %s\n%s", got, want, r)
 	}
 	for _, f := range r.Errors() {
@@ -222,15 +223,25 @@ func TestUBL(t *testing.T) {
 		}
 	}
 
-	// Rule sets: the schema only reports that it is not checked; the German
-	// rules apply to an XRechnung UBL invoice.
+	// Rule sets: the Schema rule set checks the UBL 2.1 schema, the Peppol
+	// rule set only reports that it does not apply; the German rules apply
+	// to an XRechnung UBL invoice.
 	r = XML([]byte(doc), &Options{Rules: Schema})
-	if got := strings.Join(r.Rules(), " "); got != RuleUBLSchema || !r.Valid() {
+	if len(r.Findings) > 0 {
 		t.Errorf("Schema only: %s", r)
 	}
 	r = XML([]byte(doc), &Options{Rules: Peppol})
 	if got := strings.Join(r.Rules(), " "); got != RuleUBLPeppol || !r.Valid() {
 		t.Errorf("Peppol only: %s", r)
+	}
+	bad := strings.Replace(doc, "<cbc:IssueDate>2018-03-05</cbc:IssueDate>", "<cbc:IssueDate>2018-03-05</cbc:IssueDate><cbc:IssueDate>2018-03-05</cbc:IssueDate>", 1)
+	r = XML([]byte(bad), &Options{Rules: Schema})
+	if f := findings(r, schema.RuleCount); len(f) != 1 || f[0].Source != SourceSyntax ||
+		f[0].Path != "/Invoice/cbc:IssueDate[2]" || f[0].Line != 6 || len(r.Findings) != 1 {
+		t.Errorf("Schema only, repeated cbc:IssueDate:\n%s", r)
+	}
+	if r = XML([]byte(bad), &Options{Rules: EN16931}); findings(r, "XSD-") != nil {
+		t.Errorf("EN16931 only: schema checked\n%s", r)
 	}
 	xr := readXML(t, "../testdata/XRECHNUNG_Einfach.ubl.xml")
 	root, err := xmltree.Parse([]byte(xr))
@@ -261,7 +272,7 @@ func TestCatalogUBL(t *testing.T) {
 		}
 		return false
 	}
-	if !has(EN16931, "UBL-CR-001") || !has(EN16931, "UBL-SR-01") || !has(Schema, RuleUBLSchema) || has(Schema, "UBL-CR-001") || !has(Peppol, RuleUBLPeppol) {
+	if !has(EN16931, "UBL-CR-001") || !has(EN16931, "UBL-SR-01") || !has(Schema, schema.RuleOrder) || has(Schema, "UBL-CR-001") || has(Schema, "XSD-UBL") || !has(Peppol, RuleUBLPeppol) {
 		t.Errorf("UBL rules missing from the catalog")
 	}
 }

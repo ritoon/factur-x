@@ -107,7 +107,7 @@ const minimal = `<?xml version="1.0" encoding="UTF-8"?>
 // mutation is a change to a valid invoice and the findings it must produce.
 type mutation struct {
 	name     string
-	base     string // "en16931" (testdata/EN16931_Einfach.cii.xml) or "minimum" (minimal)
+	base     string // "en16931" (testdata/EN16931_Einfach.cii.xml), "minimum" (minimal), "ubl" or "ubl-cn" (see ublMutations)
 	old, new string
 	more     []string // further old, new pairs
 	rules    []string // expected rule of each finding, in order
@@ -328,6 +328,10 @@ func mutationBase(t testing.TB, base string) []byte {
 		return readFile(t, filepath.Join("..", "..", "testdata", "EN16931_Einfach.cii.xml"))
 	case "rabatte":
 		return readFile(t, filepath.Join("..", "..", "testdata", "EN16931_Rabatte.cii.xml"))
+	case "ubl":
+		return readFile(t, filepath.Join("..", "..", "testdata", "EN16931_Einfach.ubl.xml"))
+	case "ubl-cn":
+		return readFile(t, filepath.Join("..", "..", "testdata", "ubl-tc434-creditnote1.xml"))
 	}
 	t.Fatalf("unknown base %q", base)
 	return nil
@@ -413,9 +417,16 @@ func TestValues(t *testing.T) {
 		{kBase64, "SGVsbG8", false}, {kBase64, "SGVs=G8=", false}, {kBase64, "SGV===", false}, {kBase64, "SGV*bG8=", false},
 		{kDate, "2024-02-29", true}, {kDate, "2024-02-29Z", true}, {kDate, "2024-02-29+01:00", true},
 		{kDate, "20240229", false}, {kDate, "2024-13-01", false}, {kDate, "2024-02-29T00:00", false},
+		{kDate, "2023-02-29", false}, {kDate, "2024-02-30", false}, {kDate, "2024-04-31", false}, {kDate, "2024-12-31", true},
+		{kDate, "2000-02-29", true}, {kDate, "1900-02-29", false}, {kDate, "2024-01-01-14:00", true}, {kDate, "2024-01-01+14:01", false},
+		{kDate, "2024-01-01+15:00", false}, {kDate, "2024-01-01+05:60", false},
+		{kTime, "12:30:00", true}, {kTime, "00:00:00.000Z", true}, {kTime, "23:59:59.5+02:00", true}, {kTime, " 24:00:00 ", true},
+		{kTime, "24:00:00.000", true}, {kTime, "24:00:01", false}, {kTime, "24:00:00.1", false}, {kTime, "12:60:00", false},
+		{kTime, "12:00:60", false}, {kTime, "12:00", false}, {kTime, "12:00:00.", false}, {kTime, "12:00:00+0200", false},
+		{kTime, "1:00:00", false}, {kTime, "2024-02-29T12:00:00", false},
 		{kString, "anything", true},
 	} {
-		if got := checkValue(tc.s, tc.k, 0) == ""; got != tc.want {
+		if got := ciiTables.checkValue(tc.s, tc.k, 0) == ""; got != tc.want {
 			t.Errorf("checkValue(%q, %d) valid = %t, want %t", tc.s, tc.k, got, tc.want)
 		}
 	}
@@ -492,6 +503,12 @@ func TestCatalog(t *testing.T) {
 	reported := map[string]rules.Severity{}
 	for _, m := range mutations {
 		r := check(t, m.apply(t))
+		for _, f := range r.Findings {
+			reported[f.Rule] = f.Severity
+		}
+	}
+	for _, m := range ublMutations {
+		r := checkUBLData(t, m.apply(t))
 		for _, f := range r.Findings {
 			reported[f.Rule] = f.Severity
 		}
