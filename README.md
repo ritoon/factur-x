@@ -338,7 +338,7 @@ Le workflow [Conformité](.github/workflows/conformance.yml) exécute à chaque 
 | Référence | Factures comparées | Mêmes erreurs | Écarts justifiés |
 |---|---|---|---|
 | KoSIT validator 1.6.3, configuration XRechnung 3.0.2 du 2026-08-31 | 128 | 128 | 0 |
-| Mustang 2.26.0 | 282 | 223 | 59 |
+| Mustang 2.26.0 | 282 | 241 | 41 |
 
 Avec KoSIT, toutes les factures comparées ont les mêmes erreurs. Avec Mustang, chaque écart est justifié dans [conformance/parity/known.txt](conformance/parity/known.txt), et tout nouvel écart fait échouer le job ; ils viennent des références elles-mêmes : Mustang n'applique ni Peppol BIS 3.0, ni la configuration KoSIT aux factures XRechnung (niveaux des règles, XSD CII D16B), et embarque le schematron XRechnung 2.4.0 (2.6.0 pour KoSIT et le package). Les 26 factures invalides à dessein du corpus (`ZUGFeRDv2/fail`, exemples `not_validating`) sont vérifiées une à une par `TestOfficialNegativeCases` contre les erreurs des références.
 

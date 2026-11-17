@@ -66,14 +66,13 @@ Le job écrit le tableau de résultats dans le résumé du run et dépose les ra
 | Référence | Factures comparées | Mêmes erreurs | Écarts justifiés |
 |---|---|---|---|
 | KoSIT validator 1.6.3, configuration XRechnung 3.0.2 du 2026-08-31 | 128 | 128 | 0 |
-| Mustang 2.26.0 | 282 | 223 | 59 |
+| Mustang 2.26.0 | 282 | 241 | 41 |
 
 Avec KoSIT, toutes les factures comparées ont les mêmes erreurs.
 
-Les écarts avec Mustang viennent de différences entre les références elles-mêmes :
+Les écarts avec Mustang viennent de différences entre les références elles-mêmes : Mustang n'applique pas Peppol BIS 3.0 aux factures UBL Peppol du corpus, ni la configuration KoSIT aux factures XRechnung (niveaux des règles, et XSD CII D16B complet là où Mustang garde le XSD Factur-X EN 16931), et embarque le schematron XRechnung 2.4.0, quand KoSIT et le package appliquent la version 2.6.0.
 
-- Mustang n'applique pas Peppol BIS 3.0 aux factures UBL Peppol du corpus, ni la configuration KoSIT aux factures XRechnung (niveaux des règles, et XSD CII D16B complet là où Mustang garde le XSD Factur-X EN 16931), et embarque le schematron XRechnung 2.4.0, quand KoSIT et le package appliquent la version 2.6.0 ;
-- Mustang applique les schematrons Factur-X 1.09.2 à toute facture CII de profil Factur-X ; le package les applique à BASIC et EXTENDED, et à EN 16931 dans un PDF Factur-X, mais applique à un XML EN 16931 seul les règles CEN 1.3.17, comme KoSIT (voir [Factur-X ou CEN](../README.md#factur-x-ou-cen)).
+Le package applique les schematrons Factur-X 1.09.2 comme Mustang à BASIC, à EXTENDED et à EN 16931 dans un PDF Factur-X : mêmes erreurs sur toutes ces factures du corpus, les assertions sur BT-24 étant rapprochées de FX-PROFILE. À un XML EN 16931 seul, il applique les règles CEN 1.3.17 comme KoSIT, là où Mustang garde le schematron Factur-X (voir [Factur-X ou CEN](../README.md#factur-x-ou-cen)) ; sur le corpus, la table `equivalents` rapproche les deux constats (FX-SCH-A-000571 et BR-CL-25 sur les deux exemples au schéma 9958), sans écart.
 
 ### Cas négatifs
 
