@@ -1,4 +1,4 @@
-// Package facturx reads, validates and creates Factur-X, ZUGFeRD and
+// Package zerechnung reads, validates and creates Factur-X, ZUGFeRD and
 // XRechnung hybrid invoices: a PDF that carries the invoice as CII XML.
 //
 // The package does not draw invoices. It takes a PDF produced by your own
@@ -18,18 +18,18 @@
 //
 // Sub-packages give direct access to each layer: invoice (the EN 16931
 // model), cii (CII XML), validate (validation of XML invoices).
-package facturx
+package zerechnung
 
 import (
 	"errors"
 	"fmt"
 
-	"github.com/ritoon/factur-x/cii"
-	"github.com/ritoon/factur-x/internal/rules"
-	ublrules "github.com/ritoon/factur-x/internal/rules/ubl"
-	"github.com/ritoon/factur-x/internal/xmltree"
-	"github.com/ritoon/factur-x/invoice"
-	"github.com/ritoon/factur-x/validate"
+	"github.com/ritoon/zerechnung/cii"
+	"github.com/ritoon/zerechnung/internal/rules"
+	ublrules "github.com/ritoon/zerechnung/internal/rules/ubl"
+	"github.com/ritoon/zerechnung/internal/xmltree"
+	"github.com/ritoon/zerechnung/invoice"
+	"github.com/ritoon/zerechnung/validate"
 )
 
 // Read extracts the invoice XML from a hybrid PDF and parses it. The XML of
@@ -69,9 +69,9 @@ type ValidationError struct {
 func (e *ValidationError) Error() string {
 	errs := e.Report.Errors()
 	if len(errs) == 0 {
-		return "facturx: invalid invoice"
+		return "zerechnung: invalid invoice"
 	}
-	return fmt.Sprintf("facturx: invalid invoice: %d error(s), first: %s", len(errs), errs[0])
+	return fmt.Sprintf("zerechnung: invalid invoice: %d error(s), first: %s", len(errs), errs[0])
 }
 
 // Create writes inv as CII XML for its profile and embeds it in pdf.
@@ -178,7 +178,7 @@ func DetectProfile(xml []byte) (invoice.Profile, error) {
 	}
 	id := root.Value(context + "/GuidelineSpecifiedDocumentContextParameter/ID")
 	if id == "" {
-		return invoice.ProfileUnknown, errors.New("facturx: no specification identifier (BT-24)")
+		return invoice.ProfileUnknown, errors.New("zerechnung: no specification identifier (BT-24)")
 	}
 	if zf1 {
 		return invoice.ProfileFromZUGFeRD1URN(id), nil

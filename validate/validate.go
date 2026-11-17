@@ -30,7 +30,7 @@
 // profiles, which only exist in Factur-X and ZUGFeRD: the CEN rules it
 // keeps, with its severities, and its code lists (FX-SCH-A-*). So is an
 // invoice of the EN 16931 profile when it is the XML of a Factur-X PDF
-// (Options.Hybrid, which facturx.Check sets). Otherwise an EN 16931 CII
+// (Options.Hybrid, which zerechnung.Check sets). Otherwise an EN 16931 CII
 // invoice, whose specification identifier urn:cen.eu:en16931:2017 says
 // nothing more than "EN 16931 without a CIUS", is checked against the CEN
 // rules, as the KoSIT validator does. See packages internal/rules/en16931
@@ -42,18 +42,18 @@
 package validate
 
 import (
-	"github.com/ritoon/factur-x/cii"
-	"github.com/ritoon/factur-x/internal/rules"
-	"github.com/ritoon/factur-x/internal/rules/choruspro"
-	"github.com/ritoon/factur-x/internal/rules/de"
-	"github.com/ritoon/factur-x/internal/rules/en16931"
-	"github.com/ritoon/factur-x/internal/rules/facturx"
-	"github.com/ritoon/factur-x/internal/rules/fr"
-	"github.com/ritoon/factur-x/internal/rules/peppol"
-	"github.com/ritoon/factur-x/internal/rules/ubl"
-	"github.com/ritoon/factur-x/internal/schema"
-	"github.com/ritoon/factur-x/internal/xmltree"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/cii"
+	"github.com/ritoon/zerechnung/internal/rules"
+	"github.com/ritoon/zerechnung/internal/rules/choruspro"
+	"github.com/ritoon/zerechnung/internal/rules/de"
+	"github.com/ritoon/zerechnung/internal/rules/en16931"
+	"github.com/ritoon/zerechnung/internal/rules/facturx"
+	"github.com/ritoon/zerechnung/internal/rules/fr"
+	"github.com/ritoon/zerechnung/internal/rules/peppol"
+	"github.com/ritoon/zerechnung/internal/rules/ubl"
+	"github.com/ritoon/zerechnung/internal/schema"
+	"github.com/ritoon/zerechnung/internal/xmltree"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 // Finding is a rule violation.
@@ -135,8 +135,8 @@ type Options struct {
 	// An EN 16931 invoice is then checked against the Factur-X 1.09.2
 	// schematron of the EN 16931 profile instead of the CEN rules alone:
 	// its specification identifier (BT-24) does not tell a Factur-X invoice
-	// from a plain EN 16931 CII invoice, the PDF does. facturx.Check and
-	// facturx.Create set it; set it when validating the XML of a Factur-X
+	// from a plain EN 16931 CII invoice, the PDF does. zerechnung.Check and
+	// zerechnung.Create set it; set it when validating the XML of a Factur-X
 	// PDF extracted by other means. BASIC and EXTENDED invoices are checked
 	// against their Factur-X schematron whatever Hybrid.
 	Hybrid bool

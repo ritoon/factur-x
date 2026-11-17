@@ -3,7 +3,7 @@ package invoice
 import (
 	"testing"
 
-	"github.com/ritoon/factur-x/internal/codes"
+	"github.com/ritoon/zerechnung/internal/codes"
 )
 
 // TestTaxPointCodes checks the BT-8 constants against the code list of

@@ -3,7 +3,7 @@ package ubl
 import (
 	"strings"
 
-	"github.com/ritoon/factur-x/internal/xmltree"
+	"github.com/ritoon/zerechnung/internal/xmltree"
 )
 
 // crScope is the scope of a UBL-CR assertion of crRules.

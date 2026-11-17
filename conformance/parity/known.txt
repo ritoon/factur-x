@@ -1,10 +1,10 @@
-# Écarts connus et justifiés entre factur-x et les validateurs de référence.
+# Écarts connus et justifiés entre ZeRechnung et les validateurs de référence.
 #
 # Une ligne par écart : référence, facture, écart, raison.
 #   référence : kosit, mustang ou * (les deux)
 #   facture   : origine de la facture (corpus/… ou kosit/…) ; * vaut pour
 #               n'importe quelle suite de caractères, / compris
-#   écart     : +RÈGLE en erreur chez factur-x seul, -RÈGLE en erreur chez la
+#   écart     : +RÈGLE en erreur chez ZeRechnung seul, -RÈGLE en erreur chez la
 #               référence seule ; une * finale vaut pour toutes les règles de
 #               ce préfixe ; SCHEMA désigne les erreurs de schéma XSD
 #   raison    : le reste de la ligne, obligatoire
@@ -14,19 +14,19 @@
 
 # Mustang : niveaux et schéma de la configuration KoSIT
 
-mustang *XRechnung*722825203.XML -SCHEMA Mustang valide XRechnung CII contre le XSD Factur-X EN 16931 ; factur-x, comme KoSIT, contre le XSD CII D16B complet, qui admet DeliveryNoteReferencedDocument sur la ligne.
+mustang *XRechnung*722825203.XML -SCHEMA Mustang valide XRechnung CII contre le XSD Factur-X EN 16931 ; ZeRechnung, comme KoSIT, contre le XSD CII D16B complet, qui admet DeliveryNoteReferencedDocument sur la ligne.
 
-mustang corpus/XML-Rechnung/*/XRECHNUNG_* +CII-SR-465 Erreur pour XRechnung dans la configuration KoSIT du 2026-08-31 (customLevel), que factur-x applique ; Mustang garde l'avertissement du schematron CEN.
-mustang corpus/ZUGFeRDv2/correct/symtrax/*XRechnung* +CII-SR-465 Erreur pour XRechnung dans la configuration KoSIT du 2026-08-31 (customLevel), que factur-x applique ; Mustang garde l'avertissement du schematron CEN.
-mustang kosit/src/test/business-cases/extension/* -BR-CL-* Information dans le scénario XRechnung Extension de la configuration KoSIT (customLevel), que factur-x applique ; Mustang garde l'erreur du schematron CEN.
-mustang kosit/src/test/business-cases/extension/* -BR-CO-16 Information dans le scénario XRechnung Extension de la configuration KoSIT (customLevel), que factur-x applique ; Mustang garde l'erreur du schematron CEN.
-mustang kosit/src/test/technical-cases/cvd/* -BR-CL-13 Information dans le scénario XRechnung CVD de la configuration KoSIT (customLevel), que factur-x applique ; Mustang, qui ne reconnaît pas CVD, garde l'erreur du schematron CEN.
+mustang corpus/XML-Rechnung/*/XRECHNUNG_* +CII-SR-465 Erreur pour XRechnung dans la configuration KoSIT du 2026-08-31 (customLevel), que ZeRechnung applique ; Mustang garde l'avertissement du schematron CEN.
+mustang corpus/ZUGFeRDv2/correct/symtrax/*XRechnung* +CII-SR-465 Erreur pour XRechnung dans la configuration KoSIT du 2026-08-31 (customLevel), que ZeRechnung applique ; Mustang garde l'avertissement du schematron CEN.
+mustang kosit/src/test/business-cases/extension/* -BR-CL-* Information dans le scénario XRechnung Extension de la configuration KoSIT (customLevel), que ZeRechnung applique ; Mustang garde l'erreur du schematron CEN.
+mustang kosit/src/test/business-cases/extension/* -BR-CO-16 Information dans le scénario XRechnung Extension de la configuration KoSIT (customLevel), que ZeRechnung applique ; Mustang garde l'erreur du schematron CEN.
+mustang kosit/src/test/technical-cases/cvd/* -BR-CL-13 Information dans le scénario XRechnung CVD de la configuration KoSIT (customLevel), que ZeRechnung applique ; Mustang, qui ne reconnaît pas CVD, garde l'erreur du schematron CEN.
 
 # Mustang : versions des schematrons
 
-mustang corpus/XML-Rechnung/UBL/XRECHNUNG_Elektron.ubl.xml -PEPPOL-EN16931-R008 Mustang embarque le schematron XRechnung 2.4.0 ; la version 2.6.0, que factur-x et KoSIT appliquent, admet un cbc:ID vide sous cac:OrderReference.
-mustang corpus/XML-Rechnung/UBL/EN16931_* +PEPPOL-* Facture Peppol BIS 3.0 (CustomizationID) : factur-x applique les règles Peppol, que Mustang n'applique pas ; la suite de tests Peppol officielle les vérifie.
-mustang corpus/XML-Rechnung/UBL/not_validating_* +PEPPOL-* Facture Peppol BIS 3.0 (CustomizationID) : factur-x applique les règles Peppol, que Mustang n'applique pas ; la suite de tests Peppol officielle les vérifie.
+mustang corpus/XML-Rechnung/UBL/XRECHNUNG_Elektron.ubl.xml -PEPPOL-EN16931-R008 Mustang embarque le schematron XRechnung 2.4.0 ; la version 2.6.0, que ZeRechnung et KoSIT appliquent, admet un cbc:ID vide sous cac:OrderReference.
+mustang corpus/XML-Rechnung/UBL/EN16931_* +PEPPOL-* Facture Peppol BIS 3.0 (CustomizationID) : ZeRechnung applique les règles Peppol, que Mustang n'applique pas ; la suite de tests Peppol officielle les vérifie.
+mustang corpus/XML-Rechnung/UBL/not_validating_* +PEPPOL-* Facture Peppol BIS 3.0 (CustomizationID) : ZeRechnung applique les règles Peppol, que Mustang n'applique pas ; la suite de tests Peppol officielle les vérifie.
 
 # Mustang : messages sans identifiant de règle
 

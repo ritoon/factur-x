@@ -46,7 +46,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ritoon/factur-x/internal/codes"
+	"github.com/ritoon/zerechnung/internal/codes"
 )
 
 const (
@@ -188,7 +188,7 @@ func generate(sch []byte) ([]byte, error) {
 
 package ubl
 
-import "github.com/ritoon/factur-x/internal/rules"
+import "github.com/ritoon/zerechnung/internal/rules"
 
 // Release is the release of the EN 16931 validation artefacts the rules
 // implement.

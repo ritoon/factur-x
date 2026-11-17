@@ -1,11 +1,11 @@
-package facturx
+package zerechnung
 
 import (
 	"strings"
 	"testing"
 
-	"github.com/ritoon/factur-x/internal/pdf/pdftest"
-	"github.com/ritoon/factur-x/validate"
+	"github.com/ritoon/zerechnung/internal/pdf/pdftest"
+	"github.com/ritoon/zerechnung/validate"
 )
 
 // TestCheckHybrid checks that the XML of a PDF is validated as a Factur-X

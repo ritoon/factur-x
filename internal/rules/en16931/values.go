@@ -3,8 +3,8 @@ package en16931
 import (
 	"unicode/utf8"
 
-	"github.com/ritoon/factur-x/internal/xmltree"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/internal/xmltree"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 // isSpace reports whether c is XML white space, as understood by

@@ -6,9 +6,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/ritoon/factur-x/internal/rules"
-	"github.com/ritoon/factur-x/internal/xmltree"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/internal/rules"
+	"github.com/ritoon/zerechnung/internal/xmltree"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 //go:generate go run ./gen

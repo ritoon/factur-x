@@ -31,8 +31,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/ritoon/factur-x/internal/rules"
-	"github.com/ritoon/factur-x/internal/xmltree"
+	"github.com/ritoon/zerechnung/internal/rules"
+	"github.com/ritoon/zerechnung/internal/xmltree"
 )
 
 // Settings are the settings of the public structure in the Chorus Pro

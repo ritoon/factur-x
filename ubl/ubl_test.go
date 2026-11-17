@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ritoon/factur-x/cii"
-	"github.com/ritoon/factur-x/internal/xmltree"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/cii"
+	"github.com/ritoon/zerechnung/internal/xmltree"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 func readFile(t testing.TB, name string) []byte {

@@ -156,7 +156,7 @@ func compare(work, knownFile, mdFile, jsonFile string) (bool, error) {
 			c := comparison{Reference: ref.Key, Invoice: e.Source, Negative: e.negative(), Ours: mine, Ref: r}
 			diffs := diff(mine.Rules, r.Rules)
 			if mine.Failure != "" {
-				diffs = append(diffs, "!factur-x: "+mine.Failure)
+				diffs = append(diffs, "!ZeRechnung: "+mine.Failure)
 			}
 		next:
 			for _, d := range diffs {

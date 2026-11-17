@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ritoon/factur-x/internal/rules"
-	"github.com/ritoon/factur-x/internal/schema"
-	"github.com/ritoon/factur-x/internal/xmltree"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/internal/rules"
+	"github.com/ritoon/zerechnung/internal/schema"
+	"github.com/ritoon/zerechnung/internal/xmltree"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 const header = `<?xml version="1.0" encoding="UTF-8"?>

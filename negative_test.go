@@ -1,4 +1,4 @@
-package facturx_test
+package zerechnung_test
 
 import (
 	"io/fs"
@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	facturx "github.com/ritoon/factur-x"
-	"github.com/ritoon/factur-x/validate"
+	"github.com/ritoon/zerechnung"
+	"github.com/ritoon/zerechnung/validate"
 )
 
 // negativeCase is an invoice that the ZUGFeRD corpus gives as invalid.
@@ -148,7 +148,7 @@ func TestOfficialNegativeCases(t *testing.T) {
 		}
 		var rep *validate.Report
 		if strings.EqualFold(filepath.Ext(name), ".pdf") {
-			if rep, _, err = facturx.Check(data, nil); err != nil {
+			if rep, _, err = zerechnung.Check(data, nil); err != nil {
 				t.Errorf("%s: %v", name, err)
 				continue
 			}

@@ -1,11 +1,11 @@
-package facturx
+package zerechnung
 
 import (
 	"slices"
 	"testing"
 
-	"github.com/ritoon/factur-x/internal/xmp"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/internal/xmp"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 // TestZUGFeRD1PDF reads and checks a ZUGFeRD 1.0 PDF.

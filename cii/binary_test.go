@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ritoon/factur-x/internal/xmltree"
+	"github.com/ritoon/zerechnung/internal/xmltree"
 )
 
 // binaryRef is the former implementation of reader.binary: the decoded bytes,

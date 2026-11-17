@@ -3,8 +3,8 @@ package cii
 import (
 	"strings"
 
-	"github.com/ritoon/factur-x/internal/schema"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/internal/schema"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 // This file puts the extensions of an invoice (see invoice.Extension) back

@@ -1,6 +1,6 @@
 package fr
 
-import "github.com/ritoon/factur-x/internal/rules"
+import "github.com/ritoon/zerechnung/internal/rules"
 
 // Catalog lists the assertions implemented by this package, in the order of
 // the schematron. Every BR-FR assertion is fatal (severity Error).

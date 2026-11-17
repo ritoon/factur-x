@@ -1,12 +1,12 @@
-# factur-x
+# ZeRechnung
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/ritoon/factur-x.svg)](https://pkg.go.dev/github.com/ritoon/factur-x)
-[![CI](https://github.com/ritoon/factur-x/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ritoon/factur-x/actions/workflows/ci.yml)
-[![Conformité](https://github.com/ritoon/factur-x/actions/workflows/conformance.yml/badge.svg?branch=main)](https://github.com/ritoon/factur-x/actions/workflows/conformance.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/ritoon/factur-x)](https://goreportcard.com/report/github.com/ritoon/factur-x)
-[![codecov](https://codecov.io/gh/ritoon/factur-x/graph/badge.svg)](https://codecov.io/gh/ritoon/factur-x)
-[![Version de Go](https://img.shields.io/github/go-mod/go-version/ritoon/factur-x)](go.mod)
-[![Licence MIT](https://img.shields.io/github/license/ritoon/factur-x)](LICENSE)
+[![Go Reference](https://pkg.go.dev/badge/github.com/ritoon/zerechnung.svg)](https://pkg.go.dev/github.com/ritoon/zerechnung)
+[![CI](https://github.com/ritoon/zerechnung/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ritoon/zerechnung/actions/workflows/ci.yml)
+[![Conformité](https://github.com/ritoon/zerechnung/actions/workflows/conformance.yml/badge.svg?branch=main)](https://github.com/ritoon/zerechnung/actions/workflows/conformance.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/ritoon/zerechnung)](https://goreportcard.com/report/github.com/ritoon/zerechnung)
+[![codecov](https://codecov.io/gh/ritoon/zerechnung/graph/badge.svg)](https://codecov.io/gh/ritoon/zerechnung)
+[![Version de Go](https://img.shields.io/github/go-mod/go-version/ritoon/zerechnung)](go.mod)
+[![Licence MIT](https://img.shields.io/github/license/ritoon/zerechnung)](LICENSE)
 
 <p align="center">
   <img src="docs/gopher.webp" alt="Le gopher Go en chapeau de papier et nœud papillon, tapant des factures à la machine à écrire entre des piles de factures" width="360">
@@ -22,12 +22,12 @@ Package Go pour les factures électroniques hybrides **Factur-X**, **ZUGFeRD** e
 
 > **Statut : première version (v0).** L'API peut encore changer. Voir [Couverture](#couverture) pour ce qui est fait et [Limites](#limites) pour ce qui reste.
 
-Le contexte, l'état de l'écosystème Go et les mesures sont sur le wiki : [Pourquoi ce projet](https://github.com/ritoon/factur-x/wiki/Pourquoi-ce-projet), [Grille de la norme](https://github.com/ritoon/factur-x/wiki/Grille-de-la-norme), [Benchmarks](https://github.com/ritoon/factur-x/wiki/Benchmarks).
+Le contexte, l'état de l'écosystème Go et les mesures sont sur le wiki : [Pourquoi ce projet](https://github.com/ritoon/zerechnung/wiki/Pourquoi-ce-projet), [Grille de la norme](https://github.com/ritoon/zerechnung/wiki/Grille-de-la-norme), [Benchmarks](https://github.com/ritoon/zerechnung/wiki/Benchmarks).
 
 ## Installation
 
 ```bash
-go get github.com/ritoon/factur-x
+go get github.com/ritoon/zerechnung
 ```
 
 Go 1.24 ou plus récent.
@@ -59,14 +59,14 @@ inv := &invoice.Invoice{
 	}},
 }
 
-pdf, err := facturx.Create(host, inv, &facturx.CreateOptions{
+pdf, err := zerechnung.Create(host, inv, &zerechnung.CreateOptions{
 	Calculate: true, // montants de ligne, totaux et ventilation de TVA
 	Validate:  &validate.Options{Rules: validate.Default | validate.France},
 })
 ```
 
 - `Calculate` remplit les montants que la norme déduit des autres (BT-131, BT-106 à BT-115, ventilation BG-23), en décimaux exacts.
-- Avec `Validate`, `Create` refuse d'injecter un XML qui a des erreurs et renvoie un `*facturx.ValidationError` qui porte le rapport complet.
+- Avec `Validate`, `Create` refuse d'injecter un XML qui a des erreurs et renvoie un `*zerechnung.ValidationError` qui porte le rapport complet.
 - L'injection se fait par mise à jour incrémentale : les octets d'origine sont conservés, une signature existante reste valide. Le XMP est fusionné avec l'existant (identification PDF/A, propriétés `fx`, schéma d'extension) : un PDF 2.0 ou un hôte déjà PDF/A-4 est déclaré PDF/A-4f (le niveau E est conservé), les autres PDF/A-3.
 
 L'exemple complet, avec les mentions obligatoires de la réforme française, est dans [example_test.go](example_test.go).
@@ -86,15 +86,15 @@ inv.TaxPointDateCode = invoice.TaxPointDebits // "5", écrit dans chaque ventila
 
 L'exemple `Example_vatOnDebits` de [example_test.go](example_test.go) écrit et valide une telle facture.
 
-Pour injecter un XML produit ailleurs : `facturx.Embed(pdf, xml, nil)`. Pour écrire le XML seul : `cii.Marshal(inv, &cii.MarshalOptions{Profile: invoice.ProfileBasic})` ; seuls les éléments que le profil autorise sont écrits, dans l'ordre de son schéma, et l'option `Strict` signale les données perdues.
+Pour injecter un XML produit ailleurs : `zerechnung.Embed(pdf, xml, nil)`. Pour écrire le XML seul : `cii.Marshal(inv, &cii.MarshalOptions{Profile: invoice.ProfileBasic})` ; seuls les éléments que le profil autorise sont écrits, dans l'ordre de son schéma, et l'option `Strict` signale les données perdues.
 
 #### Pièces jointes complémentaires
 
 Factur-X admet d'autres pièces jointes que la facture : bon de commande, relevé de temps, bon de livraison… `EmbedOptions.Attachments` (et donc `CreateOptions.Embed`) les écrit comme le XML : flux avec type MIME et date de modification, `/F` et `/UF`, `/AFRelationship /Supplement` par défaut, entrée dans `/EmbeddedFiles` et dans le `/AF` du catalogue.
 
 ```go
-pdf, err := facturx.Embed(host, xml, &facturx.EmbedOptions{
-	Attachments: []facturx.File{
+pdf, err := zerechnung.Embed(host, xml, &zerechnung.EmbedOptions{
+	Attachments: []zerechnung.File{
 		{Name: "commande-4512.pdf", Data: commande, Description: "Bon de commande 4512"},
 		{Name: "releve-temps.csv", Data: releve}, // type MIME déduit de l'extension : text/csv
 	},
@@ -108,12 +108,12 @@ pdf, err := facturx.Embed(host, xml, &facturx.EmbedOptions{
 ### Lire une facture reçue
 
 ```go
-inv, att, err := facturx.Read(pdf)
+inv, att, err := zerechnung.Read(pdf)
 // inv : modèle EN 16931 (inv.Number, inv.Seller, inv.Lines, inv.Totals…)
 // att : nom du fichier, AFRelationship, présence dans /AF, métadonnées XMP
 ```
 
-`facturx.Extract` renvoie seulement le XML. `cii.Parse` lit un XML CII seul, `ubl.Parse` une facture ou un avoir UBL 2.1 (voir [UBL](#ubl)). La lecture est tolérante : ZUGFeRD 2.0 et 2.1, ZUGFeRD 1.0 (voir [ZUGFeRD 1.0](#zugferd-10)), préfixes quelconques, identifiants de profil mal orthographiés trouvés dans la nature ; une valeur illisible est signalée sans arrêter la lecture du reste.
+`zerechnung.Extract` renvoie seulement le XML. `cii.Parse` lit un XML CII seul, `ubl.Parse` une facture ou un avoir UBL 2.1 (voir [UBL](#ubl)). La lecture est tolérante : ZUGFeRD 2.0 et 2.1, ZUGFeRD 1.0 (voir [ZUGFeRD 1.0](#zugferd-10)), préfixes quelconques, identifiants de profil mal orthographiés trouvés dans la nature ; une valeur illisible est signalée sans arrêter la lecture du reste.
 
 #### Rien n'est perdu en silence
 
@@ -145,7 +145,7 @@ xmlCII, err := cii.Marshal(inv, &cii.MarshalOptions{Profile: invoice.ProfileEN16
 
 #### ZUGFeRD 1.0
 
-`cii.Parse` et `facturx.Read` lisent aussi le XML des PDF ZUGFeRD 1.0 : `rsm:CrossIndustryDocument`, la syntaxe CII de 2013, antérieure à D16B, et `rsm:Invoice` de la release candidate de 2014. Le document est lu à travers une vue CII D16B construite en mémoire, sans le modifier : éléments renommés et remis dans l'ordre du schéma, dates écrites au format 102 (ZUGFeRD 1.0 admet aussi 610 et 616), référence du mandat SEPA et identifiant du créancier, portés par le moyen de paiement, déplacés en BT-89 et BT-90. Une valeur illisible est située dans le document ZUGFeRD 1.0.
+`cii.Parse` et `zerechnung.Read` lisent aussi le XML des PDF ZUGFeRD 1.0 : `rsm:CrossIndustryDocument`, la syntaxe CII de 2013, antérieure à D16B, et `rsm:Invoice` de la release candidate de 2014. Le document est lu à travers une vue CII D16B construite en mémoire, sans le modifier : éléments renommés et remis dans l'ordre du schéma, dates écrites au format 102 (ZUGFeRD 1.0 admet aussi 610 et 616), référence du mandat SEPA et identifiant du créancier, portés par le moyen de paiement, déplacés en BT-89 et BT-90. Une valeur illisible est située dans le document ZUGFeRD 1.0.
 
 | Identifiant ZUGFeRD 1.0 | Profil du modèle |
 |---|---|
@@ -160,7 +160,7 @@ ZUGFeRD 1.0 précède EN 16931 et CII D16B : les règles EN 16931, Factur-X et n
 ### Valider
 
 ```go
-report, att, err := facturx.Check(pdf, &validate.Options{Auto: true})
+report, att, err := zerechnung.Check(pdf, &validate.Options{Auto: true})
 for _, f := range report.Findings {
 	fmt.Println(f.Severity, f.Rule, f.Message, f.Path, f.Line)
 }
@@ -180,7 +180,7 @@ if !report.Valid() { /* au moins une erreur */ }
 | `Rules: … \| validate.ChorusPro` | Ajoute les contrôles B2G de Chorus Pro (voir ci-dessous) |
 | `Rules: … \| validate.Peppol` | Ajoute les règles Peppol BIS Billing 3.0 à une facture qui ne se déclare pas Peppol (voir ci-dessous) |
 | `Profile: invoice.ProfileBasic` | Valide contre un profil plutôt que celui que déclare BT-24 |
-| `Hybrid: true` | Le XML est celui d'un PDF Factur-X : une facture EN 16931 reçoit le schematron Factur-X de son profil plutôt que les règles CEN (voir [Factur-X ou CEN](#factur-x-ou-cen)) ; `facturx.Check` et `facturx.Create` le fixent, `facturx validate -hybrid` aussi |
+| `Hybrid: true` | Le XML est celui d'un PDF Factur-X : une facture EN 16931 reçoit le schematron Factur-X de son profil plutôt que les règles CEN (voir [Factur-X ou CEN](#factur-x-ou-cen)) ; `zerechnung.Check` et `zerechnung.Create` le fixent, `zerechnung validate -hybrid` aussi |
 
 `validate.Catalog(set)` liste les règles implémentées.
 
@@ -253,7 +253,7 @@ Sources : annexe EDI des spécifications externes Chorus Pro V4.23 (règles G1.0
 
 Le jeu `Peppol` applique le schematron Peppol BIS Billing 3.0 de la syntaxe de la facture : les 90 assertions de `PEPPOL-EN16931-CII.sch` à une facture CII, les 165 de `PEPPOL-EN16931-UBL.sch` à une facture UBL, vérifiées sur le document UBL lui-même et non sur sa vue CII. Les deux ont en commun les règles PEPPOL-EN16931-R (processus métier BT-23, identifiant de spécification BT-24, référence acheteur ou de commande, adresses électroniques du vendeur et de l'acheteur, une seule note, totaux de TVA, remises et charges, montant net des lignes, périodes de ligne), formats des identifiants selon leur schéma ICD (PEPPOL-COMMON-R : GLN, numéros d'organisation norvégien, suédois, danois, belge, néerlandais, codes italiens, ABN australien…), listes de codes restreintes, et règles nationales norvégiennes, danoises, italiennes, suédoises et néerlandaises, appliquées selon le pays du vendeur. Le schematron UBL a en plus ses règles propres : pas d'élément vide (PEPPOL-EN16931-R008), une seule devise pour tous les montants (R051), remises sur le prix (R044, R046), codes de type de facture et d'avoir (P0100, P0101, P0112), motifs d'exonération de TVA (P0104 à P0111), et règles nationales grecques (GR-*), islandaises (IS-R-*) et allemandes (DE-R-*).
 
-Il s'applique d'office quand BT-24 est l'identifiant Peppol (`urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0`, profil `invoice.ProfilePeppol`), quels que soient les jeux choisis dans `Rules`, sinon seulement sur demande (`Rules: validate.Default | validate.Peppol`, `facturx validate -peppol`). `Auto` ne l'ajoute jamais : la plupart des factures Factur-X et ZUGFeRD valides ne respectent pas ces règles (pas de BT-23 Peppol, pas d'adresse électronique, pas de référence acheteur), et les appliquer sans condition les signalerait à tort. En UBL, BT-24 est `cbc:CustomizationID`.
+Il s'applique d'office quand BT-24 est l'identifiant Peppol (`urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0`, profil `invoice.ProfilePeppol`), quels que soient les jeux choisis dans `Rules`, sinon seulement sur demande (`Rules: validate.Default | validate.Peppol`, `zerechnung validate -peppol`). `Auto` ne l'ajoute jamais : la plupart des factures Factur-X et ZUGFeRD valides ne respectent pas ces règles (pas de BT-23 Peppol, pas d'adresse électronique, pas de référence acheteur), et les appliquer sans condition les signalerait à tort. En UBL, BT-24 est `cbc:CustomizationID`.
 
 Les règles reproduisent chaque schematron tel qu'il est écrit. Le schematron CII vise parfois l'UBL plus que le CII :
 
@@ -266,22 +266,22 @@ En UBL, le pays du vendeur des règles norvégiennes, italiennes et grecques est
 ### En ligne de commande
 
 ```bash
-go install github.com/ritoon/factur-x/cmd/facturx@latest
+go install github.com/ritoon/zerechnung/cmd/zerechnung@latest
 ```
 
 ```text
-facturx extract [-o out.xml] facture.pdf
-facturx info facture.pdf
-facturx validate [-fr] [-de] [-peppol] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-hybrid] [-json] facture.pdf|facture.xml
-facturx embed -xml facture.xml [-profile p] [-attach fichier]... [-o out.pdf] entree.pdf
-facturx json facture.pdf|facture.xml
-facturx rules [-fr] [-de] [-choruspro] [-peppol]
+zerechnung extract [-o out.xml] facture.pdf
+zerechnung info facture.pdf
+zerechnung validate [-fr] [-de] [-peppol] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-hybrid] [-json] facture.pdf|facture.xml
+zerechnung embed -xml facture.xml [-profile p] [-attach fichier]... [-o out.pdf] entree.pdf
+zerechnung json facture.pdf|facture.xml
+zerechnung rules [-fr] [-de] [-choruspro] [-peppol]
 ```
 
 `validate` et `json` acceptent un XML CII ou UBL. `validate` sort avec le code 1 quand la facture a des erreurs, ce qui permet de l'utiliser en intégration continue. Ses options de règles (`-fr`, `-de`, `-choruspro`, `-peppol`) s'ajoutent aux règles par défaut : elles ne retirent jamais les règles BR-DE d'une facture XRECHNUNG ni les règles Peppol d'une facture Peppol. `embed -attach` ajoute une pièce jointe complémentaire (`/AFRelationship /Supplement`, type MIME d'après l'extension) ; l'option se répète.
 
 ```text
-$ facturx validate testdata/EN16931_Einfach.pdf
+$ zerechnung validate testdata/EN16931_Einfach.pdf
 Profile: EN 16931
 warning [PDF] PDF-06: the catalog has no PDF/A output intent (/S /GTS_PDFA1) (catalog /OutputIntents)
 0 error(s), 1 warning(s)
@@ -329,7 +329,7 @@ Les messages sont ceux des artefacts officiels. Les listes de codes (pays, devis
 
 Une facture BASIC ou EXTENDED reçoit le schematron Factur-X 1.09.2 de son profil (FNFE-MPE / FeRD), sa référence officielle, que Mustang applique aussi. Il reprend les règles métier du CEN, mais vérifie les listes de codes avec ses propres listes (règles FX-SCH-A, à la place des BR-CL du CEN), ne garde qu'une partie des règles de syntaxe CII, met CII-SR-465 et CII-SR-466 (contact avec un nom de personne et un service) en erreur et refuse un BT-24 d'orthographe obsolète (FX-PROFILE-03 en erreur). Les deux jeux de listes diffèrent sur quelques codes : le schéma d'adresse électronique 9958, les motifs de remise ABK, ADZ et CAO, les unités d'emballage (`PackageQuantity`) d'EXTENDED…
 
-Une facture EN 16931 reçoit ce schematron quand elle est le XML d'un PDF Factur-X : `facturx.Check` et `facturx.Create` fixent `validate.Options.Hybrid`, que `facturx validate -hybrid` fixe aussi pour un XML seul. Sans cela, elle reçoit les règles CEN 1.3.17, comme dans le validateur KoSIT : son identifiant, `urn:cen.eu:en16931:2017`, est celui de toute facture CII conforme à EN 16931 sans CIUS, et rien dans le XML ne dit qu'il est destiné à un PDF Factur-X. Les verdicts ne diffèrent alors que sur les listes de codes, sur l'attribut `currencyID` d'un montant autre que le total de TVA (CII-DT-031, une erreur pour le CEN, admis par Factur-X) et sur le niveau de CII-SR-465 et CII-SR-466.
+Une facture EN 16931 reçoit ce schematron quand elle est le XML d'un PDF Factur-X : `zerechnung.Check` et `zerechnung.Create` fixent `validate.Options.Hybrid`, que `zerechnung validate -hybrid` fixe aussi pour un XML seul. Sans cela, elle reçoit les règles CEN 1.3.17, comme dans le validateur KoSIT : son identifiant, `urn:cen.eu:en16931:2017`, est celui de toute facture CII conforme à EN 16931 sans CIUS, et rien dans le XML ne dit qu'il est destiné à un PDF Factur-X. Les verdicts ne diffèrent alors que sur les listes de codes, sur l'attribut `currencyID` d'un montant autre que le total de TVA (CII-DT-031, une erreur pour le CEN, admis par Factur-X) et sur le niveau de CII-SR-465 et CII-SR-466.
 
 ### Exactitude mesurée
 
@@ -375,7 +375,7 @@ Le lecteur XML est lui aussi écrit pour ce package : un seul passage sur les oc
 
 Apple M4 Pro, Go 1.26, 16/11/2026. Comparaison avec le plus rapide des autres packages Go qui réussit l'opération ; tableaux complets dans [bench/ecosystem/results/2026-11-16/tables.md](bench/ecosystem/results/2026-11-16/tables.md). Le contrôle complet a été remesuré le 17/11/2026 (Go 1.26.4), après l'ajout des contrôles PDF/A du conteneur (polices, JavaScript et actions, `/Info`, LZW).
 
-| Opération | factur-x | Meilleur autre package Go |
+| Opération | ZeRechnung | Meilleur autre package Go |
 |---|---|---|
 | Extraction du XML (PDF de 149 Ko) | 28 µs | 75 µs (speedata) |
 | Lecture XML → modèle (13 Ko) | 15 µs | 126 µs (fX) |
@@ -393,12 +393,12 @@ La comparaison avec 32 librairies TypeScript, Python et Rust, sur le même corpu
 
 | Package | Rôle |
 |---|---|
-| `facturx` (racine) | Création, lecture, extraction, injection et contrôle d'un PDF hybride |
+| `zerechnung` (racine) | Création, lecture, extraction, injection et contrôle d'un PDF hybride |
 | `invoice` | Modèle EN 16931 (BT, BG), décimaux exacts, dates, profils, calcul des totaux |
 | `cii` | Lecture et écriture du XML CII, profil par profil |
 | `ubl` | Lecture et écriture du XML UBL 2.1 (Invoice, CreditNote) |
 | `validate` | Validation : schéma, règles EN 16931 (CII et UBL), règles de profil Factur-X, règles BR-FR, BR-DE et Peppol |
-| `cmd/facturx` | Outil en ligne de commande |
+| `cmd/zerechnung` | Outil en ligne de commande |
 | `internal/…` | Lecteur et écrivain PDF, XMP, arbre XML, règles, listes de codes, tables de schéma |
 | `bench/ecosystem` | Benchmarks comparatifs avec les autres librairies Go (modules séparés) |
 | `bench/polyglot` | Benchmarks comparatifs avec les librairies TypeScript, Python et Rust |

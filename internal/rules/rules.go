@@ -18,8 +18,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ritoon/factur-x/internal/xmltree"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/internal/xmltree"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 // Severity is the severity of a finding. It maps the schematron flags

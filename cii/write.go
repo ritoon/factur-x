@@ -3,8 +3,8 @@ package cii
 import (
 	"encoding/base64"
 
-	"github.com/ritoon/factur-x/internal/xmlenc"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/internal/xmlenc"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 // writer appends XML to a byte slice. Element names are written as given

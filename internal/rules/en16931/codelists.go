@@ -1,8 +1,8 @@
 package en16931
 
 import (
-	"github.com/ritoon/factur-x/internal/codes"
-	"github.com/ritoon/factur-x/internal/xmltree"
+	"github.com/ritoon/zerechnung/internal/codes"
+	"github.com/ritoon/zerechnung/internal/xmltree"
 )
 
 // codeListRule describes a BR-CL rule: the lookup function and the subject of

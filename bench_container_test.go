@@ -1,4 +1,4 @@
-package facturx
+package zerechnung
 
 import (
 	"os"

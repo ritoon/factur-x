@@ -64,7 +64,7 @@
 // the CEN rules, as the KoSIT validator gives them: its identifier is the one
 // of any CII invoice that follows EN 16931 without a CIUS, Factur-X or not.
 // It gets the Factur-X schematron when it is the XML of a Factur-X PDF
-// (validate.Options.Hybrid, set by facturx.Check).
+// (validate.Options.Hybrid, set by zerechnung.Check).
 //
 // MINIMUM and BASIC WL invoices are not EN 16931 invoices: Check does nothing
 // for them.
@@ -73,9 +73,9 @@ package en16931
 import (
 	"strings"
 
-	"github.com/ritoon/factur-x/internal/rules"
-	"github.com/ritoon/factur-x/internal/xmltree"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/internal/rules"
+	"github.com/ritoon/zerechnung/internal/xmltree"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 //go:generate go run ./gen -o catalog_gen.go

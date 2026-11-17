@@ -3,7 +3,7 @@ package en16931
 import (
 	"strconv"
 
-	"github.com/ritoon/factur-x/internal/rules"
+	"github.com/ritoon/zerechnung/internal/rules"
 )
 
 // extendedRules is the subset of the CEN rules kept by the FeRD validation

@@ -1,8 +1,8 @@
 package de
 
 import (
-	"github.com/ritoon/factur-x/internal/rules"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/internal/rules"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 // RuleProfile identifies the profile check of CheckProfile. The KoSIT

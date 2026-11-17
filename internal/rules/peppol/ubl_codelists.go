@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ritoon/factur-x/internal/xmltree"
+	"github.com/ritoon/zerechnung/internal/xmltree"
 )
 
 // Rules of the pattern "Restricted code lists and formatting" of the UBL

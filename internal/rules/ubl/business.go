@@ -3,7 +3,7 @@ package ubl
 import (
 	"strings"
 
-	"github.com/ritoon/factur-x/internal/xmltree"
+	"github.com/ritoon/zerechnung/internal/xmltree"
 )
 
 // The business rules below have, in the UBL artefacts, a context or a test

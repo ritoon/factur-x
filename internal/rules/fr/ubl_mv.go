@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ritoon/factur-x/internal/xmltree"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/internal/xmltree"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 // In UBL the multi-vendor (BT-23 = S8, B8, M8) and two-way (S9, B9, M9)

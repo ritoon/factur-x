@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 const xmlDeclaration = `<?xml version="1.0" encoding="UTF-8"?>`

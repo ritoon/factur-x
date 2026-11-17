@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ritoon/factur-x/internal/rules"
-	"github.com/ritoon/factur-x/internal/xmltree"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/internal/rules"
+	"github.com/ritoon/zerechnung/internal/xmltree"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 // The EXTENDED-CTC-FR cases mutate the base invoice declared EXTENDED-CTC-FR.

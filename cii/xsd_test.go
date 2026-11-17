@@ -9,8 +9,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/ritoon/factur-x/internal/xmltree"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/internal/xmltree"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 // This file holds a small structural XSD checker used by the tests: it loads

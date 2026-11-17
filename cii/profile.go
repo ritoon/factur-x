@@ -3,7 +3,7 @@ package cii
 import (
 	"strings"
 
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 // level is the data set of a profile: each level carries the elements of the

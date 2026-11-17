@@ -1,6 +1,6 @@
 package fr
 
-import "github.com/ritoon/factur-x/internal/rules"
+import "github.com/ritoon/zerechnung/internal/rules"
 
 // UBLCatalog lists the assertions that Check applies to a UBL invoice, in
 // the order of the schematron BR-FR-Flux2-Schematron-UBL version 1.4.0.04.
