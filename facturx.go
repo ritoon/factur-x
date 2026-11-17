@@ -9,7 +9,8 @@
 //
 // The main entry points are:
 //
-//   - Extract and Read get the XML, or the parsed invoice, out of a PDF.
+//   - Extract and Read get the XML, or the parsed invoice, out of a PDF,
+//     ZUGFeRD 1.0 PDFs included.
 //   - Embed adds an XML invoice to a PDF; Create does the same from an
 //     invoice.Invoice.
 //   - Check validates a hybrid PDF: container, XML schema, EN 16931 rules,
@@ -31,7 +32,8 @@ import (
 	"github.com/ritoon/factur-x/validate"
 )
 
-// Read extracts the invoice XML from a hybrid PDF and parses it.
+// Read extracts the invoice XML from a hybrid PDF and parses it. The XML of
+// a ZUGFeRD 1.0 PDF (rsm:CrossIndustryDocument) is read too, see cii.Parse.
 func Read(pdf []byte) (*invoice.Invoice, *Attachment, error) {
 	att, err := Extract(pdf)
 	if err != nil {
@@ -152,15 +154,25 @@ func Check(pdf []byte, opts *validate.Options) (*validate.Report, *Attachment, e
 	return r, att, nil
 }
 
-// DetectProfile returns the profile declared by the BT-24 of a CII invoice.
+// DetectProfile returns the profile declared by the BT-24 of a CII invoice,
+// or for a ZUGFeRD 1.0 invoice, the profile matched to its specification
+// identifier (see invoice.ProfileFromZUGFeRD1URN).
 func DetectProfile(xml []byte) (invoice.Profile, error) {
 	root, err := xmltree.Parse(xml)
 	if err != nil {
 		return invoice.ProfileUnknown, err
 	}
-	id := root.Value("ExchangedDocumentContext/GuidelineSpecifiedDocumentContextParameter/ID")
+	zf1 := cii.IsZUGFeRD1(root)
+	context := "ExchangedDocumentContext"
+	if zf1 {
+		context = "SpecifiedExchangedDocumentContext"
+	}
+	id := root.Value(context + "/GuidelineSpecifiedDocumentContextParameter/ID")
 	if id == "" {
 		return invoice.ProfileUnknown, errors.New("facturx: no specification identifier (BT-24)")
+	}
+	if zf1 {
+		return invoice.ProfileFromZUGFeRD1URN(id), nil
 	}
 	return invoice.ProfileFromURN(id), nil
 }

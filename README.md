@@ -105,7 +105,7 @@ inv, att, err := facturx.Read(pdf)
 // att : nom du fichier, AFRelationship, présence dans /AF, métadonnées XMP
 ```
 
-`facturx.Extract` renvoie seulement le XML. `cii.Parse` lit un XML CII seul, `ubl.Parse` une facture ou un avoir UBL 2.1 (voir [UBL](#ubl)). La lecture est tolérante : ZUGFeRD 2.0 et 2.1, préfixes quelconques, identifiants de profil mal orthographiés trouvés dans la nature ; une valeur illisible est signalée sans arrêter la lecture du reste.
+`facturx.Extract` renvoie seulement le XML. `cii.Parse` lit un XML CII seul, `ubl.Parse` une facture ou un avoir UBL 2.1 (voir [UBL](#ubl)). La lecture est tolérante : ZUGFeRD 2.0 et 2.1, ZUGFeRD 1.0 (voir [ZUGFeRD 1.0](#zugferd-10)), préfixes quelconques, identifiants de profil mal orthographiés trouvés dans la nature ; une valeur illisible est signalée sans arrêter la lecture du reste.
 
 #### Rien n'est perdu en silence
 
@@ -134,6 +134,20 @@ xmlCII, err := cii.Marshal(inv, &cii.MarshalOptions{Profile: invoice.ProfileEN16
 - La lecture suit la liaison UBL d'EN 16931 (CEN/TS 16931-3-2) et accepte n'importe quel préfixe d'espace de noms ; une valeur illisible est signalée (`ubl.Issue`) sans arrêter la lecture.
 - `Marshal` écrit le jeu de données EN 16931 dans l'ordre du schéma UBL 2.1. Ce que la liaison ne porte pas (les champs EXTENDED du modèle, les extensions) n'est pas écrit ; l'option `Strict` le signale (`*ubl.LossError`), comme pour `cii.Marshal`.
 - Une facture lue dans une syntaxe s'écrit dans l'autre : le modèle est le même.
+
+#### ZUGFeRD 1.0
+
+`cii.Parse` et `facturx.Read` lisent aussi le XML des PDF ZUGFeRD 1.0 : `rsm:CrossIndustryDocument`, la syntaxe CII de 2013, antérieure à D16B, et `rsm:Invoice` de la release candidate de 2014. Le document est lu à travers une vue CII D16B construite en mémoire, sans le modifier : éléments renommés et remis dans l'ordre du schéma, dates écrites au format 102 (ZUGFeRD 1.0 admet aussi 610 et 616), référence du mandat SEPA et identifiant du créancier, portés par le moyen de paiement, déplacés en BT-89 et BT-90. Une valeur illisible est située dans le document ZUGFeRD 1.0.
+
+| Identifiant ZUGFeRD 1.0 | Profil du modèle |
+|---|---|
+| `urn:ferd:CrossIndustryDocument:invoice:1p0:basic` | BASIC |
+| `urn:ferd:CrossIndustryDocument:invoice:1p0:comfort` | EN 16931 |
+| `urn:ferd:CrossIndustryDocument:invoice:1p0:extended` | EXTENDED |
+
+Les identifiants de la release candidate (`urn:ferd:invoice:rc:basic`, `comfort`, `extended`) sont rapprochés de la même façon, et `inv.SpecificationID` garde l'identifiant lu. ZUGFeRD 1.0 est en lecture seule : `cii.Marshal` écrit la facture en Factur-X, avec l'identifiant du profil visé. Ce que CII D16B ne porte pas (nom de l'établissement bancaire, code banque allemand, type de taxe autre que `VAT`…) reste dans les extensions et est signalé comme perdu (option `Strict`).
+
+ZUGFeRD 1.0 précède EN 16931 et CII D16B : les règles EN 16931, Factur-X et nationales, écrites pour des factures qui les suivent, donneraient de faux constats sur une facture ZUGFeRD 1.0 valide. `validate` ne lui applique donc qu'un contrôle structurel minimal, dans le jeu `Schema` : un identifiant ZUGFeRD 1.0 connu (ZF1-01), des valeurs lisibles (ZF1-02) et les données qui identifient une facture : numéro, type, date, vendeur, acheteur, devise et montant total (ZF1-03). L'avertissement ZF1-04, émis quels que soient les jeux choisis, rappelle qu'une facture ZUGFeRD 1.0 n'est pas une facture EN 16931 : le BMF n'accepte ZUGFeRD comme e-facture qu'à partir de la version 2.0.1, et la réforme française exige un format conforme à EN 16931.
 
 ### Valider
 
@@ -278,6 +292,7 @@ warning [PDF] PDF-06: the catalog has no PDF/A output intent (/S /GTS_PDFA1) (ca
 | XRECHNUNG (CII) | oui | oui | schéma EN 16931 | oui ; BR-DE appliquées d'office |
 | EXTENDED-CTC-FR | oui | oui | schéma EXTENDED | oui ; BR-FR sur option (`France` ou `Auto`) |
 | PEPPOL (CII) | oui | oui | schéma EN 16931 | oui ; règles Peppol appliquées d'office |
+| ZUGFeRD 1.0 (BASIC, COMFORT, EXTENDED) | oui (BASIC, EN 16931, EXTENDED) | non : réécrit en Factur-X | contrôle structurel minimal (ZF1-01 à ZF1-03) | sans objet : antérieur à EN 16931 (avertissement ZF1-04) |
 | UBL 2.1 (EN 16931, XRECHNUNG, PEPPOL) | oui | oui | schéma UBL 2.1 (Invoice, CreditNote), sauf le contenu des extensions | sans objet ; BR-DE (schematron UBL) appliquées d'office pour XRECHNUNG, règles Peppol (schematron UBL) pour PEPPOL, BR-FR (schematron UBL) sur option |
 
 ### Règles
@@ -291,6 +306,7 @@ warning [PDF] PDF-06: the catalog has no PDF/A output intent (/S /GTS_PDFA1) (ca
 | France (BR-FR) | 59 règles, 170 assertions en CII, 173 en UBL : SIREN/SIRET, adresses électroniques, mentions obligatoires, cadres de facturation, multi-vendeurs ; 3 contrôles des profils admis (FR-PROFILE) | Schematrons FNFE-MPE v1.4.0.04 (CII et UBL) |
 | Allemagne (BR-DE) | 52 assertions en CII, 57 en UBL (BR-DE, BR-DE-CVD, BR-DEX, BR-TMP ; PEPPOL-EN16931-R043 en UBL) ; contrôle des profils acceptés par le BMF (DE-PROFILE-01) ; format et clé de la Leitweg-ID et de la GEBA (DE-LEITWEG-01, DE-LEITWEG-02, DE-GEBA-01, DE-GEBA-02) | Schematrons KoSIT XRechnung 3.0.2 (CII et UBL) ; BMF ; Formatspezifikation Leitweg-ID 2.0.2 ; GEBA Formatspezifikation 1.0.1 |
 | Peppol BIS Billing 3.0 | CII : 90 assertions (73 erreurs, 17 avertissements) ; UBL : 165 assertions (139 erreurs, 26 avertissements), dont 76 propres à l'UBL. PEPPOL-EN16931-R, PEPPOL-COMMON-R (identifiants par schéma ICD), listes de codes restreintes, règles nationales NO, DK, IT, SE et NL, et en UBL GR, IS et DE | Schematrons Peppol BIS Billing 3.0.21 (`PEPPOL-EN16931-CII.sch` et `PEPPOL-EN16931-UBL.sch`, inchangés en 3.0.22) |
+| ZUGFeRD 1.0 | 4 contrôles (ZF1-01 à ZF1-04) : identifiant de profil ZUGFeRD 1.0, valeurs lisibles, données qui identifient une facture ; avertissement : ni règles EN 16931, ni Factur-X, ni nationales | Spécification ZUGFeRD 1.0 (FeRD, 2014) |
 | Chorus Pro (B2G) | 8 contrôles (CPRO-01 à CPRO-08) : SIRET de la structure publique, code service, numéro d'engagement, type de document, numéro de facture | Spécifications externes Chorus Pro (annexe EDI V4.23) |
 | Conteneur PDF | 40 contrôles (PDF-01 à PDF-40) : PDF/A-3 ou PDF/A-4f déclaré, cohérent avec la version PDF, XMP `fx` cohérent avec le XML, pièce jointe, `/AF`, `/AFRelationship` selon le profil et le pays, type MIME, chiffrement ; prérequis PDF/A vérifiables sans rendu : polices incorporées, JavaScript et actions interdites (`/OpenAction`, liens, signets, `/AA`), cohérence entre `/Info` et le XMP, pièces jointes annexes (`/AFRelationship`, type MIME, présence dans un `/AF`), filtre `LZWDecode` | Spécification Factur-X 1.08 et 1.09 (§ 6.2.2), ISO 19005-3 et 19005-4 |
 
@@ -306,6 +322,8 @@ Les règles Peppol donnent le résultat attendu sur les 351 tests unitaires CII 
 
 Sur les 147 XML CII lus du corpus ZUGFeRD et des XML extraits de ses PDF, 145 sont réécrits en EXTENDED avec tout leur arbre ; les 2 autres portent des données qu'aucun profil Factur-X n'admet (le code banque allemand de ZUGFeRD 2.0, retiré depuis du schéma, et un type de référence sur un document justificatif autre que 130), et `Marshal` les signale. Un document qui contient chaque élément du XSD EXTENDED avec tous ses attributs est relu et réécrit à l'identique, sauf ce même élément interdit par les règles.
 
+Les 21 XML ZUGFeRD 1.0 extraits des PDF de `ZUGFeRDv1/correct` sont tous lus, l'un avec une date illisible (`20139102`, une erreur du document). Réécrits en Factur-X, 8 gardent tout leur arbre en EXTENDED ; les 12 autres lisibles ne perdent que des données qu'aucun profil Factur-X n'admet (nom de l'établissement bancaire, code banque allemand, taxe d'assurance, immatriculation fiscale vide…), et `Marshal` les signale. Les 3 PDF de `ZUGFeRDv1/fail` ont chacun au moins une erreur ZF1-01 à ZF1-03.
+
 ### PDF
 
 Le lecteur PDF est écrit pour ce package : tables xref classiques et flux xref, flux d'objets, mises à jour incrémentales, reconstruction quand la table xref est endommagée, filtres Flate (avec prédicteurs), ASCIIHex et ASCII85. La décompression est bornée (256 Mio par flux) et la profondeur d'imbrication limitée, pour qu'un fichier hostile ne puisse ni saturer la mémoire ni faire déborder la pile. Le décompresseur est testé par fuzzing différentiel contre `compress/flate`.
@@ -317,7 +335,7 @@ Le lecteur XML est lui aussi écrit pour ce package : un seul passage sur les oc
 - **Pas de conversion PDF/A.** `Embed` déclare PDF/A-3 (ou PDF/A-4f pour un PDF 2.0) dans le XMP mais ne touche ni aux polices, ni aux espaces de couleur, ni aux output intents : le PDF hôte doit déjà respecter PDF/A-2, PDF/A-3 ou PDF/A-4 (polices incorporées, output intent), ce que la plupart des générateurs savent faire sur option. `Check` signale ce qui manque parmi ce qui se vérifie sans rendu (output intent, polices non incorporées, JavaScript et actions interdites, `/Info` incohérent avec le XMP, filtre LZW) ; il ne remplace pas un validateur PDF/A comme veraPDF : les espaces de couleur, la transparence, les programmes de police eux-mêmes et le contenu des pages ne sont pas analysés. Une police présente dans les ressources d'une page sans être incorporée est un avertissement (PDF-31), le contenu n'étant pas lu pour savoir si elle sert à afficher du texte visible.
 - **UBL : extensions non vérifiées, BR-FR et BR-DE non confrontées aux schematrons officiels.** Le schéma UBL 2.1 déclare le contenu des extensions (`ext:ExtensionContent`) en `xsd:any` lax, et les schémas de signature qu'il importe pour cela (xmldsig, XAdES) ne sont pas compilés : seuls l'espace de noms et le nombre des éléments d'une extension sont vérifiés, pas leur contenu. Les règles BR-FR et BR-DE suivent les schematrons UBL de leurs jeux, mais n'ont pas été confrontées à une exécution des schematrons officiels : elles sont vérifiées par des tests de mutation, et BR-DE sur les factures UBL de la suite KoSIT. Le jeu Allemagne n'écrit pas les règles Peppol que les schematrons XRechnung incorporent, sauf PEPPOL-EN16931-R043 en UBL : elles relèvent du jeu Peppol, et une facture UBL vérifiée avec les deux jeux voit R043 signalée par chacun. Les règles Chorus Pro tournent sur une vue CII du document ; leurs constats sont situés dans l'UBL.
 - **PDF chiffrés** : signalés (PDF-01), pas déchiffrés.
-- **ZUGFeRD 1.0** : le XMP est reconnu, le XML (syntaxe CII antérieure à D16B) n'est pas lu.
+- **ZUGFeRD 1.0 : lecture seule, contrôle minimal.** Le XML est lu et se réécrit en Factur-X, mais ne s'écrit pas en ZUGFeRD 1.0 ; il n'est vérifié ni contre le XSD ZUGFeRD 1.0, ni contre des règles métier (voir [ZUGFeRD 1.0](#zugferd-10)).
 - Les règles des schematrons sont réécrites en Go, pas interprétées : une nouvelle version des artefacts officiels demande une mise à jour du code (les catalogues EN 16931 du CII et de l'UBL sont régénérés par `go generate`, les tests vérifient l'alignement).
 
 ## Performances
@@ -363,7 +381,7 @@ Les tests de base n'ont besoin que du dépôt ; la CI ([.github/workflows/ci.yml
 | Variable | Contenu | Tests |
 |---|---|---|
 | `FX_CORPUS` | Clone de [ZUGFeRD/corpus](https://github.com/ZUGFeRD/corpus) | Extraction et contrôle des PDF du corpus ; lecture, aller-retour, schéma UBL 2.1 et validation des factures UBL de `XML-Rechnung/UBL` |
-| `FX_CORPUS_XML` | XML extraits du corpus | Lecture, validation et aller-retour lecture → écriture : sans perte signalée, l'arbre complet du document d'origine doit se retrouver dans le XML réécrit, dans son profil et en EXTENDED |
+| `FX_CORPUS_XML` | XML extraits du corpus | Lecture, validation et aller-retour lecture → écriture : sans perte signalée, l'arbre complet du document d'origine doit se retrouver dans le XML réécrit, dans son profil et en EXTENDED ; un XML ZUGFeRD 1.0 (extrait d'un PDF de `ZUGFeRDv1`) est comparé à sa vue CII D16B |
 | `FX_XSD` | XSD Factur-X 1.09.2, un dossier par profil (`MINIMUM`, `BASICWL`, `BASIC`, `EN16931`, `EXTENDED`) | Le XML écrit par `cii.Marshal` est vérifié contre les XSD d'origine |
 | `FX_XSD_DIR` | XSD Factur-X 1.09.2 : paquet FeRD ZUGFeRD 2.5.2 (BASIC, EN 16931, EXTENDED) et paquet FNFE-MPE 1.09 (MINIMUM, BASIC WL, que le corrigendum 1.09.2 ne modifie pas) | Les tables de schéma régénérées sont identiques à celles du dépôt |
 | `FX_KOSIT` | Clone de [itplr-kosit/xrechnung-testsuite](https://github.com/itplr-kosit/xrechnung-testsuite) | Toutes les factures CII et UBL de la suite de tests KoSIT passent les règles BR-DE ; ses factures UBL sont aussi lues, réécrites, vérifiées contre le schéma UBL 2.1 et validées sans erreur |

@@ -28,9 +28,11 @@ func DateOf(t time.Time) Date {
 }
 
 // ParseDate parses a date in one of the UNTDID 2379 formats used by CII:
-// "102" (CCYYMMDD) or "610" (CCYYMM, read as the first day of the month).
-// An empty format means "102". ISO 8601 dates (2006-01-02) are also accepted
-// whatever the format, as some producers write them.
+// "102" (CCYYMMDD), "610" (CCYYMM, read as the first day of the month) or
+// "616" (CCYYWW, an ISO 8601 week, read as its Monday; ZUGFeRD 1.0 uses it
+// for invoicing periods). An empty format means "102". ISO 8601 dates
+// (2006-01-02) are also accepted whatever the format, as some producers
+// write them.
 func ParseDate(s, format string) (Date, error) {
 	s = strings.TrimSpace(s)
 	if len(s) == 10 && s[4] == '-' && s[7] == '-' {
@@ -60,6 +62,19 @@ func ParseDate(s, format string) (Date, error) {
 			return Date{}, fmt.Errorf("invalid date %q: no such month", s)
 		}
 		return dt, nil
+	case "616":
+		if len(s) != 6 || !digits(s) {
+			return Date{}, fmt.Errorf("invalid date %q: format 616 expects CCYYWW", s)
+		}
+		y, _ := strconv.Atoi(s[:4])
+		w, _ := strconv.Atoi(s[4:])
+		// January 4 is always in week 1.
+		jan4 := time.Date(y, time.January, 4, 0, 0, 0, 0, time.UTC)
+		monday := jan4.AddDate(0, 0, -((int(jan4.Weekday())+6)%7)+7*(w-1))
+		if yy, ww := monday.ISOWeek(); w < 1 || yy != y || ww != w {
+			return Date{}, fmt.Errorf("invalid date %q: no such week", s)
+		}
+		return DateOf(monday), nil
 	}
 	return Date{}, fmt.Errorf("unsupported date format %q", format)
 }

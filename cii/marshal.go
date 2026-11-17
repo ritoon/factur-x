@@ -64,7 +64,9 @@ func (e *LossError) Error() string {
 // of the profile's XML schema (Factur-X 1.09.2; XRECHNUNG and PEPPOL use the
 // EN 16931 schema and EXTENDED-CTC-FR the EXTENDED one). The specification identifier
 // BT-24 is inv.SpecificationID when it identifies the target profile (this
-// keeps, for example, the XRechnung version), the target's URN otherwise.
+// keeps, for example, the XRechnung version), the target's URN otherwise: a
+// ZUGFeRD 1.0 identifier, which only a CrossIndustryDocument carries, is
+// replaced.
 //
 // Mandatory elements of the target schema are always written, empty when the
 // invoice has no value for them, so that a validator reports the missing
@@ -203,7 +205,7 @@ func (w *writer) context(inv *invoice.Invoice, target invoice.Profile) {
 		w.end("ram:BusinessProcessSpecifiedDocumentContextParameter")
 	}
 	spec := target.URN()
-	if inv.SpecificationID != "" && detectProfile(inv.SpecificationID) == target {
+	if inv.SpecificationID != "" && !zugferd1URN(inv.SpecificationID) && detectProfile(inv.SpecificationID) == target {
 		spec = strings.TrimSpace(inv.SpecificationID)
 	}
 	w.start("ram:GuidelineSpecifiedDocumentContextParameter")

@@ -81,6 +81,21 @@ func TestDate(t *testing.T) {
 	if m, _ := ParseDate("202602", "610"); m != NewDate(2026, 2, 1) {
 		t.Errorf("format 610: %v", m)
 	}
+	// Format 616 (ISO 8601 week) gives the Monday of the week.
+	for s, want := range map[string]Date{
+		"201338": NewDate(2013, time.September, 16),
+		"202601": NewDate(2025, time.December, 29), // week 1 of 2026 starts in 2025
+		"202053": NewDate(2020, time.December, 28),
+	} {
+		if w, err := ParseDate(s, "616"); err != nil || w != want {
+			t.Errorf("format 616 %s: %v %v, want %v", s, w, err, want)
+		}
+	}
+	for _, s := range []string{"202153", "202600", "2026W1", "2026011"} {
+		if w, err := ParseDate(s, "616"); err == nil {
+			t.Errorf("format 616 %s accepted: %v", s, w)
+		}
+	}
 	if !NewDate(2026, 1, 31).Before(NewDate(2026, 2, 1)) || NewDate(2026, 1, 31).AddDays(1) != NewDate(2026, 2, 1) {
 		t.Error("date arithmetic")
 	}
@@ -114,6 +129,29 @@ func TestProfile(t *testing.T) {
 	} {
 		if got := ProfileFromURN(urn); got != want {
 			t.Errorf("ProfileFromURN(%q) = %s, want %s", urn, got, want)
+		}
+	}
+	// ZUGFeRD 1.0 identifiers: matched by ProfileFromZUGFeRD1URN and
+	// DetectProfile, not by ProfileFromURN, which validators use for CII D16B.
+	for urn, want := range map[string]Profile{
+		URNZUGFeRD1Basic:                                     ProfileBasic,
+		" " + URNZUGFeRD1Comfort + "\n":                      ProfileEN16931,
+		URNZUGFeRD1Extended:                                  ProfileExtended,
+		"urn:ferd:invoice:rc:comfort":                        ProfileEN16931,
+		"urn:ferd:CrossIndustryDocument:invoice:1p0:komfort": ProfileUnknown,
+		"urn:ferd:CrossIndustryDocument:order:1p0:extended":  ProfileUnknown,
+		URNEN16931: ProfileUnknown,
+	} {
+		if got := ProfileFromZUGFeRD1URN(urn); got != want {
+			t.Errorf("ProfileFromZUGFeRD1URN(%q) = %s, want %s", urn, got, want)
+		}
+		if want != ProfileUnknown {
+			if got := DetectProfile(urn); got != want {
+				t.Errorf("DetectProfile(%q) = %s, want %s", urn, got, want)
+			}
+			if got := ProfileFromURN(urn); got != ProfileUnknown {
+				t.Errorf("ProfileFromURN(%q) = %s, want UNKNOWN", urn, got)
+			}
 		}
 	}
 	if ParseProfile("basic-wl") != ProfileBasicWL || ParseProfile("en16931") != ProfileEN16931 || ParseProfile("extended-ctc-fr") != ProfileExtendedCTCFR ||

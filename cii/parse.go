@@ -13,8 +13,8 @@ import (
 )
 
 // ErrNotCII is returned (wrapped) by Parse when the document is well-formed
-// XML but not a rsm:CrossIndustryInvoice, for example a ZUGFeRD 1.0
-// CrossIndustryDocument or an UBL invoice.
+// XML but neither a rsm:CrossIndustryInvoice nor a ZUGFeRD 1.0
+// rsm:CrossIndustryDocument, for example a UBL invoice.
 var ErrNotCII = errors.New("cii: not a CrossIndustryInvoice document")
 
 // Issue is a value that could not be read: a malformed amount, quantity,
@@ -48,14 +48,25 @@ func (e *IssuesError) Error() string {
 // Parse reads a CII invoice.
 //
 // It fails, with a nil invoice, only when data is not well-formed XML or its
-// root is not a rsm:CrossIndustryInvoice (the error then wraps ErrNotCII).
-// When some values cannot be read, Parse returns the invoice with the
-// corresponding fields empty and an *IssuesError listing them.
+// root is not a rsm:CrossIndustryInvoice nor a ZUGFeRD 1.0 invoice (the
+// error then wraps ErrNotCII). When some values cannot be read, Parse
+// returns the invoice with the corresponding fields empty and an
+// *IssuesError listing them.
 //
 // Reading is tolerant: namespace prefixes are ignored (the root namespace is
 // checked), values are trimmed, elements are recognized in any order, and the
 // ZUGFeRD 2.0/2.1 variants are accepted. The profile is derived from the
 // specification identifier BT-24, which is kept in SpecificationID.
+//
+// ZUGFeRD 1.0 invoices (rsm:CrossIndustryDocument, and rsm:Invoice of the
+// 2014 release candidate, see IsZUGFeRD1) are read too, from a CII D16B view
+// of the document: the elements that ZUGFeRD 2 renamed are read under their
+// new name and the extensions get their CII D16B path, so that Marshal
+// writes the invoice as Factur-X. Only the syntax is translated: the values,
+// codes included, are read as they are. The profile is the one matched to
+// the ZUGFeRD 1.0 identifier (see invoice.ProfileFromZUGFeRD1URN), BT-24
+// keeps that identifier and the issues are located in the ZUGFeRD 1.0
+// document. ZUGFeRD 1.0 is read only: Marshal writes CII D16B.
 //
 // Nothing is dropped: the elements and attributes that the model does not
 // carry (EXTENDED elements without a field of their own, a listID, an
@@ -83,8 +94,9 @@ func Parse(data []byte) (*invoice.Invoice, error) {
 // ParseTree reads a CII invoice from an already parsed document, so that a
 // caller that also validates the document parses the XML only once. It
 // returns the invoice and the values that could not be read (see Parse). If
-// root is not a rsm:CrossIndustryInvoice element, the invoice is nil and the
-// single issue says why.
+// root is neither a rsm:CrossIndustryInvoice element nor the root of a
+// ZUGFeRD 1.0 invoice, the invoice is nil and the single issue says why.
+// The tree is not modified.
 func ParseTree(root *xmltree.Node) (*invoice.Invoice, []Issue) {
 	if err := checkRoot(root); err != nil {
 		is := Issue{Message: err.Error()}
@@ -94,6 +106,9 @@ func ParseTree(root *xmltree.Node) (*invoice.Invoice, []Issue) {
 		return nil, []Issue{is}
 	}
 	r := reader{inv: new(invoice.Invoice)}
+	if IsZUGFeRD1(root) {
+		root, r.origin = zugferd1View(root)
+	}
 	r.document(root)
 	return r.inv, r.issues
 }
@@ -102,8 +117,10 @@ func checkRoot(root *xmltree.Node) error {
 	switch {
 	case root == nil:
 		return ErrNotCII
+	case IsZUGFeRD1(root):
+		return nil
 	case root.Name == "CrossIndustryDocument":
-		return fmt.Errorf("%w: ZUGFeRD 1.0 CrossIndustryDocument is not supported", ErrNotCII)
+		return fmt.Errorf("%w: CrossIndustryDocument in namespace %q, not the ZUGFeRD 1.0 namespace %s", ErrNotCII, root.Space, NamespaceZUGFeRD1)
 	case root.Name != "CrossIndustryInvoice":
 		return fmt.Errorf("%w: root element is <%s>", ErrNotCII, root.Name)
 	case root.Space != NamespaceRSM:
@@ -130,6 +147,11 @@ type reader struct {
 	// currencyID equal to one of them is implied by BT-5 and BT-6.
 	cur, taxCur string
 
+	// origin, for a ZUGFeRD 1.0 invoice, maps each node of the CII D16B view
+	// being read to the node of the document it comes from, where issues
+	// are located.
+	origin map[*xmltree.Node]*xmltree.Node
+
 	// unreadPaths, when not nil, receives the location of each extension
 	// (tests use it to list the elements outside the model).
 	unreadPaths *[]string
@@ -137,6 +159,9 @@ type reader struct {
 }
 
 func (r *reader) issue(n *xmltree.Node, msg string) {
+	if o := r.origin[n]; o != nil {
+		n = o
+	}
 	r.issues = append(r.issues, Issue{Path: n.Path(), Line: n.Line, Message: msg})
 }
 
