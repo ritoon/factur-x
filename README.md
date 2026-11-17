@@ -2,6 +2,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/ritoon/factur-x.svg)](https://pkg.go.dev/github.com/ritoon/factur-x)
 [![CI](https://github.com/ritoon/factur-x/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ritoon/factur-x/actions/workflows/ci.yml)
+[![Conformité](https://github.com/ritoon/factur-x/actions/workflows/conformance.yml/badge.svg?branch=main)](https://github.com/ritoon/factur-x/actions/workflows/conformance.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/ritoon/factur-x)](https://goreportcard.com/report/github.com/ritoon/factur-x)
 [![codecov](https://codecov.io/gh/ritoon/factur-x/graph/badge.svg)](https://codecov.io/gh/ritoon/factur-x)
 [![Version de Go](https://img.shields.io/github/go-mod/go-version/ritoon/factur-x)](go.mod)
@@ -325,7 +326,16 @@ Les messages sont ceux des artefacts officiels. Les listes de codes (pays, devis
 
 ### Exactitude mesurée
 
-Sur les 26 XML CII valides du corpus officiel `XML-Rechnung/CII`, le validateur signale exactement les 6 fichiers que signalent les schematrons officiels (exécutés par papierleicht) : BR-CL-25 deux fois, CII-SR-465 quatre fois sur les exemples XRECHNUNG. Les 104 PDF hybrides du corpus (`ZUGFeRDv2/correct`, `XML-Rechnung/FX`) sont tous extraits et leurs 26 XML tous lus.
+Le workflow [Conformité](.github/workflows/conformance.yml) exécute à chaque pull request les validateurs de référence sur 282 factures du corpus ZUGFeRD et de la suite de tests KoSIT, et compare facture par facture les règles levées en erreur (méthode et détail dans [conformance](conformance/README.md#parité-avec-kosit-et-mustang)) :
+
+| Référence | Factures comparées | Mêmes erreurs | Écarts justifiés |
+|---|---|---|---|
+| KoSIT validator 1.6.3, configuration XRechnung 3.0.2 du 2026-08-31 | 128 | 128 | 0 |
+| Mustang 2.26.0 | 282 | 223 | 59 |
+
+Avec KoSIT, toutes les factures comparées ont les mêmes erreurs. Avec Mustang, chaque écart est justifié dans [conformance/parity/known.txt](conformance/parity/known.txt), et tout nouvel écart fait échouer le job ; ils viennent des références elles-mêmes : Mustang n'applique ni Peppol BIS 3.0, ni la configuration KoSIT aux factures XRechnung (niveaux des règles, XSD CII D16B), embarque le schematron XRechnung 2.4.0 (2.6.0 pour KoSIT et le package), et applique aux factures Factur-X BASIC et EN 16931 les schematrons Factur-X 1.09.2, là où le package applique les règles CEN 1.3.17, comme KoSIT. Les 26 factures invalides à dessein du corpus (`ZUGFeRDv2/fail`, exemples `not_validating`) sont vérifiées une à une par `TestOfficialNegativeCases` contre les erreurs des références.
+
+Les 104 PDF hybrides du corpus (`ZUGFeRDv2/correct`, `XML-Rechnung/FX`) sont tous extraits et leurs 26 XML tous lus.
 
 Les 73 factures UBL du corpus (`XML-Rechnung/UBL`, 28) et de la suite de tests KoSIT (45) sont lues, réécrites puis relues dans le même modèle, et validées sans autre erreur que les 3 attendues : BR-CL-25 sur les deux exemples au schéma 9958, comme en CII, et l'exemple `not_validating…`, invalide à dessein. Toutes respectent le schéma UBL 2.1. Sur 11 000 variantes de ces factures modifiées au hasard (ordre, cardinalités, types, attributs, espaces de noms, extensions), le contrôle du schéma rend le même verdict que xmllint (libxml2) avec les XSD OASIS.
 
@@ -348,7 +358,7 @@ Le lecteur XML est lui aussi écrit pour ce package : un seul passage sur les oc
 ## Limites
 
 - **Pas de conversion PDF/A.** `Embed` déclare PDF/A-3 (ou PDF/A-4f pour un PDF 2.0) dans le XMP mais ne touche ni aux polices, ni aux espaces de couleur, ni aux output intents : le PDF hôte doit déjà respecter PDF/A-2, PDF/A-3 ou PDF/A-4 (polices incorporées, output intent), ce que la plupart des générateurs savent faire sur option. `Check` signale ce qui manque parmi ce qui se vérifie sans rendu (output intent, polices non incorporées, JavaScript et actions interdites, `/Info` incohérent avec le XMP, filtre LZW) ; il ne remplace pas un validateur PDF/A comme veraPDF : les espaces de couleur, la transparence, les programmes de police eux-mêmes et le contenu des pages ne sont pas analysés. Une police présente dans les ressources d'une page sans être incorporée est un avertissement (PDF-31), le contenu n'étant pas lu pour savoir si elle sert à afficher du texte visible.
-- **UBL : extensions non vérifiées, BR-FR et BR-DE non confrontées aux schematrons officiels.** Le schéma UBL 2.1 déclare le contenu des extensions (`ext:ExtensionContent`) en `xsd:any` lax, et les schémas de signature qu'il importe pour cela (xmldsig, XAdES) ne sont pas compilés : seuls l'espace de noms et le nombre des éléments d'une extension sont vérifiés, pas leur contenu. Les règles BR-FR et BR-DE suivent les schematrons UBL de leurs jeux, mais n'ont pas été confrontées à une exécution des schematrons officiels : elles sont vérifiées par des tests de mutation, et BR-DE sur les factures UBL de la suite KoSIT. Le jeu Allemagne n'écrit pas les règles Peppol que les schematrons XRechnung incorporent, sauf PEPPOL-EN16931-R043 en UBL : elles relèvent du jeu Peppol, et une facture UBL vérifiée avec les deux jeux voit R043 signalée par chacun. Les règles Chorus Pro tournent sur une vue CII du document ; leurs constats sont situés dans l'UBL.
+- **UBL : extensions non vérifiées, BR-FR non confrontées aux schematrons officiels.** Le schéma UBL 2.1 déclare le contenu des extensions (`ext:ExtensionContent`) en `xsd:any` lax, et les schémas de signature qu'il importe pour cela (xmldsig, XAdES) ne sont pas compilés : seuls l'espace de noms et le nombre des éléments d'une extension sont vérifiés, pas leur contenu. Les règles BR-FR suivent le schematron UBL de leur jeu, mais n'ont pas été confrontées à une exécution du schematron officiel : elles sont vérifiées par des tests de mutation. Les règles BR-DE, elles, sont confrontées à KoSIT par le job de parité, sur les factures UBL XRechnung du corpus et de la suite KoSIT (voir [Exactitude mesurée](#exactitude-mesurée)). Le jeu Allemagne n'écrit pas les règles Peppol que les schematrons XRechnung incorporent, sauf PEPPOL-EN16931-R043 en UBL : elles relèvent du jeu Peppol, et une facture UBL vérifiée avec les deux jeux voit R043 signalée par chacun. Les règles Chorus Pro tournent sur une vue CII du document ; leurs constats sont situés dans l'UBL.
 - **EXTENDED-CTC-FR : syntaxe CII seulement.** Le motif métier du schematron EXTENDED-CTC-FR de la FNFE (BR-FREXT, listes de codes, BR-CO-25 bloquante…) n'est pas appliqué : une facture EXTENDED-CTC-FR reçoit les règles métier de la XSLT Factur-X EXTENDED (BR-FXEXT et le sous-ensemble du CEN qu'elle reprend). En UBL, une facture EXTENDED-CTC-FR reçoit les règles UBL du CEN, pas celles du schematron UBL EXTENDED-CTC-FR.
 - **PDF chiffrés** : signalés (PDF-01), pas déchiffrés.
 - **ZUGFeRD 1.0 : lecture seule, contrôle minimal.** Le XML est lu et se réécrit en Factur-X, mais ne s'écrit pas en ZUGFeRD 1.0 ; il n'est vérifié ni contre le XSD ZUGFeRD 1.0, ni contre des règles métier (voir [ZUGFeRD 1.0](#zugferd-10)).
@@ -392,7 +402,7 @@ La comparaison avec 32 librairies TypeScript, Python et Rust, sur le même corpu
 go test ./...
 ```
 
-Les tests de base n'ont besoin que du dépôt ; la CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) les exécute avec `-race` sur Go 1.24 et sur la dernière version, après `gofmt` et `go vet`, et fait tourner 30 secondes de fuzzing sur le lecteur PDF, le codec Flate, le lecteur XML et la lecture de BT-24 dans la pièce jointe. Des tests supplémentaires s'activent quand les artefacts officiels sont disponibles en local :
+Les tests de base n'ont besoin que du dépôt ; la CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) les exécute avec `-race` sur Go 1.24 et sur la dernière version, après `gofmt` et `go vet`, et fait tourner 30 secondes de fuzzing sur le lecteur PDF, le codec Flate, le lecteur XML et la lecture de BT-24 dans la pièce jointe. Des tests supplémentaires s'activent quand les artefacts officiels sont disponibles. Le workflow [Conformité](.github/workflows/conformance.yml) les récupère à des versions figées (commit pour les dépôts, SHA-256 pour les fichiers) et les exécute tous à chaque pull request, en échouant si l'un d'eux est ignoré ; en local, `eval "$(conformance/fetch.sh)"` récupère les mêmes artefacts et définit les variables (voir [conformance](conformance/README.md)) :
 
 | Variable | Contenu | Tests |
 |---|---|---|
