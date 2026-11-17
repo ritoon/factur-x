@@ -1,0 +1,94 @@
+# Conformité
+
+Ce dossier mesure l'exactitude du package sur les artefacts officiels, à chaque push et à chaque pull request, dans le workflow [Conformité](../.github/workflows/conformance.yml). Rien ici ne fait partie du package `factur-x`, qui reste en pur Go : Java ne sert qu'à exécuter les validateurs de référence dans la CI.
+
+| Fichier | Rôle |
+|---|---|
+| [`fetch.sh`](fetch.sh) | Récupère les artefacts officiels à des versions figées et les vérifie, puis affiche les variables `FX_*` qui activent les tests optionnels |
+| [`parity.sh`](parity.sh) | Exécute KoSIT et Mustang sur les factures du corpus et de la suite KoSIT, puis compare leurs règles à celles du package |
+| [`parity/`](parity) | Outil Go de comparaison (module séparé) et lanceur Java de Mustang |
+| [`parity/known.txt`](parity/known.txt) | Écarts connus et justifiés ; tout autre écart fait échouer le job |
+
+## Artefacts
+
+`fetch.sh` vérifie chaque dépôt par son commit et chaque fichier téléchargé par son SHA-256 ; il garde ce qui est déjà présent et vérifié.
+
+| Artefact | Version | Vérification | Variable |
+|---|---|---|---|
+| [ZUGFeRD/corpus](https://github.com/ZUGFeRD/corpus) | commit `84f8d8f` | commit | `FX_CORPUS` |
+| XML des PDF valides du corpus, extraits par `pdfdetach` (poppler-utils) | — | — | `FX_CORPUS_XML` |
+| [itplr-kosit/xrechnung-testsuite](https://github.com/itplr-kosit/xrechnung-testsuite) | `v2026-08-31` (XRechnung 3.0.2), commit `44c3905` | commit | `FX_KOSIT` |
+| [Configuration du validateur KoSIT](https://github.com/itplr-kosit/validator-configuration-xrechnung/releases/tag/v2026-08-31) XRechnung 3.0.2 | release 2026-08-31 | SHA-256 | `FX_KOSIT_CONF` |
+| [fnfempe/France_RFE](https://github.com/fnfempe/France_RFE) | `v1.4.0.04`, commit `97ba0f3` | commit | `FX_FNFE` |
+| [OpenPEPPOL/peppol-bis-invoice-3](https://github.com/OpenPEPPOL/peppol-bis-invoice-3) | `3.0.22`, commit `38d693d` | commit | `FX_PEPPOL` |
+| Paquet OASIS [UBL-2.1.zip](https://docs.oasis-open.org/ubl/os-UBL-2.1/UBL-2.1.zip) | 2.1 | SHA-256 | `FX_UBL_ZIP` |
+| XSD Factur-X : BASIC, EN 16931 et EXTENDED du paquet FeRD ZUGFeRD 2.5.2, MINIMUM et BASIC WL du paquet FNFE-MPE 1.09 | 1.09.2 | SHA-256 de chacun des 20 fichiers | `FX_XSD`, `FX_XSD_DIR` |
+
+FeRD et FNFE-MPE ne distribuent leurs paquets qu'au travers d'un formulaire : les 20 XSD viennent de deux copies publiques de ces paquets sous Apache-2.0 ([LandrixSoftware/validator-configuration-zugferd](https://github.com/LandrixSoftware/validator-configuration-zugferd), [backoffice-plus/e-invoice-validator](https://github.com/backoffice-plus/e-invoice-validator)), à des commits figés. Chaque fichier est vérifié par le SHA-256 du fichier officiel, celui-là même dont `internal/schema/tables_gen.go` a été généré.
+
+Les validateurs de référence, téléchargés par `parity.sh` depuis leurs publications GitHub, sont vérifiés de la même façon ; KoSIT s'exécute avec la configuration XRechnung 3.0.2 du 2026-08-31 récupérée par `fetch.sh` :
+
+| Validateur | Fichier | SHA-256 |
+|---|---|---|
+| KoSIT validator 1.6.3 | `validator-1.6.3-standalone.jar` | `799e64be…` |
+| Mustang 2.26.0 | `Mustang-CLI-2.26.0.jar` | `42d7868c…` |
+
+## Tests sur les artefacts
+
+Le job *Tests sur les artefacts officiels* lance `go test ./...` avec toutes les variables `FX_*` définies (voir la section Tests du [README](../README.md#tests)) et échoue si un test est ignoré : chaque test optionnel tourne donc à chaque pull request.
+
+## Parité avec KoSIT et Mustang
+
+Le job *Parité avec KoSIT et Mustang* exécute les deux validateurs de référence et le package sur le même jeu de 282 factures :
+
+- corpus ZUGFeRD : `XML-Rechnung/CII`, `XML-Rechnung/UBL`, `XML-Rechnung/FX`, `ZUGFeRDv2/correct` et `ZUGFeRDv2/fail` (factures invalides à dessein) ;
+- suite de tests KoSIT : `src/test` (cas métier et cas techniques, toutes valides).
+
+Sont laissés de côté ZUGFeRD 1.0 (Mustang lui applique un schematron dont les assertions n'ont pas d'identifiant : seules les erreurs de schéma seraient comparables), les factures Peppol de 25 et 61 Mo, fatturaPA et les dossiers non triés du corpus.
+
+KoSIT reçoit les factures XML et ne vérifie que celles qu'un scénario de sa configuration reconnaît (XRechnung, et EN 16931 en CII et en UBL) ; Mustang reçoit toutes les factures, XML et PDF. Les deux s'exécutent chacun dans une seule JVM ; Mustang par [`parity/MustangBatch.java`](parity/MustangBatch.java), qui appelle `ZUGFeRDValidator` sans notices, comme l'option `--no-notices` de sa ligne de commande.
+
+Pour chaque facture et chaque référence, l'outil compare les règles levées **en erreur** de part et d'autre, celles qui décident du verdict :
+
+- les règles des schematrons officiels, sous leur identifiant : EN 16931 (BR, BR-CO, BR-CL, BR-DEC, règles par catégorie de TVA, CII-SR, CII-DT, UBL-CR, UBL-SR, UBL-DT), Factur-X (FX-SCH, BR-FXEXT), XRechnung (BR-DE, BR-DEX, BR-TMP) et Peppol (dont les règles que reprennent les schematrons XRechnung) ;
+- les assertions des schematrons Factur-X 1.09.2 qui vérifient une liste de codes avec leurs propres listes (codedb), rapprochées de la règle BR-CL du CEN sur le même élément, et celles sur BT-24, rapprochées de FX-PROFILE (table `equivalents` de [`parity/compare.go`](parity/compare.go)) ;
+- les erreurs de schéma XSD, dont les messages diffèrent d'un validateur à l'autre, qui comptent pour une seule règle, `SCHEMA`.
+
+Les niveaux sont ceux que donne chaque validateur ; pour KoSIT, ceux que fixe le scénario (`customLevel`, CII-SR-465 en erreur et BR-CL-21 en avertissement pour XRechnung par exemple), comme dans son évaluation du document. Une règle en erreur d'un côté et en avertissement de l'autre est un écart.
+
+Restent hors de la comparaison : le conteneur PDF (Mustang vérifie PDF/A avec veraPDF, le package a ses propres contrôles PDF-xx), les contrôles propres à chacun (calculs de Mustang, FR-PROFILE du package) et les règles BR-FR, que Mustang 2.26.0 applique en version 1.3.0 aux factures entre deux parties françaises, quand le package applique la version 1.4.0.04 sur option.
+
+Le job écrit le tableau de résultats dans le résumé du run et dépose les rapports bruts (KoSIT, Mustang, JSON) en artefact. Un écart absent de [`parity/known.txt`](parity/known.txt) le fait échouer.
+
+### Résultats
+
+| Référence | Factures comparées | Mêmes erreurs | Écarts justifiés |
+|---|---|---|---|
+| KoSIT validator 1.6.3, configuration XRechnung 3.0.2 du 2026-08-31 | 128 | 128 | 0 |
+| Mustang 2.26.0 | 282 | 223 | 59 |
+
+Avec KoSIT, toutes les factures comparées ont les mêmes erreurs.
+
+Les écarts avec Mustang viennent de différences entre les références elles-mêmes :
+
+- Mustang n'applique pas Peppol BIS 3.0 aux factures UBL Peppol du corpus, ni la configuration KoSIT aux factures XRechnung (niveaux des règles, et XSD CII D16B complet là où Mustang garde le XSD Factur-X EN 16931), et embarque le schematron XRechnung 2.4.0, quand KoSIT et le package appliquent la version 2.6.0 ;
+- Mustang applique aux factures Factur-X les schematrons Factur-X 1.09.2 ; le package leur applique, pour BASIC et EN 16931, les règles CEN 1.3.17, comme KoSIT. Les schematrons Factur-X omettent CII-DT-031, lèvent CII-SR-464 à 466 en erreur et vérifient les listes de codes avec leurs propres listes, que le package n'implémente pas : il signale en avertissement, pour EXTENDED, les codes hors des listes CEN.
+
+### Cas négatifs
+
+Le tableau *Cas négatifs officiels* du rapport donne, pour chaque facture invalide à dessein du corpus, les erreurs levées par le package et par chaque référence. La suite de tests KoSIT ne contient que des factures valides.
+
+Le test `TestOfficialNegativeCases` ([`negative_test.go`](../negative_test.go)), exécuté par le job *Tests sur les artefacts officiels*, fige ces verdicts : chacune des 24 factures de `ZUGFeRDv2/fail` et des 2 exemples `not_validating` doit lever les règles que lèvent les références (sous le même identifiant ou, pour le même défaut, sous celui du package). Trois n'ont pas d'erreur, pour une raison donnée dans le test : un défaut de police PDF/A que seul veraPDF voit, un prix net incohérent qu'aucune règle EN 16931 ne contrôle, et un exemple où aucune référence ne trouve d'erreur non plus.
+
+## En local
+
+```bash
+eval "$(conformance/fetch.sh)"
+go test ./...
+```
+
+```bash
+conformance/parity.sh
+```
+
+`fetch.sh` demande git, curl et `pdfdetach` (poppler-utils) ; `parity.sh` demande en plus Java 17 ou suivant et unzip. Les artefacts vont dans `conformance/.artifacts`, ignoré par git.

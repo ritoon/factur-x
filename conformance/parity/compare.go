@@ -1,0 +1,293 @@
+package main
+
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+)
+
+// reference is a reference validator.
+type reference struct {
+	Key     string                       // kosit, mustang: the name used in known.txt
+	Title   string                       // for the report
+	dir     string                       // sub-directory of the work directory holding its reports
+	report  func(e entry) string         // name of the report of an invoice
+	parse   func([]byte) (result, error) // reads a report
+	applies func(e entry) bool           // the validator was given the invoice
+}
+
+var references = []reference{
+	{
+		Key:     "kosit",
+		Title:   "KoSIT validator 1.6.3, configuration XRechnung 3.0.2 du 2026-08-31",
+		dir:     "kosit",
+		report:  func(e entry) string { return strings.TrimSuffix(e.Name, ".xml") + "-report.xml" },
+		parse:   parseKoSIT,
+		applies: func(e entry) bool { return !e.isPDF() },
+	},
+	{
+		Key:     "mustang",
+		Title:   "Mustang 2.26.0",
+		dir:     "mustang",
+		report:  func(e entry) string { return e.Name + ".xml" },
+		parse:   parseMustang,
+		applies: func(entry) bool { return true },
+	},
+}
+
+// comparison is the comparison of one invoice with one reference.
+type comparison struct {
+	Reference  string   `json:"reference"`
+	Invoice    string   `json:"invoice"`
+	Negative   bool     `json:"negative"`
+	Ours       result   `json:"ours"`
+	Ref        result   `json:"ref"`
+	Known      []string `json:"known,omitempty"`      // justified differences, "+RULE: reason"
+	Unexpected []string `json:"unexpected,omitempty"` // "+RULE" raised as an error by this package only, "-RULE" by the reference only
+}
+
+func (c *comparison) identical() bool { return len(c.Known) == 0 && len(c.Unexpected) == 0 }
+
+// knownDiff is a line of known.txt: a difference that is understood and
+// justified.
+type knownDiff struct {
+	ref    string // kosit, mustang or *
+	glob   string // origin of the invoice, * matching any string (/ included)
+	diff   string // +RULE or -RULE; a final * matches a prefix
+	reason string
+	line   int
+	used   bool
+}
+
+func (k *knownDiff) match(ref, src, diff string) bool {
+	if k.ref != "*" && k.ref != ref {
+		return false
+	}
+	return glob(k.glob, src) && matchRule(k.diff, diff)
+}
+
+// glob reports whether s matches pattern, where * matches any string,
+// slashes included, and every other character itself.
+func glob(pattern, s string) bool {
+	parts := strings.Split(pattern, "*")
+	if len(parts) == 1 {
+		return pattern == s
+	}
+	if !strings.HasPrefix(s, parts[0]) {
+		return false
+	}
+	s = s[len(parts[0]):]
+	last := parts[len(parts)-1]
+	for _, p := range parts[1 : len(parts)-1] {
+		i := strings.Index(s, p)
+		if i < 0 {
+			return false
+		}
+		s = s[i+len(p):]
+	}
+	return len(s) >= len(last) && strings.HasSuffix(s, last)
+}
+
+// readKnown reads known.txt: one difference per line, "reference invoice
+// difference reason", # starting a comment.
+func readKnown(name string) ([]*knownDiff, error) {
+	if name == "" {
+		return nil, nil
+	}
+	f, err := os.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	var out []*knownDiff
+	sc := bufio.NewScanner(f)
+	for n := 1; sc.Scan(); n++ {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 4 || (fields[2][0] != '+' && fields[2][0] != '-') {
+			return nil, fmt.Errorf("%s:%d: want \"reference invoice ±RULE reason\"", name, n)
+		}
+		out = append(out, &knownDiff{
+			ref: fields[0], glob: fields[1], diff: fields[2],
+			reason: strings.Join(fields[3:], " "), line: n,
+		})
+	}
+	return out, sc.Err()
+}
+
+func compare(work, knownFile, mdFile, jsonFile string) (bool, error) {
+	entries, err := readIndex(work)
+	if err != nil {
+		return false, err
+	}
+	known, err := readKnown(knownFile)
+	if err != nil {
+		return false, err
+	}
+	var all []comparison
+	for _, e := range entries {
+		data, err := os.ReadFile(filepath.Join(work, "in", e.Name))
+		if err != nil {
+			return false, err
+		}
+		mine := ours(e.Name, data)
+		for _, ref := range references {
+			if !ref.applies(e) {
+				continue
+			}
+			rdata, err := os.ReadFile(filepath.Join(work, ref.dir, ref.report(e)))
+			if err != nil {
+				return false, fmt.Errorf("%s (%s): %w", e.Source, ref.Key, err)
+			}
+			r, err := ref.parse(rdata)
+			if err != nil {
+				return false, fmt.Errorf("%s: %s report: %w", e.Source, ref.Key, err)
+			}
+			if !r.Covered {
+				continue
+			}
+			c := comparison{Reference: ref.Key, Invoice: e.Source, Negative: e.negative(), Ours: mine, Ref: r}
+			diffs := diff(mine.Rules, r.Rules)
+			if mine.Failure != "" {
+				diffs = append(diffs, "!factur-x: "+mine.Failure)
+			}
+		next:
+			for _, d := range diffs {
+				for _, k := range known {
+					if k.match(ref.Key, e.Source, d) {
+						k.used = true
+						c.Known = append(c.Known, d+" : "+k.reason)
+						continue next
+					}
+				}
+				c.Unexpected = append(c.Unexpected, d)
+			}
+			all = append(all, c)
+		}
+	}
+
+	ok := true
+	for _, c := range all {
+		if len(c.Unexpected) > 0 {
+			ok = false
+		}
+	}
+	var unused []string
+	for _, k := range known {
+		if !k.used {
+			unused = append(unused, fmt.Sprintf("known.txt:%d: %s %s %s matches no difference", k.line, k.ref, k.glob, k.diff))
+		}
+	}
+	md := markdown(all, unused)
+	fmt.Print(md)
+	if mdFile != "" {
+		if err := os.WriteFile(mdFile, []byte(md), 0o644); err != nil {
+			return false, err
+		}
+	}
+	if jsonFile != "" {
+		b, err := json.MarshalIndent(all, "", "  ")
+		if err != nil {
+			return false, err
+		}
+		if err := os.WriteFile(jsonFile, append(b, '\n'), 0o644); err != nil {
+			return false, err
+		}
+	}
+	return ok, nil
+}
+
+// equivalents maps the assertions of the Factur-X 1.09.2 schematrons that
+// Mustang applies to the rules of this package that check the same element
+// against the same code list under another identifier: the Factur-X
+// schematrons check the code lists with their own lists (codedb) where the
+// CEN schematron, that KoSIT and this package apply, has a BR-CL rule, and
+// this package checks the specification identifier BT-24 with FX-PROFILE.
+// A final * matches a prefix.
+var equivalents = map[string][]string{
+	"FX-SCH-A-000493": {"FX-PROFILE-*"}, // BASIC: BT-24
+	"FX-SCH-A-000636": {"FX-PROFILE-*"}, // EXTENDED: BT-24
+	"FX-SCH-A-000571": {"BR-CL-25"},     // EN 16931: scheme of BT-49 (EAS)
+	"FX-SCH-A-000704": {"BR-CL-25"},     // EXTENDED: scheme of BT-49 (EAS)
+	"FX-SCH-A-000581": {"BR-CL-11"},     // EN 16931: scheme of BT-30 (ICD)
+	"FX-SCH-A-000612": {"BR-CL-23"},     // EN 16931: unit of BT-149
+	"FX-SCH-A-000613": {"BR-CL-23"},     // EN 16931: unit of BT-130
+	"FX-SCH-A-000973": {"BR-CL-19"},     // EXTENDED: BT-98 (UNTDID 5189)
+	"FX-SCH-A-001137": {"BR-CL-19"},     // EXTENDED: BT-140 (UNTDID 5189)
+}
+
+func matchRule(pattern, rule string) bool {
+	if p, ok := strings.CutSuffix(pattern, "*"); ok {
+		return strings.HasPrefix(rule, p)
+	}
+	return pattern == rule
+}
+
+// equivalentTarget reports whether a rule of this package is the equivalent
+// of an assertion of a reference.
+func equivalentTarget(rule string) bool {
+	for _, targets := range equivalents {
+		for _, t := range targets {
+			if matchRule(t, rule) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// same reports whether the rule refRule of the reference and the rule mine
+// of this package are the same check.
+func same(refRule, mine string) bool {
+	if refRule == mine {
+		return true
+	}
+	for _, t := range equivalents[refRule] {
+		if matchRule(t, mine) {
+			return true
+		}
+	}
+	return false
+}
+
+// errorsOf returns the rules of a set raised as errors.
+func errorsOf(m map[string]string) []string {
+	var out []string
+	for _, r := range sortedRules(m) {
+		if m[r] == levelError {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// diff lists the rules raised as errors by one side only: "+RULE" for this
+// package, "-RULE" for the reference, a rule and its equivalent (see
+// equivalents) being the same. A rule raised as an error by one side and as
+// a warning or an information by the other is a difference: the level
+// decides the verdict.
+func diff(mine, ref map[string]string) []string {
+	var out []string
+	mineErr, refErr := errorsOf(mine), errorsOf(ref)
+	for _, m := range mineErr {
+		if !compared(m) {
+			continue // an equivalent only
+		}
+		if !slices.ContainsFunc(refErr, func(r string) bool { return same(r, m) }) {
+			out = append(out, "+"+m)
+		}
+	}
+	for _, r := range refErr {
+		if !slices.ContainsFunc(mineErr, func(m string) bool { return same(r, m) }) {
+			out = append(out, "-"+r)
+		}
+	}
+	return out
+}

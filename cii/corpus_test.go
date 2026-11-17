@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -24,10 +25,12 @@ import (
 //
 // For each document it checks the round trip Parse → Marshal (same profile)
 // → Parse, the XSD conformance of the output, and the lossless EXTENDED round
-// trip of the model. When the same-profile output reports no loss, it must
-// hold the whole tree of the original (see canonTree for the forms that are
-// normalized). It also measures which leaves of the original document are
-// missing from the rewritten ones: none may be missing silently.
+// trip of the model. The output of a source without VAT breakdown (BG-23)
+// misses it too: the XSD error that this gives is the only one expected. When
+// the same-profile output reports no loss, it must hold the whole tree of the
+// original (see canonTree for the forms that are normalized). It also
+// measures which leaves of the original document are missing from the
+// rewritten ones: none may be missing silently.
 //
 // A ZUGFeRD 1.0 document is compared through its CII D16B view (see
 // zugferd1View): Marshal converts it to Factur-X, and the output must hold
@@ -127,7 +130,7 @@ func TestCorpusRoundTrip(t *testing.T) {
 	var (
 		read, notXML, zugferd1, otherRoot, withIssues, withLosses int
 		trees, extTrees                                           int
-		invalid                                                   int
+		invalid, noVAT                                            int
 		unexpected, profile, notFacturX, unreadable               lossStats
 		added                                                     lossStats
 		perProfile                                                = map[invoice.Profile]int{}
@@ -185,7 +188,16 @@ func TestCorpusRoundTrip(t *testing.T) {
 			t.Errorf("%s: Marshal: %v", f.name, err)
 			continue
 		}
-		checkXSDNamed(t, f.name, target, out)
+		// Marshal does not make up a VAT breakdown (BG-23), mandatory from
+		// BASIC WL on: when the source has none, as some ZUGFeRD 1.0
+		// invoices, the output misses it as the source does.
+		var tolerated []string
+		if len(inv.VATBreakdown) == 0 && levelOf(target) >= lvlBasicWL {
+			noVAT++
+			t.Logf("%s: no VAT breakdown (BG-23)", f.name)
+			tolerated = append(tolerated, missingVATBreakdown)
+		}
+		checkXSDNamed(t, f.name, target, out, tolerated...)
 		back, err := Parse(out)
 		if err != nil {
 			t.Errorf("%s: re-reading the output: %v", f.name, err)
@@ -292,8 +304,8 @@ func TestCorpusRoundTrip(t *testing.T) {
 			}
 		}
 	}
-	t.Logf("%d documents read (%v), %d of them ZUGFeRD 1.0, %d with unreadable values, %d not fitting their profile, %d not fitting any profile; skipped: %d not XML, %d other roots",
-		read, perProfile, zugferd1, withIssues, withLosses, invalid, notXML, otherRoot)
+	t.Logf("%d documents read (%v), %d of them ZUGFeRD 1.0, %d with unreadable values, %d not fitting their profile, %d not fitting any profile, %d without the VAT breakdown of their profile; skipped: %d not XML, %d other roots",
+		read, perProfile, zugferd1, withIssues, withLosses, invalid, noVAT, notXML, otherRoot)
 	t.Logf("leaves outside the profile of their document (reported as losses):\n%s", profile.report())
 	t.Logf("%d documents rewritten with their whole tree in their profile, %d in EXTENDED", trees, extTrees)
 	t.Logf("leaves no Factur-X profile allows (reported as losses):\n%s", notFacturX.report())
@@ -307,8 +319,12 @@ func TestCorpusRoundTrip(t *testing.T) {
 	}
 }
 
-// checkXSDNamed is checkXSD with the document name in the message.
-func checkXSDNamed(t *testing.T, name string, p invoice.Profile, out []byte) {
+// missingVATBreakdown is the XSD error of a CII document without BG-23.
+const missingVATBreakdown = "/rsm:CrossIndustryInvoice/SupplyChainTradeTransaction/ApplicableHeaderTradeSettlement: missing <ApplicableTradeTax>"
+
+// checkXSDNamed is checkXSD with the document name in the message. The errors
+// listed in tolerated are expected: they are logged, the others reported.
+func checkXSDNamed(t *testing.T, name string, p invoice.Profile, out []byte, tolerated ...string) {
 	t.Helper()
 	s := loadXSD(t, p)
 	if s == nil {
@@ -319,7 +335,16 @@ func checkXSDNamed(t *testing.T, name string, p invoice.Profile, out []byte) {
 		t.Errorf("%s: output is not well-formed: %v", name, err)
 		return
 	}
-	if errs := s.check(root); len(errs) > 0 {
+	errs := s.check(root)
+	for i := 0; i < len(errs); {
+		if slices.Contains(tolerated, errs[i]) {
+			t.Logf("%s: %v output, expected XSD error: %s", name, p, errs[i])
+			errs = slices.Delete(errs, i, i+1)
+			continue
+		}
+		i++
+	}
+	if len(errs) > 0 {
 		if len(errs) > 5 {
 			errs = append(errs[:5], fmt.Sprintf("… %d more", len(errs)-5))
 		}

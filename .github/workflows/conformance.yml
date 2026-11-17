@@ -1,0 +1,90 @@
+name: Conformité
+
+# Tests on the official artefacts, and parity with the reference validators.
+# See conformance/README.md.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: conformance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  artifacts:
+    # The tests that need the official artefacts (FX_* variables), which are
+    # skipped by the CI workflow.
+    name: Tests sur les artefacts officiels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - name: Install pdfdetach (poppler-utils)
+        run: sudo apt-get update -q && sudo apt-get install -y -q poppler-utils
+      - uses: actions/cache@v5
+        with:
+          path: conformance/.artifacts
+          key: artifacts-${{ hashFiles('conformance/fetch.sh', 'conformance/lib.sh') }}
+      - name: Fetch the artefacts at pinned versions
+        run: conformance/fetch.sh >/dev/null
+      - name: go test with every artefact
+        run: |
+          set -o pipefail
+          go test -count=1 -v ./... 2>&1 | tee test.log | grep -E '^(ok|FAIL|--- FAIL|--- SKIP|panic)' || true
+          grep -q -E '^(FAIL|panic)' test.log && exit 1
+          if grep -q -- '--- SKIP' test.log; then
+            echo "::error::tests skipped although every artefact is available"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: go-test-artifacts
+          path: test.log
+          retention-days: 30
+
+  parity:
+    # Rules raised by this package and by the KoSIT validator 1.6.3
+    # (XRechnung 3.0.2 configuration of 2026-08-31) and Mustang 2.26.0,
+    # invoice by invoice. Java runs in the CI only: the package is pure Go.
+    name: Parité avec KoSIT et Mustang
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install pdfdetach (poppler-utils)
+        run: sudo apt-get update -q && sudo apt-get install -y -q poppler-utils
+      - uses: actions/cache@v5
+        with:
+          path: conformance/.artifacts
+          key: parity-${{ hashFiles('conformance/fetch.sh', 'conformance/lib.sh', 'conformance/parity.sh') }}
+      - name: Test the comparison tool
+        run: cd conformance/parity && go vet ./... && go test ./...
+      - name: Compare with KoSIT and Mustang
+        run: conformance/parity.sh
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: parity-reports
+          path: |
+            conformance/.artifacts/parity/report.md
+            conformance/.artifacts/parity/report.json
+            conformance/.artifacts/parity/index.tsv
+            conformance/.artifacts/parity/*.log
+            conformance/.artifacts/parity/kosit/
+            conformance/.artifacts/parity/mustang/
+          retention-days: 30
