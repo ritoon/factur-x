@@ -150,7 +150,7 @@ func profileIndex(p invoice.Profile) int {
 		return pBasicWL
 	case invoice.ProfileBasic:
 		return pBasic
-	case invoice.ProfileEN16931, invoice.ProfileXRechnung:
+	case invoice.ProfileEN16931, invoice.ProfileXRechnung, invoice.ProfilePeppol:
 		return pEN16931
 	}
 	return pExtended
