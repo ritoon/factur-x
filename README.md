@@ -323,6 +323,8 @@ Apple M4 Pro, Go 1.26, 16/11/2026. Comparaison avec le plus rapide des autres pa
 
 Le harnais est dans [bench/ecosystem](bench/ecosystem) ; chaque librairie y a son propre module.
 
+La comparaison avec 32 librairies TypeScript, Python et Rust, sur le même corpus et avec le même protocole, est dans [bench/polyglot](bench/polyglot) : temps de réponse, exactitude, et normes réellement appliquées par chacune.
+
 ## Organisation
 
 | Package | Rôle |
@@ -335,6 +337,7 @@ Le harnais est dans [bench/ecosystem](bench/ecosystem) ; chaque librairie y a so
 | `cmd/facturx` | Outil en ligne de commande |
 | `internal/…` | Lecteur et écrivain PDF, XMP, arbre XML, règles, listes de codes, tables de schéma |
 | `bench/ecosystem` | Benchmarks comparatifs avec les autres librairies Go (modules séparés) |
+| `bench/polyglot` | Benchmarks comparatifs avec les librairies TypeScript, Python et Rust |
 
 ## Tests
 
