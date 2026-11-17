@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ritoon/factur-x/internal/rules"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/internal/rules"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 // extendedBase returns EN16931_Einfach declared as an EXTENDED invoice.

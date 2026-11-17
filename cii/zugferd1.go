@@ -4,9 +4,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/ritoon/factur-x/internal/schema"
-	"github.com/ritoon/factur-x/internal/xmltree"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/internal/schema"
+	"github.com/ritoon/zerechnung/internal/xmltree"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 // This file reads ZUGFeRD 1.0 invoices. Their syntax, rsm:CrossIndustryDocument,

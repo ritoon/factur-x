@@ -1,6 +1,6 @@
 # Conformité
 
-Ce dossier mesure l'exactitude du package sur les artefacts officiels, à chaque push et à chaque pull request, dans le workflow [Conformité](../.github/workflows/conformance.yml). Rien ici ne fait partie du package `factur-x`, qui reste en pur Go : Java ne sert qu'à exécuter les validateurs de référence dans la CI.
+Ce dossier mesure l'exactitude du package sur les artefacts officiels, à chaque push et à chaque pull request, dans le workflow [Conformité](../.github/workflows/conformance.yml). Rien ici ne fait partie du package `zerechnung`, qui reste en pur Go : Java ne sert qu'à exécuter les validateurs de référence dans la CI.
 
 | Fichier | Rôle |
 |---|---|

@@ -1,12 +1,12 @@
-package facturx
+package zerechnung
 
 import (
 	"fmt"
 	"strconv"
 	"time"
 
-	"github.com/ritoon/factur-x/internal/pdf"
-	"github.com/ritoon/factur-x/internal/xmp"
+	"github.com/ritoon/zerechnung/internal/pdf"
+	"github.com/ritoon/zerechnung/internal/xmp"
 )
 
 // Limits of the PDF/A scan.

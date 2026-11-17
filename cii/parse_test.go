@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ritoon/factur-x/internal/xmltree"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/internal/xmltree"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 func readTestdata(t testing.TB, name string) []byte {

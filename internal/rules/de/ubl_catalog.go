@@ -1,6 +1,6 @@
 package de
 
-import "github.com/ritoon/factur-x/internal/rules"
+import "github.com/ritoon/zerechnung/internal/rules"
 
 // UBLCatalog lists the 57 assertions that Check applies to a UBL invoice, in
 // the order of the XRechnung UBL schematron, with the severity of their flag:

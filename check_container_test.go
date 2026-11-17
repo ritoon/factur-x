@@ -1,4 +1,4 @@
-package facturx
+package zerechnung
 
 import (
 	"fmt"
@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ritoon/factur-x/internal/pdf/pdftest"
-	"github.com/ritoon/factur-x/internal/rules"
-	"github.com/ritoon/factur-x/internal/xmp"
-	"github.com/ritoon/factur-x/invoice"
-	"github.com/ritoon/factur-x/validate"
+	"github.com/ritoon/zerechnung/internal/pdf/pdftest"
+	"github.com/ritoon/zerechnung/internal/rules"
+	"github.com/ritoon/zerechnung/internal/xmp"
+	"github.com/ritoon/zerechnung/invoice"
+	"github.com/ritoon/zerechnung/validate"
 )
 
 // xmpWith returns a valid Factur-X XMP packet modified by fn.

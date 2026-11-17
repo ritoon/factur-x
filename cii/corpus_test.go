@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ritoon/factur-x/internal/xmltree"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/internal/xmltree"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 // The corpus test reads every CII document it can find:

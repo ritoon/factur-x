@@ -9,8 +9,8 @@ import (
 	"sort"
 	"strings"
 
-	facturx "github.com/ritoon/factur-x"
-	"github.com/ritoon/factur-x/validate"
+	"github.com/ritoon/zerechnung"
+	"github.com/ritoon/zerechnung/validate"
 )
 
 // Levels of a rule, the same for every validator.
@@ -98,7 +98,7 @@ func ours(name string, data []byte) result {
 	res := newResult()
 	var rep *validate.Report
 	if strings.HasSuffix(name, ".pdf") {
-		r, att, err := facturx.Check(data, nil)
+		r, att, err := zerechnung.Check(data, nil)
 		switch {
 		case err != nil:
 			res.Failure = err.Error()

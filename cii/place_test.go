@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 // TestExtensionPlacement checks where Marshal puts the extensions back, and

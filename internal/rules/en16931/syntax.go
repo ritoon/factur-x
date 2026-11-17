@@ -3,8 +3,8 @@ package en16931
 import (
 	"strings"
 
-	"github.com/ritoon/factur-x/internal/rules"
-	"github.com/ritoon/factur-x/internal/xmltree"
+	"github.com/ritoon/zerechnung/internal/rules"
+	"github.com/ritoon/zerechnung/internal/xmltree"
 )
 
 // The CII syntax rules (pattern EN16931-CII-Syntax) restrict the CII schema

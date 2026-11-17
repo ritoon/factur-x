@@ -1,6 +1,6 @@
 package facturx
 
-import "github.com/ritoon/factur-x/internal/rules"
+import "github.com/ritoon/zerechnung/internal/rules"
 
 // Profile masks of the rules: the profiles whose official schematron holds
 // the rule. mExt stands for EXTENDED and EXTENDED-CTC-FR, which get the

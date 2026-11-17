@@ -27,7 +27,7 @@ func mutated(t *testing.T, name, old, new string) string {
 	return path
 }
 
-// runValidate runs facturx validate -json with args and returns the exit
+// runValidate runs zerechnung validate -json with args and returns the exit
 // code and the rules of the findings.
 func runValidate(t *testing.T, args ...string) (int, map[string]bool) {
 	t.Helper()

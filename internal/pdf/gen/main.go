@@ -4,7 +4,7 @@
 // Converting an Int to an Object (an interface) allocates for values above
 // 255; a package-level array of constant conversions is laid out by the
 // linker instead, with no code run at start-up. Arrays of glyph widths, the
-// largest arrays of a PDF read by package facturx, are made of such values.
+// largest arrays of a PDF read by package zerechnung, are made of such values.
 //
 // Usage (from internal/pdf, through go generate):
 //

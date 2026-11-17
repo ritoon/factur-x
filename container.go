@@ -1,4 +1,4 @@
-package facturx
+package zerechnung
 
 import (
 	"bytes"
@@ -11,17 +11,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ritoon/factur-x/internal/pdf"
-	"github.com/ritoon/factur-x/internal/xmltree"
-	"github.com/ritoon/factur-x/internal/xmp"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/internal/pdf"
+	"github.com/ritoon/zerechnung/internal/xmltree"
+	"github.com/ritoon/zerechnung/internal/xmp"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 // Errors of the PDF container layer.
 var (
 	// ErrNoInvoice is returned by Extract when the PDF has no invoice XML
 	// attachment.
-	ErrNoInvoice = errors.New("facturx: no invoice XML attachment in the PDF")
+	ErrNoInvoice = errors.New("zerechnung: no invoice XML attachment in the PDF")
 	// ErrEncrypted is returned for encrypted PDFs, which PDF/A forbids.
 	ErrEncrypted = pdf.ErrEncrypted
 )
@@ -126,7 +126,7 @@ func openContainer(data []byte) (*container, error) {
 		if errors.Is(err, pdf.ErrEncrypted) {
 			return nil, ErrEncrypted
 		}
-		return nil, fmt.Errorf("facturx: %w", err)
+		return nil, fmt.Errorf("zerechnung: %w", err)
 	}
 	c := &container{r: r, catalog: r.Catalog()}
 	c.collect()
@@ -259,7 +259,7 @@ func (c *container) embeddedStream(fs *fileSpec) (*pdf.Stream, bool) {
 func (c *container) content(fs *fileSpec) ([]byte, *pdf.Stream, error) {
 	st, ok := c.embeddedStream(fs)
 	if !ok {
-		return nil, nil, fmt.Errorf("facturx: attachment %q has no embedded file stream", fs.filename())
+		return nil, nil, fmt.Errorf("zerechnung: attachment %q has no embedded file stream", fs.filename())
 	}
 	hint := 0
 	if params, ok := c.r.Dict(st.Dict.Get("Params")); ok {
@@ -274,7 +274,7 @@ func (c *container) content(fs *fileSpec) ([]byte, *pdf.Stream, error) {
 	}
 	data, err := c.r.DecodeSize(st, hint)
 	if err != nil {
-		return nil, st, fmt.Errorf("facturx: attachment %q: %w", fs.filename(), err)
+		return nil, st, fmt.Errorf("zerechnung: attachment %q: %w", fs.filename(), err)
 	}
 	if len(data) > 0 && len(st.Raw) > 0 && &data[0] == &st.Raw[0] {
 		data = bytes.Clone(data)
@@ -819,13 +819,13 @@ func supplements(files []File, invoiceName string, date time.Time) ([]File, erro
 	for i, f := range files {
 		switch {
 		case f.Name == "":
-			return nil, fmt.Errorf("facturx: attachment %d has no name", i+1)
+			return nil, fmt.Errorf("zerechnung: attachment %d has no name", i+1)
 		case nameRank(f.Name) >= 0 || strings.EqualFold(f.Name, invoiceName):
-			return nil, fmt.Errorf("facturx: attachment name %q is reserved for the invoice", f.Name)
+			return nil, fmt.Errorf("zerechnung: attachment name %q is reserved for the invoice", f.Name)
 		}
 		for _, g := range out[:i] {
 			if strings.EqualFold(g.Name, f.Name) {
-				return nil, fmt.Errorf("facturx: two attachments are named %q", f.Name)
+				return nil, fmt.Errorf("zerechnung: two attachments are named %q", f.Name)
 			}
 		}
 		if f.Relationship == "" {
@@ -834,12 +834,12 @@ func supplements(files []File, invoiceName string, date time.Time) ([]File, erro
 		switch f.Relationship {
 		case "Supplement", "Data", "Source", "Alternative", "Unspecified":
 		default:
-			return nil, fmt.Errorf("facturx: attachment %q: AFRelationship %q not allowed (Supplement, Data, Source, Alternative or Unspecified)", f.Name, f.Relationship)
+			return nil, fmt.Errorf("zerechnung: attachment %q: AFRelationship %q not allowed (Supplement, Data, Source, Alternative or Unspecified)", f.Name, f.Relationship)
 		}
 		if f.MimeType == "" {
 			f.MimeType = mimeType(f.Name)
 		} else if !validMIME(f.MimeType) {
-			return nil, fmt.Errorf("facturx: attachment %q: %q is not a MIME type (type/subtype)", f.Name, f.MimeType)
+			return nil, fmt.Errorf("zerechnung: attachment %q: %q is not a MIME type (type/subtype)", f.Name, f.MimeType)
 		}
 		if f.ModDate.IsZero() {
 			f.ModDate = date
@@ -865,19 +865,19 @@ func checkRelationship(rel string, p invoice.Profile, xml []byte) error {
 	switch rel {
 	case "Data", "Alternative", "Source":
 	default:
-		return fmt.Errorf("facturx: AFRelationship %q not allowed (Data, Alternative or Source)", rel)
+		return fmt.Errorf("zerechnung: AFRelationship %q not allowed (Data, Alternative or Source)", rel)
 	}
 	switch {
 	case p == invoice.ProfileMinimum || p == invoice.ProfileBasicWL:
 		if rel != "Data" {
-			return fmt.Errorf("facturx: AFRelationship %s not allowed for profile %s: the XML is not a full invoice, the relationship is Data", rel, p)
+			return fmt.Errorf("zerechnung: AFRelationship %s not allowed for profile %s: the XML is not a full invoice, the relationship is Data", rel, p)
 		}
 	case rel == "Alternative":
 	case p == invoice.ProfileXRechnung:
-		return fmt.Errorf("facturx: AFRelationship %s not allowed for profile %s: Germany admits only Alternative", rel, p)
+		return fmt.Errorf("zerechnung: AFRelationship %s not allowed for profile %s: Germany admits only Alternative", rel, p)
 	default:
 		if t, err := xmltree.Parse(xml); err == nil && t.Value(sellerCountryPath) == "DE" {
-			return fmt.Errorf("facturx: AFRelationship %s not allowed for a seller in Germany (BT-40 is DE): Germany admits only Alternative", rel)
+			return fmt.Errorf("zerechnung: AFRelationship %s not allowed for a seller in Germany (BT-40 is DE): Germany admits only Alternative", rel)
 		}
 	}
 	return nil
@@ -957,7 +957,7 @@ func Embed(pdfData, xml []byte, opts *EmbedOptions) ([]byte, error) {
 		o = *opts
 	}
 	if len(xml) == 0 {
-		return nil, errors.New("facturx: empty XML")
+		return nil, errors.New("zerechnung: empty XML")
 	}
 	profile := o.Profile
 	if profile == invoice.ProfileUnknown {
@@ -965,9 +965,9 @@ func Embed(pdfData, xml []byte, opts *EmbedOptions) ([]byte, error) {
 		profile = invoice.ProfileFromURN(id)
 		if profile == invoice.ProfileUnknown {
 			if id == "" {
-				return nil, errors.New("facturx: cannot read the profile: no specification identifier (BT-24) in the XML; set EmbedOptions.Profile")
+				return nil, errors.New("zerechnung: cannot read the profile: no specification identifier (BT-24) in the XML; set EmbedOptions.Profile")
 			}
-			return nil, fmt.Errorf("facturx: unknown specification identifier (BT-24) %q; set EmbedOptions.Profile", id)
+			return nil, fmt.Errorf("zerechnung: unknown specification identifier (BT-24) %q; set EmbedOptions.Profile", id)
 		}
 	}
 	if o.Filename == "" {

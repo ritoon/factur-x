@@ -1,4 +1,4 @@
-package facturx
+package zerechnung
 
 import (
 	"errors"
@@ -6,11 +6,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ritoon/factur-x/internal/pdf"
-	"github.com/ritoon/factur-x/internal/rules"
-	"github.com/ritoon/factur-x/internal/xmp"
-	"github.com/ritoon/factur-x/invoice"
-	"github.com/ritoon/factur-x/validate"
+	"github.com/ritoon/zerechnung/internal/pdf"
+	"github.com/ritoon/zerechnung/internal/rules"
+	"github.com/ritoon/zerechnung/internal/xmp"
+	"github.com/ritoon/zerechnung/invoice"
+	"github.com/ritoon/zerechnung/validate"
 )
 
 // ContainerCatalog lists the checks of CheckContainer. They cover what the

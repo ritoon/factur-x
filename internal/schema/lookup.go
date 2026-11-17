@@ -1,6 +1,6 @@
 package schema
 
-import "github.com/ritoon/factur-x/invoice"
+import "github.com/ritoon/zerechnung/invoice"
 
 // Type is the type of an element in the schema of a profile, as reached from
 // the root element. It lets the CII writer place the elements it keeps

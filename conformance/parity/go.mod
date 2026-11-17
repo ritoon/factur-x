@@ -1,7 +1,7 @@
-module github.com/ritoon/factur-x/conformance/parity
+module github.com/ritoon/zerechnung/conformance/parity
 
 go 1.24
 
-require github.com/ritoon/factur-x v0.0.0
+require github.com/ritoon/zerechnung v0.0.0
 
-replace github.com/ritoon/factur-x => ../..
+replace github.com/ritoon/zerechnung => ../..

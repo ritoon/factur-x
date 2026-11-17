@@ -3,9 +3,9 @@ package ubl
 import (
 	"encoding/base64"
 
-	"github.com/ritoon/factur-x/internal/xmlenc"
-	"github.com/ritoon/factur-x/internal/xmltree"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/internal/xmlenc"
+	"github.com/ritoon/zerechnung/internal/xmltree"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 // appendElement appends n and its content as XML, for an extension. UBL

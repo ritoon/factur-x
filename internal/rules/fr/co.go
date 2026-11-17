@@ -1,7 +1,7 @@
 package fr
 
 import (
-	"github.com/ritoon/factur-x/internal/xmltree"
+	"github.com/ritoon/zerechnung/internal/xmltree"
 )
 
 // coherence runs the BR-FR-CO-* rules.

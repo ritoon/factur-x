@@ -303,11 +303,11 @@ func TestMergeSelfClosingBag(t *testing.T) {
 
 func TestMergeFresh(t *testing.T) {
 	p := params
-	p.DocInfo = DocInfo{Title: "Facture <1>", Author: "ACME", Producer: "facturx", CreationDate: params.Date}
+	p.DocInfo = DocInfo{Title: "Facture <1>", Author: "ACME", Producer: "zerechnung", CreationDate: params.Date}
 	for _, in := range []string{"", "not xml <", `<x:xmpmeta xmlns:x="adobe:ns:meta/"/>`} {
 		out := Merge([]byte(in), p)
 		checkMerged(t, out, "B")
-		for _, s := range []string{"Facture &lt;1&gt;", "ACME", "<pdf:Producer>facturx</pdf:Producer>", "2026-11-16T12:00:00+01:00", `<?xpacket end="w"?>`} {
+		for _, s := range []string{"Facture &lt;1&gt;", "ACME", "<pdf:Producer>zerechnung</pdf:Producer>", "2026-11-16T12:00:00+01:00", `<?xpacket end="w"?>`} {
 			if !bytes.Contains(out, []byte(s)) {
 				t.Errorf("%q: %q missing:\n%s", in, s, out)
 			}

@@ -3,7 +3,7 @@ package facturx
 import (
 	"strings"
 
-	"github.com/ritoon/factur-x/internal/xmltree"
+	"github.com/ritoon/zerechnung/internal/xmltree"
 )
 
 // unusedItem is an element or attribute that the official schematron of a

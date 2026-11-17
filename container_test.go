@@ -1,4 +1,4 @@
-package facturx
+package zerechnung
 
 import (
 	"bytes"
@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ritoon/factur-x/internal/pdf"
-	"github.com/ritoon/factur-x/internal/pdf/pdftest"
-	"github.com/ritoon/factur-x/internal/xmltree"
-	"github.com/ritoon/factur-x/internal/xmp"
-	"github.com/ritoon/factur-x/invoice"
+	"github.com/ritoon/zerechnung/internal/pdf"
+	"github.com/ritoon/zerechnung/internal/pdf/pdftest"
+	"github.com/ritoon/zerechnung/internal/xmltree"
+	"github.com/ritoon/zerechnung/internal/xmp"
+	"github.com/ritoon/zerechnung/invoice"
 )
 
 var testDate = time.Date(2026, 11, 16, 12, 0, 0, 0, time.FixedZone("", 3600))
