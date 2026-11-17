@@ -109,8 +109,9 @@ func (p Profile) Filename() string {
 
 // AFRelationship returns the default /AFRelationship of the XML attachment:
 // "Data" for MINIMUM and BASIC WL, whose XML is not a full invoice,
-// "Alternative" otherwise. French rules also accept "Source"; German rules
-// require "Alternative".
+// "Alternative" otherwise. Both values suit France and Germany. For BASIC
+// and above, France also admits "Source" and "Data", while Germany admits
+// only "Alternative" (Factur-X 1.09, 6.2.2).
 func (p Profile) AFRelationship() string {
 	if p == ProfileMinimum || p == ProfileBasicWL {
 		return "Data"
