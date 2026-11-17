@@ -4,10 +4,10 @@
 //
 //	facturx extract [-o out.xml] invoice.pdf
 //	facturx info invoice.pdf
-//	facturx validate [-fr] [-de] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-json] invoice.pdf|invoice.xml
+//	facturx validate [-fr] [-de] [-peppol] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-json] invoice.pdf|invoice.xml
 //	facturx embed -xml invoice.xml [-profile p] [-attach file]... [-o out.pdf] input.pdf
 //	facturx json invoice.pdf|invoice.xml
-//	facturx rules [-fr] [-de] [-choruspro]
+//	facturx rules [-fr] [-de] [-choruspro] [-peppol]
 //
 // validate exits with status 1 when the invoice has errors.
 package main
@@ -38,12 +38,12 @@ validate and json also accept an XML invoice in CII or UBL 2.1 syntax.
 Usage:
   facturx extract [-o out.xml] invoice.pdf
   facturx info invoice.pdf
-  facturx validate [-fr] [-de] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-json] invoice.pdf|invoice.xml
+  facturx validate [-fr] [-de] [-peppol] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-json] invoice.pdf|invoice.xml
   facturx embed -xml invoice.xml [-profile p] [-attach file]... [-o out.pdf] input.pdf
   facturx json invoice.pdf|invoice.xml
-  facturx rules [-fr] [-de] [-choruspro]
+  facturx rules [-fr] [-de] [-choruspro] [-peppol]
 
-Profiles: minimum, basicwl, basic, en16931, extended, xrechnung, extended-ctc-fr.
+Profiles: minimum, basicwl, basic, en16931, extended, xrechnung, extended-ctc-fr, peppol.
 `
 
 func main() {
@@ -175,6 +175,7 @@ func validateCmd(args []string) (int, error) {
 	cpro := fs.Bool("choruspro", false, "apply the Chorus Pro checks of French B2G invoices")
 	serviceRequired := fs.Bool("service-required", false, "with -choruspro: the public buyer requires a service code (BT-10)")
 	engagementRequired := fs.Bool("engagement-required", false, "with -choruspro: the public buyer requires an engagement number (BT-13)")
+	pep := fs.Bool("peppol", false, "apply the Peppol BIS Billing 3.0 rules to a CII invoice (applied anyway when BT-24 is the Peppol identifier)")
 	profile := fs.String("profile", "", "validate against this profile instead of BT-24")
 	asJSON := fs.Bool("json", false, "print the report as JSON")
 	_, data, err := oneFile(fs, args)
@@ -187,7 +188,7 @@ func validateCmd(args []string) (int, error) {
 			return 0, fmt.Errorf("unknown profile %q", *profile)
 		}
 	}
-	if *fr || *de || *cpro {
+	if *fr || *de || *cpro || *pep {
 		opts.Rules = validate.Default
 		if *fr {
 			opts.Rules |= validate.France
@@ -197,6 +198,9 @@ func validateCmd(args []string) (int, error) {
 		}
 		if *cpro {
 			opts.Rules |= validate.ChorusPro
+		}
+		if *pep {
+			opts.Rules |= validate.Peppol
 		}
 	}
 	opts.PublicBuyer = validate.PublicBuyer{ServiceCodeRequired: *serviceRequired, EngagementRequired: *engagementRequired}
@@ -246,7 +250,7 @@ func embed(args []string) error {
 	fs := flag.NewFlagSet("embed", flag.ContinueOnError)
 	xmlPath := fs.String("xml", "", "invoice XML to embed (required)")
 	profile := fs.String("profile", "", "profile (default: read from BT-24)")
-	rel := fs.String("relationship", "", "AFRelationship (default: Data for MINIMUM and BASIC WL, Alternative otherwise)")
+	rel := fs.String("relationship", "", "AFRelationship (default: Data for MINIMUM and BASIC WL, Alternative otherwise; Germany and XRECHNUNG admit only Alternative)")
 	var attach fileList
 	fs.Var(&attach, "attach", "supplementary file to embed besides the invoice, with AFRelationship Supplement and the MIME type of its extension (repeatable)")
 	out := fs.String("o", "", "output PDF (default: standard output)")
@@ -319,6 +323,7 @@ func rulesCmd(args []string) error {
 	fr := fs.Bool("fr", false, "include the French rules")
 	de := fs.Bool("de", false, "include the German rules")
 	cpro := fs.Bool("choruspro", false, "include the Chorus Pro checks")
+	pep := fs.Bool("peppol", false, "include the Peppol BIS Billing 3.0 rules")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -331,6 +336,9 @@ func rulesCmd(args []string) error {
 	}
 	if *cpro {
 		set |= validate.ChorusPro
+	}
+	if *pep {
+		set |= validate.Peppol
 	}
 	for _, r := range validate.Catalog(set) {
 		fmt.Printf("%-28s %-8s %s\n", r.ID, r.Severity, strings.TrimSpace(r.Description))

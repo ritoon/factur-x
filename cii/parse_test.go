@@ -254,6 +254,7 @@ func TestParseOddSpecificationID(t *testing.T) {
 		"urn:cen.eu:en16931:2017#compliant#urn:xoev-de:kosit:standard:xrechnung_1.2": invoice.ProfileXRechnung,
 		"urn:cen.eu:en16931:2017#conformant#urn:example:extended-ctc-fr":             invoice.ProfileExtendedCTCFR,
 		"urn:cen.eu:en16931:2017#compliant#urn:example:other":                        invoice.ProfileEN16931,
+		"urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0": invoice.ProfilePeppol,
 		"urn:example:other": invoice.ProfileUnknown,
 		"":                  invoice.ProfileUnknown,
 	} {

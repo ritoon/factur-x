@@ -1,11 +1,15 @@
 # factur-x
 
+<p align="center">
+  <img src="docs/gopher.webp" alt="Le gopher Go en chapeau de papier et nœud papillon, tapant des factures à la machine à écrire entre des piles de factures" width="360">
+</p>
+
 Package Go pour les factures électroniques hybrides **Factur-X**, **ZUGFeRD** et **XRechnung**. Il prend un PDF déjà produit par votre application et y ajoute ce que la norme exige ; il relit et valide n'importe quelle facture de ces formats, quel que soit son profil. Il lit, écrit et valide aussi les factures XML en syntaxe **UBL 2.1**.
 
 - Pur Go, bibliothèque standard uniquement : pas de CGO, pas de JVM, pas de binaire externe, pas d'appel réseau.
-- Factur-X 1.0x = ZUGFeRD 2.x, syntaxe CII, profils MINIMUM, BASIC WL, BASIC, EN 16931, EXTENDED, XRECHNUNG et EXTENDED-CTC-FR ; schémas et règles de profil à jour de Factur-X 1.09.2 (ZUGFeRD 2.5.2).
+- Factur-X 1.0x = ZUGFeRD 2.x, syntaxe CII, profils MINIMUM, BASIC WL, BASIC, EN 16931, EXTENDED, XRECHNUNG et EXTENDED-CTC-FR ; schémas et règles de profil à jour de Factur-X 1.09.2 (ZUGFeRD 2.5.2). Factures Peppol BIS Billing 3.0 en CII.
 - UBL 2.1 (Invoice et CreditNote, liaison EN 16931 de la CEN/TS 16931-3-2) : lecture et écriture dans le même modèle que le CII, validation EN 16931 selon les artefacts UBL ; la syntaxe d'un XML est détectée d'après son élément racine.
-- Validation complète sans Java : schéma du profil, règles EN 16931 (CII et UBL), règles de profil Factur-X, règles françaises BR-FR (réforme 2026) et allemandes BR-DE (XRechnung), contrôle du conteneur PDF.
+- Validation complète sans Java : schéma du profil, règles EN 16931 (CII et UBL), règles de profil Factur-X, règles françaises BR-FR (réforme 2026) et allemandes BR-DE (XRechnung), règles Peppol BIS Billing 3.0 (CII), contrôle du conteneur PDF.
 - Licence MIT.
 
 > **Statut : première version (v0).** L'API peut encore changer. Voir [Couverture](#couverture) pour ce qui est fait et [Limites](#limites) pour ce qui reste.
@@ -143,15 +147,16 @@ if !report.Valid() { /* au moins une erreur */ }
 
 `Check` contrôle le conteneur PDF puis le XML. Pour un XML seul : `validate.XML(xml, opts)`. Le rapport ne s'arrête jamais à la première erreur ; chaque constat porte l'identifiant officiel de la règle, sa gravité, sa source, le chemin XPath et la ligne.
 
-`validate.XML` détecte la syntaxe. Un `Invoice` ou un `CreditNote` UBL 2.1 est contrôlé selon les artefacts EN 16931 pour UBL : règles métier et listes de codes avec leurs contextes UBL, règles de syntaxe UBL-CR (éléments et attributs qu'EN 16931 n'utilise pas, en avertissement), UBL-SR (cardinalités) et UBL-DT (types de données). Les règles de profil Factur-X, propres au CII, ne s'appliquent pas. Les règles BR-FR, BR-DE et Chorus Pro s'appliquent à une vue CII du document ; leurs constats sont situés dans l'UBL (voir [Limites](#limites)). Un PDF Factur-X qui embarque un UBL est refusé : Factur-X impose le CII.
+`validate.XML` détecte la syntaxe. Un `Invoice` ou un `CreditNote` UBL 2.1 est contrôlé selon les artefacts EN 16931 pour UBL : règles métier et listes de codes avec leurs contextes UBL, règles de syntaxe UBL-CR (éléments et attributs qu'EN 16931 n'utilise pas, en avertissement), UBL-SR (cardinalités) et UBL-DT (types de données). Les règles de profil Factur-X, propres au CII, ne s'appliquent pas. Les règles BR-FR, BR-DE et Chorus Pro s'appliquent à une vue CII du document ; leurs constats sont situés dans l'UBL. Les règles Peppol, écrites pour le CII, ne s'appliquent pas (voir [Limites](#limites)). Un PDF Factur-X qui embarque un UBL est refusé : Factur-X impose le CII.
 
 | Option | Effet |
 |---|---|
-| `nil` ou `&validate.Options{}` | Schéma du profil, règles EN 16931, règles de profil Factur-X ; règles BR-DE en plus pour une facture XRECHNUNG |
-| `Auto: true` | Ajoute les règles du pays du vendeur (BT-40) : BR-FR et profils admis en France pour un vendeur en France, profils acceptés par le BMF pour un vendeur en Allemagne |
-| `Rules: validate.Default \| validate.France` | Choix explicite des jeux de règles (`France`, `Germany`, `GermanyProfile`, `ChorusPro`) |
+| `nil` ou `&validate.Options{}` | Schéma du profil, règles EN 16931, règles de profil Factur-X ; règles BR-DE en plus pour une facture XRECHNUNG, règles Peppol pour une facture CII Peppol BIS Billing 3.0 |
+| `Auto: true` | Ajoute les règles du pays du vendeur (BT-40) : BR-FR et profils admis en France pour un vendeur en France, profils acceptés par le BMF pour un vendeur en Allemagne ; `Check` y ajoute l'`/AFRelationship` admise dans ce pays (voir plus bas) |
+| `Rules: validate.Default \| validate.France` | Choix explicite des jeux de règles (`France`, `Germany`, `GermanyProfile`, `ChorusPro`, `Peppol`) |
 | `RejectBasicWL: true` | Avec les règles françaises, signale BASIC WL en erreur (FR-PROFILE-03) |
 | `Rules: … \| validate.ChorusPro` | Ajoute les contrôles B2G de Chorus Pro (voir ci-dessous) |
+| `Rules: … \| validate.Peppol` | Ajoute les règles Peppol BIS Billing 3.0 à une facture qui ne se déclare pas Peppol (voir ci-dessous) |
 | `Profile: invoice.ProfileBasic` | Valide contre un profil plutôt que celui que déclare BT-24 |
 
 `validate.Catalog(set)` liste les règles implémentées.
@@ -168,6 +173,21 @@ Les schematrons officiels ne contrôlent pas le profil ; ces contrôles ont des 
 | DE-PROFILE-01 | erreur | `GermanyProfile` | MINIMUM et BASIC WL, que le BMF n'accepte pas comme factures électroniques (BMF-Schreiben du 15/10/2024 : ZUGFeRD à partir de 2.0.1, sauf ces deux profils) |
 
 En France, EN 16931 et EXTENDED-CTC-FR forment le socle et EXTENDED est admis ; en Allemagne, BASIC, EN 16931, EXTENDED et XRECHNUNG sont acceptés. `Auto` n'applique pas les règles BR-DE à une facture ZUGFeRD : elles ne concernent que XRECHNUNG.
+
+#### Relation du XML au PDF (`/AFRelationship`) par pays
+
+La spécification Factur-X 1.09 (§ 5.3 et § 6.2.2) fixe la relation du XML au PDF selon le profil et le pays :
+
+| Profil | France | Allemagne |
+|---|---|---|
+| MINIMUM, BASIC WL | `Data` | `Data` |
+| BASIC, EN 16931, EXTENDED, EXTENDED-CTC-FR | `Alternative`, `Source` ou `Data` | `Alternative` |
+| XRECHNUNG | — | `Alternative` |
+
+- Par défaut, `Embed` et `Create` écrivent `Data` pour MINIMUM et BASIC WL, `Alternative` sinon : ces valeurs conviennent aux deux pays.
+- `Embed` (et donc `Create`) refuse une valeur `EmbedOptions.Relationship` que le tableau exclut : autre chose que `Data` pour MINIMUM et BASIC WL, autre chose qu'`Alternative` pour XRECHNUNG ou pour un vendeur établi en Allemagne (BT-40 = `DE`).
+- `Check` signale une valeur qui ne correspond pas au profil (PDF-14, avertissement). `Data` pour BASIC et au-delà ne l'est pas quand les règles françaises s'appliquent (`France`, ou `Auto` pour un vendeur en France), puisque la France l'admet.
+- `Check` signale en erreur une autre valeur qu'`Alternative` pour BASIC et au-delà quand les règles allemandes s'appliquent (PDF-40) : profil XRECHNUNG, jeux `Germany` ou `GermanyProfile`, ou `Auto` pour un vendeur en Allemagne. `CheckContainer`, qui ne reçoit pas d'options, n'applique cette règle qu'à XRECHNUNG.
 
 #### Factures B2G (Chorus Pro)
 
@@ -193,6 +213,18 @@ report := validate.XML(xml, &validate.Options{
 
 Sources : annexe EDI des spécifications externes Chorus Pro V4.23 (règles G1.05, G2.06, G2.07, G2.16 à G2.19, G2.29, G3.01, G3.03, G3.04, S2.04, S2.13), annexe des messages d'erreur V3.02, dossier Chorus Pro des spécifications externes DGFiP v3.1 (numéro de facture limité à 20 caractères en B2G après la réforme). Ces identifiants sont propres au package : aucun schematron officiel ne couvre ces contrôles. Ce que Chorus Pro vérifie dans son annuaire (existence du SIRET et du code service, structure active) ne peut pas l'être hors ligne.
 
+#### Peppol BIS Billing 3.0
+
+Le jeu `Peppol` applique à une facture CII les 90 assertions du schematron Peppol BIS Billing 3.0 : règles PEPPOL-EN16931-R (processus métier BT-23, identifiant de spécification BT-24, référence acheteur ou de commande, adresses électroniques du vendeur et de l'acheteur, une seule note, totaux de TVA, remises et charges, montant net des lignes, périodes de ligne), formats des identifiants selon leur schéma ICD (PEPPOL-COMMON-R : GLN, numéros d'organisation norvégien, suédois, danois, belge, néerlandais, codes italiens, ABN australien…), listes de codes restreintes, et règles nationales norvégiennes, danoises, italiennes, suédoises et néerlandaises, appliquées selon le pays du vendeur.
+
+Il s'applique d'office quand BT-24 est l'identifiant Peppol (`urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0`, profil `invoice.ProfilePeppol`), sinon seulement sur demande (`Rules: validate.Default | validate.Peppol`, `facturx validate -peppol`). `Auto` ne l'ajoute jamais : la plupart des factures Factur-X et ZUGFeRD valides ne respectent pas ces règles (pas de BT-23 Peppol, pas d'adresse électronique, pas de référence acheteur), et les appliquer sans condition les signalerait à tort. Il n'est pas appliqué à une facture UBL, dont le schematron Peppol est différent : le rapport porte alors une information (PEPPOL-UBL).
+
+Les règles reproduisent le schematron tel qu'il est écrit, y compris là où il vise l'UBL plus que le CII :
+
+- les identifiants de TVA sont cherchés avec le `schemeID` `VAT` de l'UBL : un identifiant CII (`VA`) ne sert ni à établir le pays du vendeur (c'est alors son adresse qui décide des règles norvégiennes et italiennes), ni aux contrôles NO-R-001, SE-R-001 et SE-R-002 ;
+- PEPPOL-EN16931-P0100 porte sur `ram:ExchangedDocument/ram:TypeCode`, absent d'une facture CII (le document y est `rsm:ExchangedDocument`) : la règle ne se déclenche pas ;
+- DK-R-007 cherche le mandat de prélèvement sous le moyen de paiement, alors qu'il figure dans les conditions de paiement en CII.
+
 ### En ligne de commande
 
 ```bash
@@ -202,10 +234,10 @@ go install github.com/ritoon/factur-x/cmd/facturx@latest
 ```text
 facturx extract [-o out.xml] facture.pdf
 facturx info facture.pdf
-facturx validate [-fr] [-de] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-json] facture.pdf|facture.xml
+facturx validate [-fr] [-de] [-peppol] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-json] facture.pdf|facture.xml
 facturx embed -xml facture.xml [-profile p] [-attach fichier]... [-o out.pdf] entree.pdf
 facturx json facture.pdf|facture.xml
-facturx rules [-fr] [-de] [-choruspro]
+facturx rules [-fr] [-de] [-choruspro] [-peppol]
 ```
 
 `validate` et `json` acceptent un XML CII ou UBL. `validate` sort avec le code 1 quand la facture a des erreurs, ce qui permet de l'utiliser en intégration continue. `embed -attach` ajoute une pièce jointe complémentaire (`/AFRelationship /Supplement`, type MIME d'après l'extension) ; l'option se répète.
@@ -230,7 +262,8 @@ warning [PDF] PDF-06: the catalog has no PDF/A output intent (/S /GTS_PDFA1) (ca
 | EXTENDED | oui | oui | oui | oui |
 | XRECHNUNG (CII) | oui | oui | schéma EN 16931 | oui ; BR-DE appliquées d'office |
 | EXTENDED-CTC-FR | oui | oui | schéma EXTENDED | oui ; BR-FR sur option (`France` ou `Auto`) |
-| UBL 2.1 (EN 16931, XRECHNUNG) | oui | oui | non (règles UBL-CR, UBL-SR, UBL-DT) | sans objet ; BR-DE appliquées d'office pour XRECHNUNG |
+| PEPPOL (CII) | oui | oui | schéma EN 16931 | oui ; règles Peppol appliquées d'office |
+| UBL 2.1 (EN 16931, XRECHNUNG, PEPPOL) | oui | oui | non (règles UBL-CR, UBL-SR, UBL-DT) | sans objet ; BR-DE appliquées d'office pour XRECHNUNG ; règles Peppol non appliquées |
 
 ### Règles
 
@@ -242,8 +275,9 @@ warning [PDF] PDF-06: the catalog has no PDF/A output intent (/S /GTS_PDFA1) (ca
 | Factur-X | 229 règles (207 erreurs, 22 avertissements) : identification du profil (BT-24), assertions des schematrons MINIMUM et BASIC WL, éléments non utilisés par profil ; règles BR-FXEXT d'EXTENDED et EXTENDED-CTC-FR (sous-types et regroupements de lignes, totaux avec tolérance, frais logistiques et frais pour compte de tiers, ventilation de TVA par catégorie, taux et motif d'exonération) | Schematrons Factur-X 1.09 (MINIMUM, BASIC WL) ; XSLT EXTENDED Factur-X 1.09.2 (ZUGFeRD 2.5.2) |
 | France (BR-FR) | 59 règles, 170 assertions : SIREN/SIRET, adresses électroniques, mentions obligatoires, cadres de facturation, multi-vendeurs ; 3 contrôles des profils admis (FR-PROFILE) | Schematron FNFE-MPE v1.4.0.04 |
 | Allemagne (BR-DE) | 52 assertions (BR-DE, BR-DE-CVD, BR-DEX, BR-TMP) ; contrôle des profils acceptés par le BMF (DE-PROFILE-01) | Schematron KoSIT XRechnung 3.0.2 ; BMF |
+| Peppol BIS Billing 3.0 | 90 assertions (73 erreurs, 17 avertissements) : PEPPOL-EN16931-R, PEPPOL-COMMON-R (identifiants par schéma ICD), listes de codes restreintes, règles nationales NO, DK, IT, SE et NL | Schematron Peppol BIS Billing 3.0.21 (`PEPPOL-EN16931-CII.sch`, inchangé en 3.0.22) |
 | Chorus Pro (B2G) | 8 contrôles (CPRO-01 à CPRO-08) : SIRET de la structure publique, code service, numéro d'engagement, type de document, numéro de facture | Spécifications externes Chorus Pro (annexe EDI V4.23) |
-| Conteneur PDF | 39 contrôles (PDF-01 à PDF-39) : PDF/A-3 ou PDF/A-4f déclaré, cohérent avec la version PDF, XMP `fx` cohérent avec le XML, pièce jointe, `/AF`, `/AFRelationship`, type MIME, chiffrement ; prérequis PDF/A vérifiables sans rendu : polices incorporées, JavaScript et actions interdites (`/OpenAction`, liens, signets, `/AA`), cohérence entre `/Info` et le XMP, pièces jointes annexes (`/AFRelationship`, type MIME, présence dans un `/AF`), filtre `LZWDecode` | Spécification Factur-X 1.08, ISO 19005-3 et 19005-4 |
+| Conteneur PDF | 40 contrôles (PDF-01 à PDF-40) : PDF/A-3 ou PDF/A-4f déclaré, cohérent avec la version PDF, XMP `fx` cohérent avec le XML, pièce jointe, `/AF`, `/AFRelationship` selon le profil et le pays, type MIME, chiffrement ; prérequis PDF/A vérifiables sans rendu : polices incorporées, JavaScript et actions interdites (`/OpenAction`, liens, signets, `/AA`), cohérence entre `/Info` et le XMP, pièces jointes annexes (`/AFRelationship`, type MIME, présence dans un `/AF`), filtre `LZWDecode` | Spécification Factur-X 1.08 et 1.09 (§ 6.2.2), ISO 19005-3 et 19005-4 |
 
 Les messages sont ceux des artefacts officiels. Les listes de codes (pays, devises, unités, schémas d'identifiants, motifs d'exonération…) sont embarquées.
 
@@ -252,6 +286,8 @@ Les messages sont ceux des artefacts officiels. Les listes de codes (pays, devis
 Sur les 26 XML CII valides du corpus officiel `XML-Rechnung/CII`, le validateur signale exactement les 6 fichiers que signalent les schematrons officiels (exécutés par papierleicht) : BR-CL-25 deux fois, CII-SR-465 quatre fois sur les exemples XRECHNUNG. Les 104 PDF hybrides du corpus (`ZUGFeRDv2/correct`, `XML-Rechnung/FX`) sont tous extraits et leurs 26 XML tous lus.
 
 Les 73 factures UBL du corpus (`XML-Rechnung/UBL`, 28) et de la suite de tests KoSIT (45) sont lues, réécrites puis relues dans le même modèle, et validées sans autre erreur que les 3 attendues : BR-CL-25 sur les deux exemples au schéma 9958, comme en CII, et l'exemple `not_validating…`, invalide à dessein.
+
+Les règles Peppol donnent le résultat attendu sur les 351 tests unitaires CII du dépôt Peppol BIS Billing 3.0 (87 jeux de tests, dossiers `rules/unit-CII-*`, versions 3.0.21 et 3.0.22) ; les trois assertions qu'ils ne couvrent pas (PEPPOL-COMMON-R040, R041, R056-2) le sont par les tests du package.
 
 Sur les 147 XML CII lus du corpus ZUGFeRD et des XML extraits de ses PDF, 145 sont réécrits en EXTENDED avec tout leur arbre ; les 2 autres portent des données qu'aucun profil Factur-X n'admet (le code banque allemand de ZUGFeRD 2.0, retiré depuis du schéma, et un type de référence sur un document justificatif autre que 130), et `Marshal` les signale. Un document qui contient chaque élément du XSD EXTENDED avec tous ses attributs est relu et réécrit à l'identique, sauf ce même élément interdit par les règles.
 
@@ -264,7 +300,7 @@ Le lecteur XML est lui aussi écrit pour ce package : un seul passage sur les oc
 ## Limites
 
 - **Pas de conversion PDF/A.** `Embed` déclare PDF/A-3 (ou PDF/A-4f pour un PDF 2.0) dans le XMP mais ne touche ni aux polices, ni aux espaces de couleur, ni aux output intents : le PDF hôte doit déjà respecter PDF/A-2, PDF/A-3 ou PDF/A-4 (polices incorporées, output intent), ce que la plupart des générateurs savent faire sur option. `Check` signale ce qui manque parmi ce qui se vérifie sans rendu (output intent, polices non incorporées, JavaScript et actions interdites, `/Info` incohérent avec le XMP, filtre LZW) ; il ne remplace pas un validateur PDF/A comme veraPDF : les espaces de couleur, la transparence, les programmes de police eux-mêmes et le contenu des pages ne sont pas analysés. Une police présente dans les ressources d'une page sans être incorporée est un avertissement (PDF-31), le contenu n'étant pas lu pour savoir si elle sert à afficher du texte visible.
-- **UBL : pas de schéma XSD, règles nationales en identifiants CII.** Un XML UBL n'est pas vérifié contre le schéma UBL 2.1 ; les règles UBL-CR, UBL-SR et UBL-DT couvrent les éléments qu'EN 16931 utilise, et le rapport le rappelle par une information (XSD-UBL). Les règles BR-FR, BR-DE et Chorus Pro tournent sur une vue CII du document : leurs constats sont situés dans l'UBL, mais portent les identifiants et les messages des schematrons CII. Les règles propres aux schematrons UBL de ces jeux ne sont pas encore écrites (dates BR-FR-03 sur BT-134 et BT-135, identifiants scindés comme BR-FR-01_BT-1-1 ; BR-DE-1, BR-DE-23-a à BR-DE-25-a, BR-TMP-2 et PEPPOL-EN16931-R043 de XRechnung).
+- **UBL : pas de schéma XSD ni de règles Peppol, règles nationales en identifiants CII.** Un XML UBL n'est pas vérifié contre le schéma UBL 2.1 ; les règles UBL-CR, UBL-SR et UBL-DT couvrent les éléments qu'EN 16931 utilise, et le rapport le rappelle par une information (XSD-UBL). Les règles BR-FR, BR-DE et Chorus Pro tournent sur une vue CII du document : leurs constats sont situés dans l'UBL, mais portent les identifiants et les messages des schematrons CII. Les règles propres aux schematrons UBL de ces jeux ne sont pas encore écrites (dates BR-FR-03 sur BT-134 et BT-135, identifiants scindés comme BR-FR-01_BT-1-1 ; BR-DE-1, BR-DE-23-a à BR-DE-25-a, BR-TMP-2 et PEPPOL-EN16931-R043 de XRechnung). Les règles Peppol ne s'appliquent qu'aux factures CII, alors que les factures Peppol circulent le plus souvent en UBL (c'est la syntaxe des exemples officiels et du réseau) : le schematron UBL de Peppol a d'autres contextes, d'autres tests et des règles propres, et les règles CII appliquées à une vue CII s'écartent du résultat attendu sur 179 des 683 assertions des tests unitaires UBL officiels. Pour une facture UBL, le jeu Peppol ne donne qu'une information (PEPPOL-UBL).
 - **PDF chiffrés** : signalés (PDF-01), pas déchiffrés.
 - **ZUGFeRD 1.0** : le XMP est reconnu, le XML (syntaxe CII antérieure à D16B) n'est pas lu.
 - Les règles des schematrons sont réécrites en Go, pas interprétées : une nouvelle version des artefacts officiels demande une mise à jour du code (les catalogues EN 16931 du CII et de l'UBL sont régénérés par `go generate`, les tests vérifient l'alignement).
@@ -293,7 +329,7 @@ Le harnais est dans [bench/ecosystem](bench/ecosystem) ; chaque librairie y a so
 | `invoice` | Modèle EN 16931 (BT, BG), décimaux exacts, dates, profils, calcul des totaux |
 | `cii` | Lecture et écriture du XML CII, profil par profil |
 | `ubl` | Lecture et écriture du XML UBL 2.1 (Invoice, CreditNote) |
-| `validate` | Validation : schéma, règles EN 16931 (CII et UBL), règles de profil Factur-X, règles BR-FR et BR-DE |
+| `validate` | Validation : schéma, règles EN 16931 (CII et UBL), règles de profil Factur-X, règles BR-FR, BR-DE et Peppol |
 | `cmd/facturx` | Outil en ligne de commande |
 | `internal/…` | Lecteur et écrivain PDF, XMP, arbre XML, règles, listes de codes, tables de schéma |
 | `bench/ecosystem` | Benchmarks comparatifs avec les autres librairies Go (modules séparés) |
@@ -313,6 +349,7 @@ Les tests de base n'ont besoin que du dépôt ; la CI ([.github/workflows/ci.yml
 | `FX_XSD` | XSD Factur-X 1.09.2, un dossier par profil (`MINIMUM`, `BASICWL`, `BASIC`, `EN16931`, `EXTENDED`) | Le XML écrit par `cii.Marshal` est vérifié contre les XSD d'origine |
 | `FX_XSD_DIR` | XSD Factur-X 1.09.2 : paquet FeRD ZUGFeRD 2.5.2 (BASIC, EN 16931, EXTENDED) et paquet FNFE-MPE 1.09 (MINIMUM, BASIC WL, que le corrigendum 1.09.2 ne modifie pas) | Les tables de schéma régénérées sont identiques à celles du dépôt |
 | `FX_KOSIT` | Clone de [itplr-kosit/xrechnung-testsuite](https://github.com/itplr-kosit/xrechnung-testsuite) | Toutes les factures CII de la suite de tests KoSIT passent les règles BR-DE ; ses factures UBL sont lues, réécrites et validées sans erreur |
+| `FX_PEPPOL` | Clone de [OpenPEPPOL/peppol-bis-invoice-3](https://github.com/OpenPEPPOL/peppol-bis-invoice-3), version 3.0.21 ou suivante | Les 351 tests unitaires CII (`rules/unit-CII-*`) donnent le résultat attendu par le schematron |
 
 ## Licence et provenance
 
@@ -328,5 +365,6 @@ Les règles sont réécrites en Go à partir des artefacts officiels, qui ne son
 | Schémas XSD Factur-X (FNFE-MPE / FeRD) : BASIC, EN 16931 et EXTENDED de ZUGFeRD 2.5.2, MINIMUM et BASIC WL de Factur-X 1.09 | 1.09.2 | Apache-2.0 |
 | Schematrons Factur-X MINIMUM et BASIC WL (FNFE-MPE / FeRD) | 1.09 | Apache-2.0 |
 | XSLT de validation EXTENDED (FeRD, ZUGFeRD 2.5.2) | 1.09.2 | Apache-2.0 |
+| Schematron Peppol BIS Billing 3.0, CII (OpenPEPPOL/peppol-bis-invoice-3) | 3.0.21 | aucune licence publiée dans le dépôt |
 
-Les fichiers de `testdata/` à la racine viennent du corpus ZUGFeRD (Apache-2.0) et, pour l'avoir UBL, des artefacts CEN (EUPL-1.2), voir [testdata/NOTICE](testdata/NOTICE). Les factures de test des règles françaises et allemandes ont été écrites à la main, avec des parties fictives.
+Les fichiers de `testdata/` à la racine viennent du corpus ZUGFeRD (Apache-2.0) et, pour l'avoir UBL, des artefacts CEN (EUPL-1.2), voir [testdata/NOTICE](testdata/NOTICE). Les factures de test des règles françaises, allemandes et Peppol ont été écrites à la main, avec des parties fictives.

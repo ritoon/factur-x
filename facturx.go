@@ -24,6 +24,7 @@ import (
 	"fmt"
 
 	"github.com/ritoon/factur-x/cii"
+	"github.com/ritoon/factur-x/internal/rules"
 	ublrules "github.com/ritoon/factur-x/internal/rules/ubl"
 	"github.com/ritoon/factur-x/internal/xmltree"
 	"github.com/ritoon/factur-x/invoice"
@@ -104,21 +105,47 @@ func Create(pdf []byte, inv *invoice.Invoice, opts *CreateOptions) ([]byte, erro
 // Check validates a hybrid PDF: the PDF container (PDF/A-3, attachment, XMP)
 // and the embedded XML. The returned attachment is nil when no invoice was
 // found. The error is reserved for PDFs that cannot be read at all.
+//
+// The national rule sets that opts selects for the XML (France, Germany,
+// GermanyProfile, explicitly or through Auto) also select the national
+// usage of the container: with the German rules, the /AFRelationship of a
+// BASIC invoice or above must be Alternative (PDF-40); with the French
+// rules, Data is admitted besides Alternative and Source (no PDF-14).
 func Check(pdf []byte, opts *validate.Options) (*validate.Report, *Attachment, error) {
-	att, findings, err := CheckContainer(pdf)
+	if opts == nil {
+		opts = &validate.Options{}
+	}
+	// The XML is parsed once: to find the national rules that apply to the
+	// container, then to validate it.
+	var root *xmltree.Node
+	att, findings, err := checkContainer(pdf, func(xml []byte) countries {
+		t, err := xmltree.Parse(xml)
+		if err != nil {
+			return 0
+		}
+		root = t
+		if t.Name != "CrossIndustryInvoice" || t.Space != rules.NSRsm {
+			return 0
+		}
+		return countriesOf(validate.RulesFor(rules.NewDoc(t, opts.Profile), opts))
+	})
 	if err != nil && att == nil && len(findings) == 0 {
 		return nil, nil, err
 	}
 	r := &validate.Report{}
-	if att != nil && len(att.XML) > 0 {
-		r = validate.XML(att.XML, opts)
+	switch {
+	case att == nil || len(att.XML) == 0:
+	case root != nil:
+		r = validate.Tree(root, opts)
 		// A Factur-X or ZUGFeRD PDF embeds a CII invoice: a UBL invoice is
 		// validated as such, but the PDF is not a valid hybrid invoice.
-		if root, err := xmltree.Parse(att.XML); err == nil && ublrules.IsUBL(root) {
+		if ublrules.IsUBL(root) {
 			findings = append(findings, validate.Finding{Rule: "CII", Severity: validate.Error, Source: validate.SourceSyntax,
 				Path: "/" + root.Name, Line: root.Line,
 				Message: "the embedded XML is a UBL invoice: a Factur-X or ZUGFeRD PDF embeds a CII invoice (rsm:CrossIndustryInvoice)"})
 		}
+	default:
+		r = validate.XML(att.XML, opts) // reports why the XML cannot be parsed
 	}
 	r.Findings = append(findings, r.Findings...)
 	return r, att, nil

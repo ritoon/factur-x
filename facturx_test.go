@@ -101,6 +101,40 @@ func TestCreateAttachments(t *testing.T) {
 	}
 }
 
+// TestCreateRelationship checks the /AFRelationship that Create admits for
+// the seller's country, and how Check reports it (Factur-X 1.09, 6.2.2).
+func TestCreateRelationship(t *testing.T) {
+	host := readFile(t, "testdata/host.pdf")
+	inv := newInvoice()
+	inv.Seller.Address.CountryCode = "DE"
+	if _, err := facturx.Create(host, inv, &facturx.CreateOptions{
+		Calculate: true, Embed: facturx.EmbedOptions{Relationship: "Source"},
+	}); err == nil {
+		t.Error("Source for a seller in Germany: no error")
+	}
+
+	inv.Seller.Address.CountryCode = "FR"
+	pdf, err := facturx.Create(host, inv, &facturx.CreateOptions{
+		Calculate: true, Embed: facturx.EmbedOptions{Relationship: "Data"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, att, err := facturx.Check(pdf, &validate.Options{Auto: true})
+	if err != nil || att.Relationship != "Data" {
+		t.Fatal(att, err)
+	}
+	if r.Has("PDF-14") || r.Has("PDF-40") {
+		t.Errorf("Data for a seller in France flagged:\n%s", r)
+	}
+	if r, _, _ := facturx.Check(pdf, nil); !r.Has("PDF-14") {
+		t.Error("Data without the French rules: no PDF-14")
+	}
+	if r, _, _ := facturx.Check(pdf, &validate.Options{Rules: validate.Default | validate.Germany}); !r.Has("PDF-40") {
+		t.Error("Data with the German rules: no PDF-40")
+	}
+}
+
 func TestCreateInvalid(t *testing.T) {
 	inv := newInvoice()
 	inv.Seller.Name = "" // BR-6

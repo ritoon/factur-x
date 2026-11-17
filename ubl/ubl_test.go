@@ -108,8 +108,8 @@ func roundTrip(t testing.TB, name string, inv *invoice.Invoice) {
 
 func TestParseEinfach(t *testing.T) {
 	inv := mustParse(t, readFile(t, "../testdata/EN16931_Einfach.ubl.xml"))
-	if inv.Profile != invoice.ProfileEN16931 {
-		t.Errorf("profile %v, want EN 16931", inv.Profile)
+	if inv.Profile != invoice.ProfilePeppol {
+		t.Errorf("profile %v, want PEPPOL", inv.Profile)
 	}
 	if inv.BusinessProcess != "urn:fdc:peppol.eu:2017:poacc:billing:01:1.0" {
 		t.Errorf("BT-23 %q", inv.BusinessProcess)
@@ -409,5 +409,29 @@ func TestParseIssues(t *testing.T) {
 func TestMarshalNil(t *testing.T) {
 	if _, err := Marshal(nil, nil); err == nil {
 		t.Error("no error for a nil invoice")
+	}
+}
+
+// TestCustomizationID checks the specification identifier (BT-24) written by
+// default: that of the invoice for the profiles UBL carries, the EN 16931
+// identifier for the Factur-X profiles that only exist in CII.
+func TestCustomizationID(t *testing.T) {
+	for _, c := range []struct {
+		spec    string
+		profile invoice.Profile
+		want    string
+	}{
+		{invoice.URNPeppol, invoice.ProfilePeppol, invoice.URNPeppol},
+		{"", invoice.ProfilePeppol, invoice.URNPeppol},
+		{"", invoice.ProfileXRechnung, invoice.URNXRechnung},
+		{invoice.URNBasic, invoice.ProfileBasic, invoice.URNEN16931},
+		{"", invoice.ProfileExtended, invoice.URNEN16931},
+	} {
+		inv := mustParse(t, readFile(t, "../testdata/EN16931_Einfach.ubl.xml"))
+		inv.SpecificationID, inv.Profile = c.spec, c.profile
+		out := mustMarshal(t, inv, nil)
+		if want := "<cbc:CustomizationID>" + c.want + "</cbc:CustomizationID>"; !bytes.Contains(out, []byte(want)) {
+			t.Errorf("%q %s: want %s", c.spec, c.profile, want)
+		}
 	}
 }

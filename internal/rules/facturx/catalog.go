@@ -34,7 +34,7 @@ type rule struct {
 var table = []rule{
 	// Profile identification, all profiles.
 	{"FX-PROFILE-01", rules.Error, mAny, "", "The specification identifier (BT-24) is present, so that the Factur-X profile can be determined."},
-	{"FX-PROFILE-02", rules.Error, mAny, "", "The specification identifier (BT-24) is a known Factur-X, ZUGFeRD or XRechnung identifier."},
+	{"FX-PROFILE-02", rules.Error, mAny, "", "The specification identifier (BT-24) is a known Factur-X, ZUGFeRD, XRechnung or Peppol identifier."},
 	{"FX-PROFILE-03", rules.Warning, mAny, "", "The specification identifier (BT-24) uses an obsolete spelling of a known identifier."},
 	{"FX-SCH-A-000026", rules.Error, mAny, "FX-SCH-A-000026", "The specification identifier (BT-24) is exactly an identifier of the profile the invoice is checked against."},
 

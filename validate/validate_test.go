@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ritoon/factur-x/cii"
 	"github.com/ritoon/factur-x/internal/rules"
 	"github.com/ritoon/factur-x/internal/rules/ubl"
 	"github.com/ritoon/factur-x/internal/xmltree"
@@ -12,8 +13,9 @@ import (
 )
 
 const (
-	frenchInvoice = "../internal/rules/fr/testdata/en16931.xml" // seller in France, EN 16931
-	germanInvoice = "../testdata/EN16931_Einfach.cii.xml"       // seller in Germany, EN 16931
+	frenchInvoice = "../internal/rules/fr/testdata/en16931.xml"    // seller in France, EN 16931
+	germanInvoice = "../testdata/EN16931_Einfach.cii.xml"          // seller in Germany, EN 16931
+	peppolInvoice = "../internal/rules/peppol/testdata/peppol.xml" // Peppol BIS Billing 3.0, seller in the United Kingdom
 	bt24EN16931   = "<ram:ID>urn:cen.eu:en16931:2017</ram:ID>"
 )
 
@@ -48,6 +50,11 @@ func TestRulesForAuto(t *testing.T) {
 		{"German seller without Auto", german, Options{}, Default},
 		{"explicit rules", german, Options{Auto: true, Rules: Schema}, Schema | GermanyProfile},
 		{"XRECHNUNG", readXML(t, "../testdata/XRECHNUNG_Einfach.cii.xml"), Options{Auto: true}, Default | Germany | GermanyProfile},
+		{"Peppol", readXML(t, peppolInvoice), Options{}, Default | Peppol},
+		{"Peppol with Auto", readXML(t, peppolInvoice), Options{Auto: true}, Default | Peppol},
+		{"Peppol explicit rules", readXML(t, peppolInvoice), Options{Rules: Schema}, Schema},
+		{"Peppol profile option", german, Options{Profile: invoice.ProfilePeppol}, Default | Peppol},
+		{"French seller with Peppol", readXML(t, frenchInvoice), Options{Auto: true, Rules: Default | Peppol}, Default | Peppol | France},
 	} {
 		root, err := xmltree.Parse([]byte(c.doc))
 		if err != nil {
@@ -169,6 +176,9 @@ func TestCatalogProfiles(t *testing.T) {
 		{Germany, "DE-PROFILE-01", false},
 		{Germany, "BR-DE-15", true},
 		{GermanyProfile, "BR-DE-15", false},
+		{Peppol, "PEPPOL-EN16931-R001", true},
+		{Peppol, "NO-R-001", true},
+		{Default, "PEPPOL-EN16931-R001", false},
 	} {
 		if got := has(c.set, c.id); got != c.want {
 			t.Errorf("Catalog(%b) has %s = %v, want %v", c.set, c.id, got, c.want)
@@ -181,7 +191,7 @@ func TestUBL(t *testing.T) {
 		file    string
 		profile invoice.Profile
 	}{
-		{"../testdata/EN16931_Einfach.ubl.xml", invoice.ProfileEN16931},
+		{"../testdata/EN16931_Einfach.ubl.xml", invoice.ProfilePeppol},
 		{"../testdata/XRECHNUNG_Einfach.ubl.xml", invoice.ProfileXRechnung},
 		{"../testdata/ubl-tc434-creditnote1.xml", invoice.ProfileEN16931},
 	} {
@@ -192,15 +202,18 @@ func TestUBL(t *testing.T) {
 		if !r.Has(RuleUBLSchema) {
 			t.Errorf("%s: no %s", c.file, RuleUBLSchema)
 		}
-		if findings(r, "FX-") != nil || findings(r, "XSD-PROFILE") != nil {
+		if findings(r, "FX-") != nil || findings(r, "XSD-PROFILE") != nil || findings(r, "PEPPOL-EN16931") != nil {
 			t.Errorf("%s: CII rules applied to UBL:\n%s", c.file, r)
+		}
+		if peppol := c.profile == invoice.ProfilePeppol; r.Has(RuleUBLPeppol) != peppol {
+			t.Errorf("%s: %s reported = %v, want %v", c.file, RuleUBLPeppol, !peppol, peppol)
 		}
 	}
 
 	// The findings are located in the UBL document.
 	doc := strings.Replace(readXML(t, "../testdata/EN16931_Einfach.ubl.xml"), ">529.87</cbc:PayableAmount>", ">1.234</cbc:PayableAmount>", 1)
 	r := XML([]byte(doc), nil)
-	if got, want := strings.Join(r.Rules(), " "), "BR-CO-16 BR-DEC-18 UBL-DT-01 XSD-UBL"; got != want {
+	if got, want := strings.Join(r.Rules(), " "), "BR-CO-16 BR-DEC-18 PEPPOL-UBL UBL-DT-01 XSD-UBL"; got != want {
 		t.Errorf("rules = %s, want %s\n%s", got, want, r)
 	}
 	for _, f := range r.Errors() {
@@ -214,6 +227,10 @@ func TestUBL(t *testing.T) {
 	r = XML([]byte(doc), &Options{Rules: Schema})
 	if got := strings.Join(r.Rules(), " "); got != RuleUBLSchema || !r.Valid() {
 		t.Errorf("Schema only: %s", r)
+	}
+	r = XML([]byte(doc), &Options{Rules: Peppol})
+	if got := strings.Join(r.Rules(), " "); got != RuleUBLPeppol || !r.Valid() {
+		t.Errorf("Peppol only: %s", r)
 	}
 	xr := readXML(t, "../testdata/XRECHNUNG_Einfach.ubl.xml")
 	root, err := xmltree.Parse([]byte(xr))
@@ -244,7 +261,58 @@ func TestCatalogUBL(t *testing.T) {
 		}
 		return false
 	}
-	if !has(EN16931, "UBL-CR-001") || !has(EN16931, "UBL-SR-01") || !has(Schema, RuleUBLSchema) || has(Schema, "UBL-CR-001") {
+	if !has(EN16931, "UBL-CR-001") || !has(EN16931, "UBL-SR-01") || !has(Schema, RuleUBLSchema) || has(Schema, "UBL-CR-001") || !has(Peppol, RuleUBLPeppol) {
 		t.Errorf("UBL rules missing from the catalog")
+	}
+}
+
+// TestPeppol checks when the Peppol rules apply: on a Peppol invoice
+// (BT-24), or on request, never by default nor with Auto.
+func TestPeppol(t *testing.T) {
+	r := XML([]byte(readXML(t, peppolInvoice)), nil)
+	if r.Profile != invoice.ProfilePeppol || len(r.Findings) > 0 {
+		t.Errorf("Peppol invoice: profile %s\n%s", r.Profile, r)
+	}
+	// A Peppol invoice without electronic addresses: the Peppol rules
+	// apply by default.
+	doc := strings.ReplaceAll(readXML(t, peppolInvoice), "URIUniversalCommunication>", "X>")
+	r = XML([]byte(doc), nil)
+	if len(findings(r, "PEPPOL-EN16931-R010")) != 1 || len(findings(r, "PEPPOL-EN16931-R020")) != 1 {
+		t.Errorf("Peppol invoice without electronic address:\n%s", r)
+	}
+	for _, f := range findings(r, "PEPPOL") {
+		if f.Source != SourcePeppol {
+			t.Errorf("source of %s: %q", f.Rule, f.Source)
+		}
+	}
+
+	french := []byte(readXML(t, frenchInvoice))
+	for _, opts := range []*Options{nil, {Auto: true}} {
+		if r := XML(french, opts); findings(r, "PEPPOL") != nil {
+			t.Errorf("Peppol rules applied to a Factur-X invoice (%+v):\n%s", opts, r)
+		}
+	}
+	r = XML(french, &Options{Rules: Default | Peppol})
+	if findings(r, "PEPPOL-EN16931-R004") == nil {
+		t.Errorf("Rules: Default | Peppol did not apply the Peppol rules:\n%s", r)
+	}
+}
+
+// TestPeppolRoundTrip reads the Peppol invoice and writes it back: the
+// result is still a valid Peppol invoice.
+func TestPeppolRoundTrip(t *testing.T) {
+	inv, err := cii.Parse([]byte(readXML(t, peppolInvoice)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inv.Profile != invoice.ProfilePeppol {
+		t.Fatalf("profile %s", inv.Profile)
+	}
+	data, err := cii.Marshal(inv, &cii.MarshalOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := XML(data, nil); r.Profile != invoice.ProfilePeppol || len(r.Findings) > 0 {
+		t.Errorf("profile %s\n%s\n%s", r.Profile, r, data)
 	}
 }
