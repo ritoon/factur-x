@@ -66,9 +66,9 @@ func patternAsserts(t *testing.T, file, id string) []assertion {
 // TestSchematron compares the catalogs with the assertions of the NPa
 // artefacts (FX_NL, a checkout of github.com/peppolautoriteit-nl/validation,
 // see conformance/fetch-nl.sh): every assertion of the patterns Check
-// implements is in the catalog of its syntax, with its flag and its message,
-// except those that never apply (see the package documentation), and the
-// catalogs list nothing else.
+// implements, the G-account ones included, is in the catalog of its syntax,
+// with its flag and its message, except those that never apply (see the
+// package documentation), and the catalogs list nothing else.
 func TestSchematron(t *testing.T) {
 	dir := os.Getenv("FX_NL")
 	if dir == "" {
@@ -79,6 +79,7 @@ func TestSchematron(t *testing.T) {
 	ubl := slices.Concat(
 		patternAsserts(t, filepath.Join(sch, "si-ubl-2.0.sch"), "SI-UBL-VERSION"),
 		patternAsserts(t, filepath.Join(sch, "si-ubl-2.0", "si-ubl-2.0-nlcius.sch"), "nlcius"),
+		patternAsserts(t, filepath.Join(sch, "si-ubl-2.0-ext-gaccount.sch"), "g-account-extension"),
 	)
 	for _, c := range []struct {
 		name    string
@@ -131,7 +132,8 @@ var (
 // them all: BR-NL-8 reports the type code 381 of an Invoice since SI-UBL
 // 2.0.3, the type code 532 of a credit note also breaks BR-NL-7, the
 // assertions with the message of BR-NL-34 never apply (their identifier is
-// BR-NL-32-1 anyway), and two files name no rule of BR-NL.
+// BR-NL-32-1 anyway), two files name no rule of BR-NL, and the files of the
+// G-account extension name the case they test, not its rule.
 var testFileRules = map[string][]string{
 	"SI-UBL-2.0_BR-NL-7_error_381_invoice.xml":        {"BR-NL-8"},
 	"SI-UBL-2.0_BR-NL-8_error_CN_not_381_2.xml":       {"BR-NL-7", "BR-NL-8"},
@@ -139,11 +141,22 @@ var testFileRules = map[string][]string{
 	"SI-UBL-2.0_BR-NL-34_warning_reasoncode_line.xml": {"BR-NL-32-1"},
 	"SI-UBL-2.0_warning_empty_elements.xml":           {"SI-UBL-2"},
 	"SI-UBL-2.0_error_no_customizationid.xml":         {"BII2-T10-R001"},
+
+	// The test files of the G-account extension name no rule.
+	"si-ubl-2.0-ext-gaccount_error_no_gaccount.xml":                  {"BR-GA-7"},
+	"si-ubl-2.0-ext-gaccount_error_no_identifier.xml":                {"BR-GA-5"},
+	"si-ubl-2.0-ext-gaccount_error_no_reference.xml":                 {"BR-GA-4"},
+	"si-ubl-2.0-ext-gaccount_error_one-paymentmeans.xml":             {"BR-GA-2"},
+	"si-ubl-2.0-ext-gaccount_error_one-paymentterm.xml":              {"BR-GA-1"},
+	"si-ubl-2.0-ext-gaccount_error_paymentterms_wrong_reference.xml": {"BR-GA-6"},
+	"si-ubl-2.0-ext-gaccount_error_sum_amount.xml":                   {"BR-GA-3"},
+	"si-ubl-2.0-ext-gaccount_error_three-paymentmeans.xml":           {"BR-GA-2"},
+	"si-ubl-2.0-ext-gaccount_error_three-paymentterms.xml":           {"BR-GA-1"},
 }
 
 // TestTestFiles runs Check on the test files of SimplerInvoicing for SI-UBL
-// 2.0.3.2 and NLCIUS-CII 1.0.3 (FX_NL_TESTS, the directory
-// simplerinvoicing of the test files of phax/phive-rules, see
+// 2.0.3.2, NLCIUS-CII 1.0.3 and the G-account extension 1.0 (FX_NL_TESTS,
+// the directory simplerinvoicing of the test files of phax/phive-rules, see
 // conformance/fetch-nl.sh). Their name tells the rule they break and how
 // (BR-NL-3_error, BR-NL-19_warning) or that they break no rule (_ok): Check
 // reports that rule with that severity, and nothing else but SI-UBL-2 for an
@@ -155,7 +168,7 @@ func TestTestFiles(t *testing.T) {
 		t.Skip("FX_NL_TESTS is not set")
 	}
 	files := 0
-	for _, sub := range []string{"SI-UBL-2.0.3.2", "NLCIUS-CII-1.0.3"} {
+	for _, sub := range []string{"SI-UBL-2.0.3.2", "NLCIUS-CII-1.0.3", "si-ubl-2.0-ext-gaccount-1.0"} {
 		eachInvoice(t, filepath.Join(dir, sub), func(path string, doc *rules.Doc) {
 			files++
 			name := filepath.Base(path)
@@ -195,8 +208,8 @@ func TestTestFiles(t *testing.T) {
 			}
 		})
 	}
-	if files < 90 {
-		t.Errorf("%d test files, want at least 90", files)
+	if files < 100 {
+		t.Errorf("%d test files, want at least 100", files)
 	}
 	t.Logf("%d files", files)
 }

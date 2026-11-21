@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	nlciusInvoice    = "../internal/rules/nl/testdata/nlcius.xml"     // NLCIUS, seller in the Netherlands
-	nlciusUBLInvoice = "../internal/rules/nl/testdata/nlcius.ubl.xml" // nlciusInvoice in UBL 2.1 (SI-UBL 2.0)
+	nlciusInvoice    = "../internal/rules/nl/testdata/nlcius.xml"       // NLCIUS, seller in the Netherlands
+	nlciusUBLInvoice = "../internal/rules/nl/testdata/nlcius.ubl.xml"   // nlciusInvoice in UBL 2.1 (SI-UBL 2.0)
+	gaccountInvoice  = "../internal/rules/nl/testdata/gaccount.ubl.xml" // nlciusUBLInvoice with the G-account extension
 )
 
 // TestNLCIUS checks the NLCIUS invoices of internal/rules/nl with every
@@ -54,9 +55,11 @@ func TestNLCIUS(t *testing.T) {
 		}
 	}
 
-	// NLCIUS is detected in BT-24, also with the G-account extension.
+	// NLCIUS is detected in BT-24, also with the G-account extension, whose
+	// rules BR-GA then apply.
 	gaccount := strings.Replace(readXML(t, nlciusUBLInvoice), invoice.URNNLCIUS, invoice.URNNLCIUS+"#conformant#urn:fdc:nen.nl:gaccount:v1.0", 1)
-	if r := XML([]byte(gaccount), nil); r.Profile != invoice.ProfileNLCIUS || len(r.Findings) > 0 {
+	r := XML([]byte(gaccount), nil)
+	if f := findings(r, "BR-GA-"); r.Profile != invoice.ProfileNLCIUS || len(f) != 5 || len(f) != len(r.Findings) || f[0].Source != SourceNL || f[0].Severity != Error {
 		t.Errorf("G-account: profile %s\n%s", r.Profile, r)
 	}
 
@@ -76,9 +79,31 @@ func TestNLCIUS(t *testing.T) {
 	if r := XML(french, &Options{Rules: Default | Netherlands}); len(r.Findings) > 0 {
 		t.Errorf("Rules: Default | Netherlands on a Factur-X invoice:\n%s", r)
 	}
-	r := XML(peppolUBL, &Options{Rules: Default | Netherlands})
+	r = XML(peppolUBL, &Options{Rules: Default | Netherlands})
 	if f := findings(r, "SI-V20-INV-R000"); len(f) != 1 || f[0].Source != SourceNL || len(r.Findings) != 1 {
 		t.Errorf("Rules: Default | Netherlands on a Peppol UBL invoice:\n%s", r)
+	}
+}
+
+// TestGAccount validates the G-account invoice of internal/rules/nl: it
+// passes the BR-GA rules, and the UBL syntax rules as the artefacts of the
+// extension modify them. The same invoice without the extension in BT-24
+// gets the three UBL-CR warnings that these artefacts leave out, and no
+// BR-GA finding.
+func TestGAccount(t *testing.T) {
+	doc := readXML(t, gaccountInvoice)
+	for _, opts := range []*Options{nil, {Auto: true}, {Rules: Schema | EN16931 | Netherlands}} {
+		if r := XML([]byte(doc), opts); r.Profile != invoice.ProfileNLCIUS || len(r.Findings) > 0 {
+			t.Errorf("G-account (%+v): profile %s\n%s", opts, r.Profile, r)
+		}
+	}
+	spec := invoice.URNNLCIUS + "#conformant#urn:fdc:nen.nl:gaccount:v1.0<"
+	if !strings.Contains(doc, spec) {
+		t.Fatal("G-account identifier not found")
+	}
+	r := XML([]byte(strings.Replace(doc, spec, invoice.URNNLCIUS+"<", 1)), nil)
+	if got := r.Rules(); r.Profile != invoice.ProfileNLCIUS || !r.Valid() || strings.Join(got, " ") != "UBL-CR-411 UBL-CR-453 UBL-CR-459" {
+		t.Errorf("without the G-account extension: profile %s, rules %q\n%s", r.Profile, got, r)
 	}
 }
 
@@ -111,15 +136,15 @@ func TestCatalogNL(t *testing.T) {
 	for _, r := range Catalog(Netherlands) {
 		ids[r.ID]++
 	}
-	// BR-NL-32-and-34 is a CII rule, BR-NL-8 and SI-V20-INV-R000 UBL rules;
-	// the rules of both syntaxes are listed once.
-	for _, id := range []string{"BR-NL-1", "BR-NL-32-and-34", "empty-element-check", "BR-NL-8", "SI-V20-INV-R000", "SI-UBL-2"} {
+	// BR-NL-32-and-34 is a CII rule, BR-NL-8, SI-V20-INV-R000 and the
+	// G-account rules UBL rules; the rules of both syntaxes are listed once.
+	for _, id := range []string{"BR-NL-1", "BR-NL-32-and-34", "empty-element-check", "BR-NL-8", "SI-V20-INV-R000", "SI-UBL-2", "BR-GA-0", "BR-GA-7"} {
 		if ids[id] != 1 {
 			t.Errorf("Catalog(Netherlands) lists %s %d times", id, ids[id])
 		}
 	}
-	if len(ids) != 39 {
-		t.Errorf("Catalog(Netherlands): %d rules, want 39", len(ids))
+	if len(ids) != 47 {
+		t.Errorf("Catalog(Netherlands): %d rules, want 47", len(ids))
 	}
 	for _, r := range Catalog(Default | Peppol) {
 		if strings.HasPrefix(r.ID, "BR-NL-") {
@@ -162,14 +187,15 @@ func TestNLCIUSRoundTrip(t *testing.T) {
 
 // TestNLTestFiles validates the test files of SimplerInvoicing that break no
 // rule (FX_NL_TESTS, see conformance/fetch-nl.sh; their name has _ok): they
-// are NLCIUS invoices without error, whatever the rule set.
+// are NLCIUS invoices without error, whatever the rule set. The valid
+// example of the G-account extension gives no warning either.
 func TestNLTestFiles(t *testing.T) {
 	dir := os.Getenv("FX_NL_TESTS")
 	if dir == "" {
 		t.Skip("FX_NL_TESTS is not set")
 	}
 	n := 0
-	for _, sub := range []string{"SI-UBL-2.0.3.2", "NLCIUS-CII-1.0.3"} {
+	for _, sub := range []string{"SI-UBL-2.0.3.2", "NLCIUS-CII-1.0.3", "si-ubl-2.0-ext-gaccount-1.0"} {
 		files, err := filepath.Glob(filepath.Join(dir, sub, "*_ok*.xml"))
 		if err != nil {
 			t.Fatal(err)
@@ -180,13 +206,14 @@ func TestNLTestFiles(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if r := XML(b, &Options{Auto: true}); r.Profile != invoice.ProfileNLCIUS || !r.Valid() {
+			r := XML(b, &Options{Auto: true})
+			if r.Profile != invoice.ProfileNLCIUS || !r.Valid() || strings.HasPrefix(sub, "si-ubl-2.0-ext-gaccount") && len(r.Findings) > 0 {
 				t.Errorf("%s: profile %s\n%s", filepath.Base(file), r.Profile, r)
 			}
 		}
 	}
-	if n < 30 {
-		t.Errorf("%d files, want at least 30", n)
+	if n < 31 {
+		t.Errorf("%d files, want at least 31", n)
 	}
 	t.Logf("%d files", n)
 }

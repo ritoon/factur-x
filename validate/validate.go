@@ -14,7 +14,8 @@
 // rules, do not apply. The French rules implement the UBL schematron of
 // BR-FR (Flux 2), the German rules the XRechnung UBL schematron, the
 // Peppol rules the UBL schematron of Peppol BIS Billing 3.0 and the Dutch
-// rules the SI-UBL 2.0 schematron, on the UBL document itself, with their own rule identifiers, contexts and messages
+// rules the SI-UBL 2.0 schematron, with its G-account extension, on the UBL
+// document itself, with their own rule identifiers, contexts and messages
 // (see the UBLCatalog of each package). The Chorus Pro rules run on a CII
 // view of the UBL document. All findings are located in the UBL document.
 //
@@ -104,7 +105,7 @@ const (
 	GermanyProfile                     // profiles the BMF accepts as e-invoices (DE-PROFILE-01: not MINIMUM nor BASIC WL)
 	ChorusPro                          // French B2G checks for Chorus Pro (CPRO-*), see Options.PublicBuyer
 	Peppol                             // Peppol BIS Billing 3.0 rules (PEPPOL-*) and their national rules (NO, DK, IT, SE, NL; for UBL also GR, IS, DE)
-	Netherlands                        // Dutch rules of NLCIUS (BR-NL), and for UBL the SI-UBL 2.0 version check (SI-V20-INV-R000)
+	Netherlands                        // Dutch rules of NLCIUS (BR-NL), and for UBL the SI-UBL 2.0 version check (SI-V20-INV-R000) and the rules of the G-account extension (BR-GA)
 
 	// Default is the set used when Options.Rules is zero: schema, EN 16931
 	// and profile rules. Whatever the rule sets, the German rules apply to

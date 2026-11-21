@@ -56,10 +56,11 @@ var Catalog = []rules.RuleInfo{
 	info("empty-element-check", rules.Warning, "Document should not contain empty elements."),
 }
 
-// UBLCatalog lists the 35 assertions of the SI-UBL 2.0 artefacts that Check
+// UBLCatalog lists the 43 assertions of the SI-UBL 2.0 artefacts that Check
 // applies to a UBL invoice, in the order of the schematrons: the pattern
-// SI-UBL-VERSION, then the pattern nlcius. BR-NL-8, of two assertions, is
-// listed once.
+// SI-UBL-VERSION, the pattern nlcius, then the pattern g-account-extension of
+// the G-account extension, whose version check is SI-V20-INV-R000 again.
+// BR-NL-8, of two assertions, and SI-V20-INV-R000 are listed once.
 var UBLCatalog = []rules.RuleInfo{
 	info("BII2-T10-R001", rules.Error, msgInvoiceID),
 	info("SI-V20-INV-R000", rules.Error, strings.Replace(msgVersion, "]-", "] ", 1)),
@@ -96,4 +97,12 @@ var UBLCatalog = []rules.RuleInfo{
 	info("BR-NL-33", rules.Warning, msgUBL33),
 	info("BR-NL-35", rules.Warning, msgUBL35),
 	info("SI-UBL-2", rules.Warning, "Document should not contain empty elements."),
+	info("BR-GA-0", rules.Error, msgGA0),
+	info("BR-GA-1", rules.Error, msgGA1),
+	info("BR-GA-2", rules.Error, msgGA2),
+	info("BR-GA-3", rules.Error, msgGA3),
+	info("BR-GA-7", rules.Error, msgGA7),
+	info("BR-GA-4", rules.Error, msgGA4),
+	info("BR-GA-5", rules.Error, msgGA5),
+	info("BR-GA-6", rules.Error, msgGA6),
 }

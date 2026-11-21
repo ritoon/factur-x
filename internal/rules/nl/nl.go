@@ -4,13 +4,16 @@
 // release of 2026-05-21): for the CII syntax, the pattern nlcius of
 // NLCIUS-CII-validation.sch (NLCIUS-CII 1.0.3.13); for the UBL syntax
 // (SI-UBL 2.0), the pattern nlcius of si-ubl-2.0-nlcius.sch and the pattern
-// SI-UBL-VERSION of si-ubl-2.0.sch (SI-UBL 2.0.3.13). The rules of EN 16931
-// that both validators include are not part of this package; the rules of
-// the G-account extension (si-ubl-2.0-ext-gaccount.sch) are not implemented.
+// SI-UBL-VERSION of si-ubl-2.0.sch (SI-UBL 2.0.3.13); for a UBL invoice that
+// uses the G-account extension, the pattern g-account-extension of
+// si-ubl-2.0-ext-gaccount.sch (version 1.0.2.13) instead of SI-UBL-VERSION.
+// The rules of EN 16931 that the validators include are not part of this
+// package (see package ubl for the syntax rules that the G-account artefacts
+// leave out).
 //
-// The package reimplements the assertions of the two patterns in Go, with
+// The package reimplements the assertions of these patterns in Go, with
 // their identifiers and flags: Catalog lists the 32 assertions it applies to
-// a CII invoice, UBLCatalog the 35 it applies to a UBL invoice. The flags map
+// a CII invoice, UBLCatalog the 43 it applies to a UBL invoice. The flags map
 // to the severities of package rules: fatal to Error, warning to Warning.
 //
 // # Conditions
@@ -31,6 +34,21 @@
 // The checks of the empty elements (empty-element-check, SI-UBL-2) and of
 // the UBL pattern SI-UBL-VERSION (BII2-T10-R001, SI-V20-INV-R000) have no
 // condition: they apply to any invoice Check runs on.
+//
+// # G-account extension
+//
+// A validator picks the artefacts of the G-account extension by the
+// specification identifier; so does Check, for a UBL invoice whose first
+// cbc:CustomizationID contains '#conformant#urn:fdc:nen.nl:gaccount:v1.0'
+// (rules.Doc.GAccount). The pattern g-account-extension then replaces
+// SI-UBL-VERSION, which these artefacts do not include, and its rules apply
+// with no condition: BR-GA-0 and its own SI-V20-INV-R000 to every
+// cbc:CustomizationID (BR-GA-0 fails for another one, such as one inside the
+// UBL extensions), BR-GA-1 to BR-GA-7 to an Invoice and its payment means
+// and terms; a CreditNote only gets the first two. BII2-T10-R001 cannot fail
+// on such an invoice. The pattern nlcius applies as for any SI-UBL 2.0
+// invoice. The NPa publishes no artefacts of the extension for NLCIUS-CII: a
+// CII invoice that declares it gets the NLCIUS rules only.
 //
 // # Rule order
 //
@@ -72,6 +90,9 @@
 //     document order is used.
 //   - The rule SI-INV-R000 of SI-UBL-VERSION (the root is an Invoice or a
 //     CreditNote) always holds for the documents Check runs on.
+//   - BR-GA-3 compares the amounts as decimals, without rounding. BR-GA-6
+//     and BR-GA-7 read the text nodes of a payment means identifier
+//     (text()) as one, the character data of the element.
 //
 // Findings are located at the element of the rule context.
 package nl
@@ -89,7 +110,7 @@ const (
 	// CIUSID identifies an NLCIUS invoice.
 	CIUSID = invoice.URNNLCIUS
 	// GAccountID identifies an NLCIUS invoice with the G-account extension.
-	GAccountID = CIUSID + "#conformant#urn:fdc:nen.nl:gaccount:v1.0"
+	GAccountID = CIUSID + rules.GAccountExtension
 )
 
 // guard is the condition of a rule context.

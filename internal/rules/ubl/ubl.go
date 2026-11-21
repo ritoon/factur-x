@@ -19,6 +19,11 @@
 //     codes) and the two business rules whose context differs, BR-CO-03 and
 //     BR-53.
 //
+// An invoice that declares the Dutch G-account extension in its
+// specification identifier (see rules.Doc.GAccount) is checked against the
+// CEN syntax rules as the artefacts of the extension modify them: without
+// UBL-CR-411, UBL-CR-453 and UBL-CR-459.
+//
 // Severities are the official ones (fatal: Error, warning: Warning), with the
 // levels of the KoSIT validator configuration for XRechnung invoices (see
 // en16931.Level).

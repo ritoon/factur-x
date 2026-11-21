@@ -19,13 +19,14 @@ DEST=$(cd "$DEST" && pwd)
 command -v git >/dev/null || die "git is required"
 
 # Dutch Peppol Authority (NPa) validation artefacts, release 2026-05-21:
-# SI-UBL 2.0.3.13 and NLCIUS-CII 1.0.3.13 schematrons (FX_NL), which the
-# catalogs of internal/rules/nl are compared with.
+# SI-UBL 2.0.3.13, NLCIUS-CII 1.0.3.13 and G-account extension 1.0.2.13
+# schematrons (FX_NL), which the catalogs of internal/rules/nl are compared
+# with.
 NPA_COMMIT=4e93ae8681f413fef627a338ad84ce465a153ee8
 fetch_git "$DEST/npa-validation" https://github.com/peppolautoriteit-nl/validation.git "$NPA_COMMIT"
 
-# phive-rules (Apache-2.0): the SimplerInvoicing test files of SI-UBL 2.0
-# and NLCIUS-CII (FX_NL_TESTS). The repository holds the test files of every
+# phive-rules (Apache-2.0): the SimplerInvoicing test files of SI-UBL 2.0,
+# NLCIUS-CII and the G-account extension (FX_NL_TESTS). The repository holds the test files of every
 # rule set it packages (1.4 GB), so only that directory is fetched.
 PHIVE_COMMIT=bab0629da499634482a23621c42398b222fccfec
 PHIVE_TESTS=phive-rules-simplerinvoicing/src/test/resources/external/test-files/simplerinvoicing

@@ -91,6 +91,11 @@ func check(t *testing.T, doc string) *rules.Report {
 
 func TestCheck(t *testing.T) {
 	ext := `<ext:UBLExtensions xmlns:ext="urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2"><ext:UBLExtension><ext:ExtensionContent/></ext:UBLExtension></ext:UBLExtensions>`
+	// The payment elements of the Dutch G-account extension, and its
+	// specification identifier.
+	gaPayment := `<cac:PaymentMeans><cbc:ID>GACCOUNT</cbc:ID><cbc:PaymentMeansCode>1</cbc:PaymentMeansCode></cac:PaymentMeans><cac:PaymentTerms><!--terms--><cbc:PaymentMeansID>GACCOUNT</cbc:PaymentMeansID><cbc:Amount currencyID="EUR">119.00</cbc:Amount></cac:PaymentTerms>`
+	cen := "<cbc:CustomizationID>urn:cen.eu:en16931:2017</cbc:CustomizationID>"
+	gaSpec := "<cbc:CustomizationID>" + invoice.URNNLCIUS + rules.GAccountExtension + "</cbc:CustomizationID>"
 	cases := []struct {
 		name     string
 		old, new string // replacement in tInvoice
@@ -127,6 +132,10 @@ func TestCheck(t *testing.T) {
 		{name: "scheme name", old: "<cbc:ID>INV-1</cbc:ID>", new: `<cbc:ID schemeName="x">INV-1</cbc:ID>`, want: []string{"UBL-DT-08"}},
 		{name: "name attribute", old: "<cbc:InvoiceTypeCode>", new: `<cbc:InvoiceTypeCode name="x">`, want: []string{"UBL-DT-18"}},
 		{name: "payment means name", old: "<!--payment-->", new: `<cac:PaymentMeans><cbc:PaymentMeansCode name="Cash">10</cbc:PaymentMeansCode></cac:PaymentMeans>`},
+		{name: "G-account elements", old: "<!--payment-->", new: gaPayment, want: []string{"UBL-CR-411", "UBL-CR-453", "UBL-CR-459"}},
+		{name: "G-account elements with the extension", old: "<!--payment-->", new: gaPayment, old2: cen, new2: gaSpec},
+		{name: "G-account extension keeps the other syntax rules", old: "<!--payment-->", new: strings.Replace(gaPayment, "<!--terms-->", "<cbc:ID>T1</cbc:ID>", 1), old2: cen, new2: gaSpec, want: []string{"UBL-CR-452"}},
+		{name: "G-account extension of another identifier", old: "<!--payment-->", new: gaPayment, old2: cen, new2: "<cbc:CustomizationID>urn:cen.eu:en16931:2017" + rules.GAccountExtension + "</cbc:CustomizationID>"},
 		{name: "invoice type code of a credit note", old: "<cbc:InvoiceTypeCode>380<", new: "<cbc:InvoiceTypeCode>381<", want: []string{"BR-CL-01"}},
 		{name: "credit note type code of an invoice", credit: true, old: "<cbc:CreditNoteTypeCode>381<", new: "<cbc:CreditNoteTypeCode>380<", want: []string{"BR-CL-01"}},
 		{name: "note subject", old: "<!--notes-->", new: "<cbc:Note>#AAI#Text</cbc:Note><cbc:Note>#AB#Text</cbc:Note><cbc:Note>#AAI Text</cbc:Note>"},

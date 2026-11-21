@@ -100,9 +100,11 @@ func ublCases() []mutationCase {
 		{"credit note", creditNote, nil},
 
 		// Conditions and pattern SI-UBL-VERSION.
-		{"G-account extension", one(rep(uSpec, cbc("CustomizationID", GAccountID)), remove(uBuyerRef)), ids("BR-NL-2")},
+		// The G-account rules, see gaccountCases, apply to an invoice that
+		// declares the extension: they fail on the base invoice.
+		{"G-account extension", one(rep(uSpec, cbc("CustomizationID", GAccountID))), ids("BR-GA-1", "BR-GA-2", "BR-GA-3", "BR-GA-5", "BR-GA-7")},
+		{"G-account extension of a credit note", edits(creditNote, one(rep(uSpec, cbc("CustomizationID", GAccountID)))), nil},
 		{"NLCIUS followed by other text", one(rep(uSpec, cbc("CustomizationID", CIUSID+"#conformant#urn:example")), remove(uBuyerRef)), ids("BR-NL-2")},
-		{"G-account without the NLCIUS prefix", one(rep(uSpec, cbc("CustomizationID", "urn:cen.eu:en16931:2017#conformant#urn:fdc:nen.nl:gaccount:v1.0")), remove(uBuyerRef)), ids("SI-V20-INV-R000", "BR-NL-2")},
 		{"identifier normalized", one(rep(uSpec, cbc("CustomizationID", "\n  "+CIUSID+" ")), remove(uBuyerRef)), ids("BR-NL-2")},
 		{"BII2-T10-R001 invoice", one(remove(uSpec), remove(uBuyerRef)), ids("BII2-T10-R001")},
 		{"BII2-T10-R001 credit note", edits(creditNote, one(remove(uSpec))), ids("BII2-T10-R001")},
@@ -217,10 +219,10 @@ func checkUBLFindings(t *testing.T, r *rules.Report) {
 }
 
 // TestUBLCoverage checks that every assertion of UBLCatalog fails in at
-// least one UBL mutation case.
+// least one UBL or G-account mutation case.
 func TestUBLCoverage(t *testing.T) {
 	failing := map[string]bool{}
-	for _, c := range ublCases() {
+	for _, c := range slices.Concat(ublCases(), gaccountCases()) {
 		for _, id := range c.want {
 			failing[id] = true
 		}
