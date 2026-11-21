@@ -1,0 +1,92 @@
+name: Bogue
+description: Un comportement incorrect du package ou de la commande zerechnung (plantage, lecture ou écriture fausse, PDF produit invalide).
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Les factures contiennent des données personnelles et commerciales : joignez une facture **fictive ou anonymisée**, jamais une facture réelle.
+
+        - Une règle levée à tort ou manquée ? Utilisez plutôt le modèle « Écart de validation ».
+        - Une faille de sécurité ? N'ouvrez pas d'issue, voir [SECURITY.md](https://github.com/ritoon/zerechnung/blob/main/SECURITY.md).
+  - type: textarea
+    id: description
+    attributes:
+      label: Ce qui se passe
+      description: Le comportement observé, avec le message d'erreur s'il y en a un.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Pour reproduire
+      description: Le code Go ou la commande zerechnung, le plus court possible.
+      placeholder: |
+        inv, _, err := zerechnung.Read(pdf)
+        ou
+        zerechnung validate -fr facture.pdf
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Ce qui était attendu
+    validations:
+      required: true
+  - type: dropdown
+    id: syntax
+    attributes:
+      label: Document en cause
+      options:
+        - PDF hybride (Factur-X, ZUGFeRD, XRechnung)
+        - XML CII seul
+        - XML UBL 2.1
+        - Sans objet
+    validations:
+      required: true
+  - type: dropdown
+    id: profile
+    attributes:
+      label: Profil
+      options:
+        - MINIMUM
+        - BASIC WL
+        - BASIC
+        - EN 16931
+        - EXTENDED
+        - XRECHNUNG
+        - EXTENDED-CTC-FR
+        - PEPPOL
+        - NLCIUS
+        - ZUGFeRD 1.0
+        - Sans objet ou inconnu
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version de ZeRechnung
+      description: Version ou commit, donné par `go list -m github.com/ritoon/zerechnung` dans votre module.
+      placeholder: v0.1.0
+    validations:
+      required: true
+  - type: input
+    id: go
+    attributes:
+      label: Version de Go
+      description: Sortie de `go version`.
+      placeholder: go version go1.26.4 darwin/arm64
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Sortie complète
+      description: Rapport de validation, trace du panic ou sortie de la commande.
+      render: text
+  - type: textarea
+    id: files
+    attributes:
+      label: Fichiers
+      description: Glissez ici le PDF ou le XML qui reproduit le problème, fictif ou anonymisé.

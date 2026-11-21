@@ -445,6 +445,10 @@ Les tests de base n'ont besoin que du dépôt ; la CI ([.github/workflows/ci.yml
 | `FX_UBL_ZIP` | Paquet OASIS [UBL-2.1.zip](https://docs.oasis-open.org/ubl/os-UBL-2.1/UBL-2.1.zip) | Les tables du schéma UBL régénérées sont identiques à celles du dépôt (`go generate -run -ubl` dans `internal/schema` télécharge le paquet et vérifie son SHA-256) |
 | `FX_FACTURX_SCH` | Schematrons Factur-X 1.09.2 de BASIC, EN 16931 et EXTENDED et leurs listes de codes (`FACTUR-X_<profil>.sch` et `FACTUR-X_<profil>_codedb.xml`) | Les assertions de listes de codes régénérées (`codedb_gen.go`) sont identiques à celles du dépôt (`go generate` dans `internal/rules/facturx` télécharge les fichiers et vérifie leur SHA-256) |
 
+## Contribuer
+
+Les contributions sont bienvenues : voir [CONTRIBUTING.md](CONTRIBUTING.md) pour les principes du package et les contrôles à lancer avant une pull request. Le projet suit le [code de conduite Contributor Covenant](CODE_OF_CONDUCT.md). Une faille de sécurité se signale en privé, selon [SECURITY.md](SECURITY.md).
+
 ## Licence et provenance
 
 Le code est sous licence MIT (voir [LICENSE](LICENSE)).

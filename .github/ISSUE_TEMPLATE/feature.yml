@@ -1,0 +1,31 @@
+name: Évolution
+description: Un nouveau profil, un nouveau jeu de règles, une version plus récente d'un artefact officiel, une fonction de l'API ou de la commande.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Pour un changement important, l'issue sert à se mettre d'accord avant d'écrire le code : voir [CONTRIBUTING.md](https://github.com/ritoon/zerechnung/blob/main/CONTRIBUTING.md).
+  - type: textarea
+    id: need
+    attributes:
+      label: Le besoin
+      description: Ce que vous voulez faire avec le package, et ce qui vous en empêche aujourd'hui.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Ce que vous proposez
+      description: L'API, l'option ou la règle envisagée. Le package reste en pur Go, sans dépendance.
+  - type: textarea
+    id: references
+    attributes:
+      label: Références
+      description: Spécification, artefact officiel et version, lien vers le texte de la norme ou de l'administration.
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: Je peux proposer une pull request.

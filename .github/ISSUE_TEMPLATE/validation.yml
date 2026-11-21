@@ -1,0 +1,97 @@
+name: Écart de validation
+description: Une règle levée à tort ou manquée, ou un verdict différent de KoSIT, de Mustang ou d'un schematron officiel.
+labels: ["conformité"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Les règles sont réécrites en Go à partir des artefacts officiels, avec leurs identifiants, niveaux et messages : un écart se démontre au mieux avec la sortie d'un validateur de référence sur le même fichier.
+
+        Joignez une facture **fictive ou anonymisée**, jamais une facture réelle.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Type d'écart
+      options:
+        - Règle levée à tort (faux positif)
+        - Règle manquée (faux négatif)
+        - Niveau ou message différent de la référence
+        - Autre
+    validations:
+      required: true
+  - type: input
+    id: rule
+    attributes:
+      label: Identifiant de la règle
+      placeholder: BR-CO-15, BR-FR-12, CII-SR-465, PEPPOL-EN16931-R008, PDF-06…
+    validations:
+      required: true
+  - type: dropdown
+    id: ruleset
+    attributes:
+      label: Jeu de règles
+      options:
+        - Schéma XSD
+        - EN 16931
+        - Factur-X (règles de profil)
+        - France (BR-FR)
+        - Allemagne (BR-DE)
+        - Peppol BIS Billing 3.0
+        - Pays-Bas (BR-NL)
+        - Chorus Pro
+        - ZUGFeRD 1.0
+        - Conteneur PDF
+    validations:
+      required: true
+  - type: dropdown
+    id: syntax
+    attributes:
+      label: Document en cause
+      options:
+        - PDF hybride (Factur-X, ZUGFeRD, XRechnung)
+        - XML CII seul
+        - XML UBL 2.1
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: Options de validation
+      description: La commande ou les options passées au package.
+      placeholder: |
+        zerechnung validate -fr -hybrid facture.xml
+        ou
+        validate.XML(xml, &validate.Options{Rules: validate.Default | validate.France})
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: Rapport de ZeRechnung
+      description: Les constats pour la règle en cause (`zerechnung validate -json` convient).
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: reference
+    attributes:
+      label: Ce que dit la référence
+      description: Le validateur de référence et sa version (KoSIT avec la configuration utilisée, Mustang, schematron officiel exécuté par Saxon…) et sa sortie, ou le passage de la spécification qui tranche.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version de ZeRechnung
+      description: Version ou commit, donné par `go list -m github.com/ritoon/zerechnung` dans votre module.
+      placeholder: v0.1.0
+    validations:
+      required: true
+  - type: textarea
+    id: files
+    attributes:
+      label: Fichiers
+      description: Glissez ici le PDF ou le XML qui montre l'écart, fictif ou anonymisé.
+    validations:
+      required: true
