@@ -5,6 +5,7 @@ Ce dossier mesure l'exactitude du package sur les artefacts officiels, à chaque
 | Fichier | Rôle |
 |---|---|
 | [`fetch.sh`](fetch.sh) | Récupère les artefacts officiels à des versions figées et les vérifie, puis affiche les variables `FX_*` qui activent les tests optionnels |
+| [`fetch-nl.sh`](fetch-nl.sh) | Récupère les seuls artefacts des règles néerlandaises (`FX_NL`, `FX_NL_TESTS`) ; `fetch.sh` l'appelle, et le job *Tests NLCIUS sur les artefacts officiels* du workflow [CI](../.github/workflows/ci.yml) l'exécute seul, en quelques secondes |
 | [`parity.sh`](parity.sh) | Exécute KoSIT et Mustang sur les factures du corpus et de la suite KoSIT, puis compare leurs règles à celles du package |
 | [`parity/`](parity) | Outil Go de comparaison (module séparé) et lanceur Java de Mustang |
 | [`parity/known.txt`](parity/known.txt) | Écarts connus et justifiés ; tout autre écart fait échouer le job |

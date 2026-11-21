@@ -44,18 +44,9 @@ fetch_git "$DEST/peppol-bis-invoice-3" https://github.com/OpenPEPPOL/peppol-bis-
 RFE_COMMIT=97ba0f3d4ef2abed5780e9490d5c3a2be832ab1d
 fetch_git "$DEST/France_RFE" https://github.com/fnfempe/France_RFE.git "$RFE_COMMIT"
 
-# Dutch Peppol Authority (NPa) validation artefacts, release 2026-05-21:
-# SI-UBL 2.0.3.13 and NLCIUS-CII 1.0.3.13 schematrons (FX_NL), which the
-# catalogs of internal/rules/nl are compared with.
-NPA_COMMIT=4e93ae8681f413fef627a338ad84ce465a153ee8
-fetch_git "$DEST/npa-validation" https://github.com/peppolautoriteit-nl/validation.git "$NPA_COMMIT"
-
-# phive-rules (Apache-2.0): the SimplerInvoicing test files of SI-UBL 2.0
-# and NLCIUS-CII (FX_NL_TESTS). The repository holds the test files of every
-# rule set it packages, so only that directory is fetched.
-PHIVE_COMMIT=bab0629da499634482a23621c42398b222fccfec
-PHIVE_TESTS=phive-rules-simplerinvoicing/src/test/resources/external/test-files/simplerinvoicing
-fetch_git_sparse "$DEST/phive-rules" https://github.com/phax/phive-rules.git "$PHIVE_COMMIT" "$PHIVE_TESTS"
+# Artefacts of the Dutch rules (FX_NL, FX_NL_TESTS), pinned in fetch-nl.sh,
+# which the CI workflow runs alone.
+"$here/fetch-nl.sh" "$DEST"
 
 # KoSIT validator configuration for XRechnung 3.0.2, release 2026-08-31: the
 # CII D16B schema (FX_KOSIT_CONF), and the scenarios that parity.sh runs.
@@ -153,16 +144,9 @@ vars=(
 	"FX_KOSIT_CONF=$DEST/xrechnung-3.0.2-validator-configuration-2026-08-31.zip"
 	"FX_FNFE=$DEST/France_RFE"
 	"FX_PEPPOL=$DEST/peppol-bis-invoice-3"
-	"FX_NL=$DEST/npa-validation"
-	"FX_NL_TESTS=$DEST/phive-rules/$PHIVE_TESTS"
 	"FX_UBL_ZIP=$DEST/UBL-2.1.zip"
 	"FX_XSD=$DEST/xsd"
 	"FX_XSD_DIR=$DEST/xsd"
 	"FX_FACTURX_SCH=$DEST/facturx-sch"
 )
-for v in "${vars[@]}"; do
-	printf 'export %q\n' "$v"
-	if [ -n "${GITHUB_ENV:-}" ]; then
-		echo "$v" >>"$GITHUB_ENV"
-	fi
-done
+export_vars "${vars[@]}"

@@ -65,7 +65,7 @@ func patternAsserts(t *testing.T, file, id string) []assertion {
 
 // TestSchematron compares the catalogs with the assertions of the NPa
 // artefacts (FX_NL, a checkout of github.com/peppolautoriteit-nl/validation,
-// see conformance/fetch.sh): every assertion of the patterns Check
+// see conformance/fetch-nl.sh): every assertion of the patterns Check
 // implements is in the catalog of its syntax, with its flag and its message,
 // except those that never apply (see the package documentation), and the
 // catalogs list nothing else.
@@ -144,7 +144,7 @@ var testFileRules = map[string][]string{
 // TestTestFiles runs Check on the test files of SimplerInvoicing for SI-UBL
 // 2.0.3.2 and NLCIUS-CII 1.0.3 (FX_NL_TESTS, the directory
 // simplerinvoicing of the test files of phax/phive-rules, see
-// conformance/fetch.sh). Their name tells the rule they break and how
+// conformance/fetch-nl.sh). Their name tells the rule they break and how
 // (BR-NL-3_error, BR-NL-19_warning) or that they break no rule (_ok): Check
 // reports that rule with that severity, and nothing else but SI-UBL-2 for an
 // empty element (_empty). The files of the other rule sets (BR-S-08,

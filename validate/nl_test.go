@@ -161,8 +161,8 @@ func TestNLCIUSRoundTrip(t *testing.T) {
 }
 
 // TestNLTestFiles validates the test files of SimplerInvoicing that break no
-// rule (FX_NL_TESTS, see conformance/fetch.sh; their name has _ok): they are
-// NLCIUS invoices without error, whatever the rule set.
+// rule (FX_NL_TESTS, see conformance/fetch-nl.sh; their name has _ok): they
+// are NLCIUS invoices without error, whatever the rule set.
 func TestNLTestFiles(t *testing.T) {
 	dir := os.Getenv("FX_NL_TESTS")
 	if dir == "" {

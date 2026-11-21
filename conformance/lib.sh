@@ -60,3 +60,15 @@ fetch_file() {
 	[ "$got" = "$sum" ] || die "$url: SHA-256 $got, want $sum"
 	mv "$path.part" "$path"
 }
+
+# export_vars name=value...: prints the export lines to eval, and appends the
+# variables to $GITHUB_ENV under GitHub Actions.
+export_vars() {
+	local v
+	for v in "$@"; do
+		printf 'export %q\n' "$v"
+		if [ -n "${GITHUB_ENV:-}" ]; then
+			echo "$v" >>"$GITHUB_ENV"
+		fi
+	done
+}
