@@ -1,25 +1,35 @@
 // Command parity compares the rules that this package raises with the ones
 // raised by the reference validators, invoice by invoice: the KoSIT validator
-// with the XRechnung configuration, and Mustang. See ../README.md.
+// with the XRechnung configuration, and Mustang; and, for NLCIUS, the XSLT of
+// the schematrons of the Dutch Peppol Authority (NPa). See ../README.md.
 //
-//	parity stage -corpus DIR -kosit DIR -work DIR
+//	parity stage -corpus DIR -kosit DIR -work DIR [-nl DIR -nl-tests DIR -repo DIR -nl-variants DIR]
 //	parity compare -work DIR [-known known.txt] [-md report.md] [-json report.json]
 //
 // stage copies the invoices of the ZUGFeRD corpus and of the KoSIT test suite
 // into DIR/in under short unique names (0001.xml, 0002.pdf…), lists them in
 // DIR/index.tsv with their origin, and writes the lists of files to give to
 // each validator (DIR/kosit.list: the XML files, DIR/mustang.list: all).
+// With -nl, it adds the NLCIUS invoices: the SimplerInvoicing test files
+// (-nl-tests), the NLCIUS invoices of the repository (-repo) and the
+// variants of the mutation tests (-nl-variants), which only the NPa XSLT
+// receive, each with the stylesheet a validator picks for it
+// (DIR/npa.list).
 //
 // compare reads the reports that the validators wrote in DIR/kosit
-// (0001-report.xml) and DIR/mustang (0001.xml.xml), validates each invoice
-// with this package, and compares the rules raised as errors. A difference
-// that known.txt does not justify makes the command exit with status 1.
+// (0001-report.xml), DIR/mustang (0001.xml.xml) and DIR/npa (0001.xml.svrl),
+// validates each invoice with this package, and compares the rules raised as
+// errors, and also as warnings for the NPa XSLT. It lists the assertions of
+// the NLCIUS patterns that no invoice makes fail. A difference, or an
+// assertion that never fails, that known.txt does not justify makes the
+// command exit with status 1.
 package main
 
 import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 func main() {
@@ -33,11 +43,22 @@ func main() {
 		corpus := fs.String("corpus", "", "clone of ZUGFeRD/corpus")
 		kosit := fs.String("kosit", "", "clone of itplr-kosit/xrechnung-testsuite")
 		work := fs.String("work", "", "work directory")
+		var nl nlInputs
+		fs.StringVar(&nl.npa, "nl", "", "clone of peppolautoriteit-nl/validation (FX_NL)")
+		fs.StringVar(&nl.tests, "nl-tests", "", "SimplerInvoicing test files of phive-rules (FX_NL_TESTS)")
+		fs.StringVar(&nl.repo, "repo", "", "root of this repository")
+		fs.StringVar(&nl.variants, "nl-variants", "", "documents of the mutation cases of internal/rules/nl")
 		fs.Parse(os.Args[2:])
-		if *corpus == "" || *kosit == "" || *work == "" {
+		if *corpus == "" || *kosit == "" || *work == "" ||
+			nl.npa != "" && (nl.tests == "" || nl.repo == "" || nl.variants == "") {
 			usage()
 		}
-		err = stage(*corpus, *kosit, *work)
+		if nl.npa != "" {
+			if nl.npa, err = filepath.Abs(nl.npa); err != nil {
+				break
+			}
+		}
+		err = stage(*corpus, *kosit, *work, nl)
 	case "compare":
 		fs := flag.NewFlagSet("compare", flag.ExitOnError)
 		work := fs.String("work", "", "work directory")
@@ -64,7 +85,7 @@ func main() {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage:
-  parity stage -corpus DIR -kosit DIR -work DIR
+  parity stage -corpus DIR -kosit DIR -work DIR [-nl DIR -nl-tests DIR -repo DIR -nl-variants DIR]
   parity compare -work DIR [-known known.txt] [-md report.md] [-json report.json]`)
 	os.Exit(2)
 }

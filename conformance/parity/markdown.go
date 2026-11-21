@@ -29,32 +29,41 @@ func sameError(c comparison) bool {
 	return false
 }
 
-// level gives, for a difference, the level at which the other side raises
-// the rule (or its equivalent) when it raises it as a warning or an
-// information: "+CII-SR-465" → "`+CII-SR-465` (warning)".
+// level gives a difference with the levels at which each side raises the
+// rule (or its equivalent), this package first, "—" for a rule not raised,
+// unless one side raises it as an error and the other not at all:
+// "+CII-SR-465" → "`+CII-SR-465` (error / warning)".
 func level(c comparison, d string) string {
+	if d == "" || (d[0] != '+' && d[0] != '-') {
+		return "`" + d + "`"
+	}
 	rule := d[1:]
-	var other string
-	switch d[0] {
-	case '+':
+	var mine, ref string
+	if d[0] == '+' {
+		mine = c.Ours.Rules[rule]
 		for r, l := range c.Ref.Rules {
-			if same(r, rule) {
-				other = l
+			if same(r, rule) && rank(l) > rank(ref) {
+				ref = l
 			}
 		}
-	case '-':
+	} else {
+		ref = c.Ref.Rules[rule]
 		for m, l := range c.Ours.Rules {
-			if same(rule, m) {
-				other = l
+			if same(rule, m) && rank(l) > rank(mine) {
+				mine = l
 			}
 		}
-	default:
+	}
+	if mine == levelError && ref == "" || mine == "" && ref == levelError {
 		return "`" + d + "`"
 	}
-	if other == "" {
-		return "`" + d + "`"
+	dash := func(l string) string {
+		if l == "" {
+			return "—"
+		}
+		return l
 	}
-	return fmt.Sprintf("`%s` (%s)", d, other)
+	return fmt.Sprintf("`%s` (%s / %s)", d, dash(mine), dash(ref))
 }
 
 func cell(rules []string) string {
@@ -64,9 +73,9 @@ func cell(rules []string) string {
 	return "`" + strings.Join(rules, "` `") + "`"
 }
 
-func markdown(all []comparison, unused []string) string {
+func markdown(all []comparison, never []neverFired, unused []string) string {
 	var b strings.Builder
-	b.WriteString("| Référence | Factures comparées | Mêmes erreurs | Écarts justifiés | Écarts inattendus | Même verdict |\n|---|---|---|---|---|---|\n")
+	b.WriteString("| Référence | Factures comparées | Mêmes règles | Écarts justifiés | Écarts inattendus | Même verdict |\n|---|---|---|---|---|---|\n")
 	for _, ref := range references {
 		var n, same, known, unexpected, verdict int
 		for _, c := range all {
@@ -88,7 +97,8 @@ func markdown(all []comparison, unused []string) string {
 		}
 		fmt.Fprintf(&b, "| %s | %d | %d | %d | %d | %d |\n", ref.Title, n, same, known, unexpected, verdict)
 	}
-	b.WriteString("\nPour chaque facture, les règles levées en erreur de part et d'autre sont comparées : celles des schematrons officiels (EN 16931, Factur-X, XRechnung, Peppol), sous leur identifiant ou, pour les listes de codes des schematrons Factur-X, sous celui de la règle CEN équivalente, et la présence d'erreurs de schéma XSD (`SCHEMA`). Le verdict est valide quand aucune de ces règles n'est en erreur.\n")
+	b.WriteString("\nPour chaque facture, les règles levées en erreur de part et d'autre sont comparées : celles des schematrons officiels (EN 16931, Factur-X, XRechnung, Peppol), sous leur identifiant ou, pour les listes de codes des schematrons Factur-X, sous celui de la règle CEN équivalente, et la présence d'erreurs de schéma XSD (`SCHEMA`). Avec les XSLT de la NPa, les règles levées en avertissement le sont aussi (voir plus bas). Le verdict est valide quand aucune de ces règles n'est en erreur.\n")
+	npaSection(&b, all, never)
 
 	// Negative cases: one line per invoice, one column per reference.
 	type neg struct {
@@ -159,7 +169,7 @@ func markdown(all []comparison, unused []string) string {
 			unexpectedLines = append(unexpectedLines, fmt.Sprintf("| %s | `%s` | %s |", c.Reference, strings.TrimPrefix(c.Invoice, "corpus/"), strings.Join(ds, " ")))
 		}
 	}
-	const legend = "`+` : erreur levée par ZeRechnung seul ; `-` : erreur levée par la référence seule ; entre parenthèses, le niveau auquel l'autre côté lève la règle quand ce n'est pas une erreur.\n\n"
+	const legend = "`+` : règle levée par ZeRechnung seul, ou à un niveau plus élevé ; `-` : par la référence seule, ou à un niveau plus élevé ; entre parenthèses, les niveaux chez ZeRechnung puis chez la référence (— : règle non levée), sauf pour une erreur d'un côté et rien de l'autre.\n\n"
 	if len(knownLines) > 0 {
 		b.WriteString("\n### Écarts justifiés\n\n" + legend + "| Référence | Facture | Écart | Raison |\n|---|---|---|---|\n")
 		b.WriteString(strings.Join(knownLines, "\n") + "\n")
@@ -175,4 +185,47 @@ func markdown(all []comparison, unused []string) string {
 		}
 	}
 	return b.String()
+}
+
+// npaSection writes the part of the report on the NPa XSLT: the invoices,
+// the transformations stopped on a dynamic error, and the NLCIUS assertions
+// that never fail.
+func npaSection(b *strings.Builder, all []comparison, never []neverFired) {
+	var tests, repo, variants int
+	var stopped []string
+	for _, c := range all {
+		if c.Reference != "npa" {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(c.Invoice, "nl/simplerinvoicing/"):
+			tests++
+		case strings.HasPrefix(c.Invoice, "nl/zerechnung/"):
+			repo++
+		default:
+			variants++
+		}
+		if c.Ref.Stopped != "" {
+			stopped = append(stopped, fmt.Sprintf("| `%s` | %s |", strings.TrimPrefix(c.Invoice, "nl/"), c.Ref.Stopped))
+		}
+	}
+	if tests+repo+variants == 0 {
+		return
+	}
+	fmt.Fprintf(b, "\n### NLCIUS : XSLT de la NPa\n\nSaxon applique à chaque facture la XSLT qu'un validateur choisit : NLCIUS-CII pour une facture CII, SI-UBL 2.0 pour une facture UBL, ou son extension G-rekening quand le `cbc:CustomizationID` la déclare. Factures : %d fichiers de test SimplerInvoicing (SI-UBL 2.0.3.2, NLCIUS-CII 1.0.3, G-rekening 1.0), %d factures NLCIUS du dépôt et %d variantes, les documents des tests de mutation de `internal/rules/nl`.\n\n", tests, repo, variants)
+	b.WriteString("Les règles levées en erreur et en avertissement sont comparées sous leur identifiant : celles des motifs NLCIUS (BR-NL, BR-GA, SI-V20-INV-R000, BII2-T10-R001, contrôle des éléments vides) et les règles EN 16931 que chaque XSLT inclut (CEN 1.3.16). ZeRechnung valide avec les règles néerlandaises (`validate.Netherlands`) ; ses constats de schéma XSD, de profil Factur-X et Peppol, que les XSLT n'ont pas, restent hors de la comparaison.\n")
+	if len(stopped) > 0 {
+		b.WriteString("\nArrêts sur erreur dynamique : la transformation s'arrête, et seule l'assertion qui l'a levée est comparée ; ZeRechnung la tient pour échouée.\n\n| Facture | Arrêt |\n|---|---|\n")
+		b.WriteString(strings.Join(stopped, "\n") + "\n")
+	}
+	if len(never) > 0 {
+		b.WriteString("\nAssertions des motifs NLCIUS qu'aucune facture ne fait échouer :\n\n| Syntaxe / motif | Assertion | Niveau | Message | Justification |\n|---|---|---|---|---|\n")
+		for _, n := range never {
+			why := n.Known
+			if why == "" {
+				why = "**non justifiée**"
+			}
+			fmt.Fprintf(b, "| %s | `%s` | %s | %s | %s |\n", n.where(), n.ID, n.Flag, clip(n.Message), why)
+		}
+	}
 }

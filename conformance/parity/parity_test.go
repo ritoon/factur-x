@@ -1,9 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -135,14 +137,14 @@ func TestKnownAndDiff(t *testing.T) {
 	// rule (FX-SCH-A-000571, BR-CL-25), and FX-PROFILE an equivalent only.
 	mine := map[string]string{schemaToken: levelError, "BR-CO-10": levelError, "BR-CO-11": levelInfo, "BR-CL-25": levelError, "FX-PROFILE-02": levelError, "BR-CL-23": levelWarning}
 	ref := map[string]string{"BR-CO-11": levelError, "BR-CO-12": levelWarning, "FX-SCH-A-000571": levelError, "FX-SCH-A-000636": levelError, "FX-SCH-A-000613": levelError}
-	got := diff(mine, ref)
+	got := diff(mine, result{Rules: ref}, false)
 	if want := []string{"+BR-CO-10", "+SCHEMA", "-BR-CO-11", "-FX-SCH-A-000613"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("diff = %q, want %q", got, want)
 	}
 	c := comparison{Ours: result{Rules: mine}, Ref: result{Rules: ref}}
 	for d, want := range map[string]string{
-		"-FX-SCH-A-000613": "`-FX-SCH-A-000613` (warning)",
-		"-BR-CO-11":        "`-BR-CO-11` (info)",
+		"-FX-SCH-A-000613": "`-FX-SCH-A-000613` (warning / error)",
+		"-BR-CO-11":        "`-BR-CO-11` (info / error)",
 		"+BR-CO-10":        "`+BR-CO-10`",
 	} {
 		if got := level(c, d); got != want {
@@ -193,7 +195,7 @@ func TestStage(t *testing.T) {
 	write(corpus, "ZUGFeRDv2/fail/notes.txt", "x")
 	write(corpus, "ZUGFeRDv1/correct/d.pdf", "%PDF")
 	write(kosit, "src/test/business-cases/standard/01.01a-INVOICE_ubl.xml", "<e/>")
-	if err := stage(corpus, kosit, work); err != nil {
+	if err := stage(corpus, kosit, work, nlInputs{}); err != nil {
 		t.Fatal(err)
 	}
 	entries, err := readIndex(work)
@@ -218,5 +220,323 @@ func TestStage(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(filepath.Join(work, "in", "0002.xml")); string(b) != "<c/>" {
 		t.Errorf("staged copy = %q", b)
+	}
+}
+
+func TestNPaStylesheet(t *testing.T) {
+	const (
+		inv = `<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">`
+		ga  = "urn:cen.eu:en16931:2017#compliant#urn:fdc:nen.nl:nlcius:v1.0" + gaccountMarker
+	)
+	for _, tc := range []struct{ doc, want string }{
+		{`<rsm:CrossIndustryInvoice xmlns:rsm="` + nsCII + `"/>`, xslCII},
+		{inv + `<cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:fdc:nen.nl:nlcius:v1.0</cbc:CustomizationID></Invoice>`, xslUBL},
+		{inv + `<cbc:CustomizationID>` + ga + `</cbc:CustomizationID></Invoice>`, xslGAccount},
+		{inv + `<x><cbc:CustomizationID>` + ga + `</cbc:CustomizationID></x><cbc:CustomizationID>other</cbc:CustomizationID></Invoice>`, xslUBL},
+		{inv + `</Invoice>`, xslUBL},
+		{`<CreditNote xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"/>`, xslUBL},
+		{`<Order xmlns="urn:oasis:names:specification:ubl:schema:xsd:Order-2"/>`, ""},
+		{`<rsm:CrossIndustryDocument xmlns:rsm="urn:x"/>`, ""},
+		{`not XML`, ""},
+	} {
+		if got := npaStylesheet([]byte(tc.doc)); got != tc.want {
+			t.Errorf("%.60s: %q, want %q", tc.doc, got, tc.want)
+		}
+	}
+	if syntaxOf("/x/"+xslCII) != "cii" || syntaxOf(xslGAccount) != "ubl" {
+		t.Error("syntaxOf")
+	}
+}
+
+// testXSL is an XSLT in the form of the ISO skeleton: a pattern of EN 16931,
+// and a pattern nlcius of two rules, the second of two assertions (one
+// without id) on one line each.
+const testXSL = `<?xml version="1.0" encoding="UTF-8"?>
+<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:svrl="http://purl.oclc.org/dsdl/svrl" version="2.0">
+   <!--PATTERN EN16931-model-->
+   <xsl:template match="/Invoice"
+                 mode="M1">
+      <xsl:choose>
+         <xsl:when test="xs:decimal(Amount) &gt; 0"/>
+         <xsl:otherwise>
+            <svrl:failed-assert test="x">
+               <xsl:attribute name="id">BR-CO-16</xsl:attribute>
+               <xsl:attribute name="flag">fatal</xsl:attribute>
+               <svrl:text>[BR-CO-16]-Amount due.</svrl:text>
+            </svrl:failed-assert>
+         </xsl:otherwise>
+      </xsl:choose>
+   </xsl:template>
+   <!--PATTERN nlcius-->
+   <xsl:template match="TypeCode[$si]"
+                 mode="M2">
+      <xsl:choose>
+         <xsl:when test=". = 380"/>
+         <xsl:otherwise>
+            <svrl:failed-assert test=". = 380">
+               <xsl:attribute name="id">BR-NL-7</xsl:attribute>
+               <xsl:attribute name="flag">fatal</xsl:attribute>
+               <xsl:attribute name="location"><xsl:apply-templates select="." mode="path"/></xsl:attribute>
+               <svrl:text>[BR-NL-7] The type
+                  code.</svrl:text>
+            </svrl:failed-assert>
+         </xsl:otherwise>
+      </xsl:choose>
+   </xsl:template>
+   <xsl:template match="Note" mode="M2">
+      <xsl:choose>
+         <xsl:when test="false()"/>
+         <xsl:otherwise>
+            <svrl:failed-assert test="false()">
+               <xsl:attribute name="flag">warning</xsl:attribute>
+               <svrl:text>[BR-NL-34] A note.</svrl:text>
+            </svrl:failed-assert>
+         </xsl:otherwise>
+      </xsl:choose>
+      <xsl:if test="@x">
+         <svrl:successful-report test="@x">
+            <xsl:attribute name="id">BR-NL-99</xsl:attribute>
+            <svrl:text>Reported.</svrl:text>
+         </svrl:successful-report>
+      </xsl:if>
+   </xsl:template>
+</xsl:stylesheet>
+`
+
+func TestIndexXSL(t *testing.T) {
+	file := filepath.Join(t.TempDir(), xslCII)
+	os.WriteFile(file, []byte(testXSL), 0o644)
+	idx, err := indexXSL(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, a := range idx.asserts {
+		got = append(got, fmt.Sprintf("%s %s %s %s %d-%d", a.Pattern, a.ID, a.Flag, a.Message, a.from, a.to))
+	}
+	want := []string{
+		"EN16931-model BR-CO-16 fatal [BR-CO-16]-Amount due. 7-7",
+		"nlcius BR-NL-7 fatal [BR-NL-7] The type code. 21-21",
+		"nlcius BR-NL-34 warning [BR-NL-34] A note. 35-35",
+		"nlcius BR-NL-99  Reported. 43-43",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("assertions:\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	// The template of the rule Note holds two assertions: its lines locate
+	// none.
+	for line, want := range map[int]string{7: "BR-CO-16", 4: "BR-CO-16", 5: "BR-CO-16", 21: "BR-NL-7", 19: "BR-NL-7", 18: "BR-NL-7", 35: "BR-NL-34", 43: "BR-NL-99", 33: "", 34: "", 8: ""} {
+		a, ok := idx.at(line)
+		if a.ID != want || ok != (want != "") {
+			t.Errorf("at(%d) = %s, %v, want %s", line, a.ID, ok, want)
+		}
+	}
+	if _, err := indexXSL(filepath.Join(t.TempDir(), "none.xsl")); err == nil {
+		t.Error("missing file: no error")
+	}
+}
+
+func TestParseSVRL(t *testing.T) {
+	svrl := `<svrl:schematron-output xmlns:svrl="http://purl.oclc.org/dsdl/svrl">
+  <svrl:active-pattern id="nlcius"/>
+  <svrl:fired-rule context="TypeCode"/>
+  <svrl:failed-assert test=". = 380" id="BR-NL-7" flag="fatal" location="/a"><svrl:text>[BR-NL-7] The type
+     code.</svrl:text></svrl:failed-assert>
+  <svrl:failed-assert test="false()" flag="warning" location="/b"><svrl:text>[BR-NL-34] A note.</svrl:text></svrl:failed-assert>
+  <svrl:successful-report test="@x" id="BR-NL-99" location="/c"><svrl:text>Reported.</svrl:text></svrl:successful-report>
+</svrl:schematron-output>`
+	rep, err := parseSVRL([]byte(svrl))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []svrlFinding{{"BR-NL-7", "fatal", "[BR-NL-7] The type code."}, {"BR-NL-34", "warning", "[BR-NL-34] A note."}, {"BR-NL-99", "", "Reported."}}
+	if !reflect.DeepEqual(rep.findings, want) || rep.errCode != "" {
+		t.Errorf("findings = %q", rep.findings)
+	}
+	rep, err = parseSVRL([]byte(`<error code="FORG0001" line="21">Cannot convert "38O"</error>`))
+	if err != nil || rep.errCode != "FORG0001" || rep.errLine != 21 || rep.errMsg != `Cannot convert "38O"` {
+		t.Errorf("error report: %+v, %v", rep, err)
+	}
+	if _, err := parseSVRL([]byte(`<rep:report xmlns:rep="x"/>`)); err == nil {
+		t.Error("not an SVRL report: no error")
+	}
+	if assertionID("", "no bracket") != "" || assertionID("", "[SI-INV-R000]-This") != "SI-INV-R000" || assertionID("A", "[B] x") != "A" {
+		t.Error("assertionID")
+	}
+	for flag, want := range map[string]string{"fatal": levelError, "warning": levelWarning, "information": levelInfo} {
+		if got := flagLevel(flag); got != want {
+			t.Errorf("flagLevel(%s) = %s", flag, got)
+		}
+	}
+}
+
+func TestDiffLevels(t *testing.T) {
+	mine := map[string]string{"BR-NL-19": levelWarning, "BR-NL-2": levelError, "BR-NL-3": levelWarning, "BR-CO-10": levelError}
+	ref := result{Rules: map[string]string{"BR-NL-2": levelError, "BR-NL-3": levelError, "BR-NL-20": levelWarning, "BR-CO-10": levelError}}
+	got := diff(mine, ref, true)
+	if want := []string{"+BR-NL-19", "-BR-NL-20", "-BR-NL-3"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("diff = %q, want %q", got, want)
+	}
+	c := comparison{Ours: result{Rules: mine}, Ref: ref}
+	for d, want := range map[string]string{
+		"+BR-NL-19": "`+BR-NL-19` (warning / —)",
+		"-BR-NL-20": "`-BR-NL-20` (— / warning)",
+		"-BR-NL-3":  "`-BR-NL-3` (warning / error)",
+		"!npa: x":   "`!npa: x`",
+	} {
+		if got := level(c, d); got != want {
+			t.Errorf("level(%s) = %s, want %s", d, got, want)
+		}
+	}
+	// A reference stopped on a dynamic error: its assertion only.
+	stopped := result{Rules: map[string]string{"BR-CO-16": levelError}, Stopped: "FORG0001"}
+	if got := diff(mine, stopped, true); !reflect.DeepEqual(got, []string{"-BR-CO-16"}) {
+		t.Errorf("stopped: %q", got)
+	}
+	if got := diff(map[string]string{"BR-CO-16": levelError, "BR-NL-7": levelError}, stopped, true); len(got) != 0 {
+		t.Errorf("stopped, raised: %q", got)
+	}
+}
+
+// TestNPaRun compares a run of the test XSLT: reports, a dynamic error, and
+// the assertions of the nlcius pattern that never fail.
+func TestNPaRun(t *testing.T) {
+	dir := t.TempDir()
+	xsl := filepath.Join(dir, xslCII)
+	os.WriteFile(xsl, []byte(testXSL), 0o644)
+	os.MkdirAll(filepath.Join(dir, "npa"), 0o755)
+	os.WriteFile(filepath.Join(dir, "npa.list"), []byte(xsl+"\t"+filepath.Join(dir, "in", "0001.xml")+"\n"+xsl+"\t"+filepath.Join(dir, "in", "0002.xml")+"\n"), 0o644)
+	run, err := newNPaRun(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := run.result(entry{Name: "0001.xml"}, []byte(`<svrl:schematron-output xmlns:svrl="http://purl.oclc.org/dsdl/svrl">
+<svrl:failed-assert id="BR-CO-16" flag="fatal"><svrl:text>[BR-CO-16]-Amount due.</svrl:text></svrl:failed-assert>
+<svrl:failed-assert flag="warning"><svrl:text>[BR-NL-34] A note.</svrl:text></svrl:failed-assert>
+</svrl:schematron-output>`))
+	if want := map[string]string{"BR-CO-16": levelError, "BR-NL-34": levelWarning}; err != nil || !reflect.DeepEqual(r.Rules, want) || r.Note != xslCII {
+		t.Errorf("0001: %+v, %v", r, err)
+	}
+	r, err = run.result(entry{Name: "0002.xml"}, []byte(`<error code="FORG0001" line="19">Cannot convert</error>`))
+	if err != nil || !reflect.DeepEqual(r.Rules, map[string]string{"BR-NL-7": levelError}) || !strings.HasPrefix(r.Stopped, "FORG0001 in the test of BR-NL-7") {
+		t.Errorf("0002: %+v, %v", r, err)
+	}
+	r, err = run.result(entry{Name: "0002.xml"}, []byte(`<error code="XTDE0000" line="33">Unknown</error>`))
+	if err != nil || r.Failure == "" || len(r.Rules) != 0 {
+		t.Errorf("unlocated error: %+v, %v", r, err)
+	}
+	if _, err := run.result(entry{Name: "0003.xml"}, nil); err == nil {
+		t.Error("invoice not in npa.list: no error")
+	}
+	never := run.neverFired()
+	if len(never) != 1 || never[0].ID != "BR-NL-99" || never[0].where() != "cii/nlcius" {
+		t.Errorf("never fired = %+v", never)
+	}
+
+	// No npa.list: no NLCIUS comparison.
+	run, err = newNPaRun(t.TempDir())
+	if err != nil || len(run.neverFired()) != 0 {
+		t.Errorf("no npa.list: %+v, %v", run, err)
+	}
+}
+
+func TestKnownNeverFired(t *testing.T) {
+	name := filepath.Join(t.TempDir(), "known.txt")
+	os.WriteFile(name, []byte("npa ubl/nlcius ~BR-NL-32-* never applies\n"), 0o644)
+	known, err := readKnown(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := neverFired{Syntax: "ubl", Pattern: "nlcius", ID: "BR-NL-32-2"}
+	if !known[0].match("npa", n.where(), "~"+n.ID) || known[0].match("npa", "cii/nlcius", "~"+n.ID) || known[0].match("npa", n.where(), "-"+n.ID) {
+		t.Error("~ line does not match as it should")
+	}
+}
+
+// TestOursNL runs the package on the NLCIUS invoices of the repository,
+// which give no finding, and on an invoice without buyer reference.
+func TestOursNL(t *testing.T) {
+	for _, f := range []string{"nlcius.xml", "nlcius.ubl.xml", "gaccount.ubl.xml"} {
+		data, err := os.ReadFile(filepath.Join("../../internal/rules/nl/testdata", f))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r := oursNL(f, data); len(r.Rules) != 0 || r.Failure != "" {
+			t.Errorf("%s: %+v", f, r)
+		}
+		if f == "nlcius.ubl.xml" {
+			bad := strings.Replace(string(data), "<cbc:BuyerReference>", "<cbc:Note/><cbc:BuyerReference>", 1)
+			if r := oursNL(f, []byte(bad)); r.Rules["SI-UBL-2"] != levelWarning {
+				t.Errorf("%s with an empty note: %+v", f, r)
+			}
+		}
+	}
+}
+
+func TestStageNL(t *testing.T) {
+	corpus, kosit, work := t.TempDir(), t.TempDir(), t.TempDir()
+	tests, repo, variants, npaDir := t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()
+	write := func(root, name, content string) {
+		p := filepath.Join(root, name)
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		os.WriteFile(p, []byte(content), 0o644)
+	}
+	for _, d := range corpusDirs {
+		os.MkdirAll(filepath.Join(corpus, d), 0o755)
+	}
+	os.MkdirAll(filepath.Join(kosit, "src/test"), 0o755)
+	cii := `<rsm:CrossIndustryInvoice xmlns:rsm="` + nsCII + `"/>`
+	ubl := `<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"/>`
+	write(corpus, "XML-Rechnung/CII/a.cii.xml", cii)
+	write(tests, "SI-UBL-2.0.3.2/SI-UBL-2.0_ok_base.xml", ubl)
+	write(tests, "SI-UBL-2.0.3.2/README", "x")
+	write(tests, "SI-UBL-1.2/old.xml", ubl)
+	write(tests, "NLCIUS-CII-1.0.3/NLCIUS-CII_ok_example.xml", cii)
+	os.MkdirAll(filepath.Join(tests, "si-ubl-2.0-ext-gaccount-1.0"), 0o755)
+	write(repo, "internal/rules/nl/testdata/nlcius.xml", cii)
+	write(variants, "ubl-001-x.xml", ubl)
+	nl := nlInputs{npa: npaDir, tests: tests, repo: repo, variants: variants}
+	if err := stage(corpus, kosit, work, nl); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := readIndex(work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []entry{
+		{"0001.xml", "corpus/XML-Rechnung/CII/a.cii.xml"},
+		{"0002.xml", "nl/simplerinvoicing/NLCIUS-CII-1.0.3/NLCIUS-CII_ok_example.xml"},
+		{"0003.xml", "nl/simplerinvoicing/SI-UBL-2.0.3.2/SI-UBL-2.0_ok_base.xml"},
+		{"0004.xml", "nl/variants/ubl-001-x.xml"},
+		{"0005.xml", "nl/zerechnung/internal/rules/nl/testdata/nlcius.xml"},
+	}
+	if !reflect.DeepEqual(entries, want) {
+		t.Errorf("entries = %q", entries)
+	}
+	if entries[0].nl() || !entries[1].nl() {
+		t.Error("nl() is wrong")
+	}
+	list, _ := os.ReadFile(filepath.Join(work, "npa.list"))
+	lines := strings.Split(strings.TrimSpace(string(list)), "\n")
+	if len(lines) != 4 || !strings.HasPrefix(lines[0], filepath.Join(npaDir, "xsl", xslCII)+"\t") ||
+		!strings.HasPrefix(lines[1], filepath.Join(npaDir, "xsl", xslUBL)+"\t") || !strings.HasSuffix(lines[3], "0005.xml") {
+		t.Errorf("npa.list:\n%s", list)
+	}
+	for _, l := range []string{"kosit.list", "mustang.list"} {
+		if b, _ := os.ReadFile(filepath.Join(work, l)); strings.Count(string(b), "\n") != 1 {
+			t.Errorf("%s:\n%s", l, b)
+		}
+	}
+
+	write(variants, "bad.xml", "<Order/>")
+	if err := stage(corpus, kosit, work, nl); err == nil {
+		t.Error("a variant that is not an invoice: no error")
+	}
+}
+
+func TestSlices(t *testing.T) {
+	m := map[string]bool{"b": true, "a": false}
+	if got := sortedRules(m); !slices.Equal(got, []string{"a", "b"}) {
+		t.Errorf("sortedRules = %q", got)
 	}
 }

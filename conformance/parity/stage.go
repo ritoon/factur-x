@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -37,16 +38,38 @@ func (e entry) negative() bool {
 	return strings.Contains(e.Source, "/fail/") || strings.Contains(path.Base(e.Source), "not_validating")
 }
 
-func stage(corpus, kosit, work string) error {
+// nl reports whether the invoice is one of the NLCIUS comparison, which only
+// the NPa XSLT receive.
+func (e entry) nl() bool { return strings.HasPrefix(e.Source, "nl/") }
+
+// nlTestDirs are the directories of the SimplerInvoicing test files (FX_NL_TESTS)
+// for the versions of the NPa artefacts: SI-UBL 2.0.3, NLCIUS-CII 1.0.3 and
+// the G-account extension 1.0.
+var nlTestDirs = []string{"SI-UBL-2.0.3.2", "NLCIUS-CII-1.0.3", "si-ubl-2.0-ext-gaccount-1.0"}
+
+// nlInputs are the inputs of the NLCIUS comparison. The invoices are staged
+// under the origins nl/simplerinvoicing/<dir>/<file>, nl/zerechnung/<path>
+// and nl/variants/<file>.
+type nlInputs struct {
+	npa      string // FX_NL: checkout of peppolautoriteit-nl/validation, whose xsl directory holds the XSLT
+	tests    string // FX_NL_TESTS: the SimplerInvoicing test files of phive-rules
+	repo     string // root of this repository, whose internal/rules/nl/testdata holds the NLCIUS invoices
+	variants string // documents of the mutation cases of internal/rules/nl (go test -variants)
+}
+
+func stage(corpus, kosit, work string, nl nlInputs) error {
 	var sources []string // origin
 	files := map[string]string{}
-	add := func(root, prefix, dir string) error {
+	add := func(root, prefix, dir string, exts ...string) error {
+		if len(exts) == 0 {
+			exts = []string{".xml", ".pdf"}
+		}
 		return filepath.WalkDir(filepath.Join(root, dir), func(p string, d fs.DirEntry, err error) error {
 			if err != nil || d.IsDir() {
 				return err
 			}
 			ext := strings.ToLower(filepath.Ext(p))
-			if ext != ".xml" && ext != ".pdf" {
+			if !slices.Contains(exts, ext) {
 				return nil
 			}
 			rel, err := filepath.Rel(root, p)
@@ -67,6 +90,19 @@ func stage(corpus, kosit, work string) error {
 	if err := add(kosit, "kosit", "src/test"); err != nil {
 		return err
 	}
+	if nl.npa != "" {
+		for _, d := range nlTestDirs {
+			if err := add(nl.tests, "nl/simplerinvoicing", d, ".xml"); err != nil {
+				return err
+			}
+		}
+		if err := add(nl.repo, "nl/zerechnung", "internal/rules/nl/testdata", ".xml"); err != nil {
+			return err
+		}
+		if err := add(nl.variants, "nl/variants", ".", ".xml"); err != nil {
+			return err
+		}
+	}
 	sort.Strings(sources)
 
 	in := filepath.Join(work, "in")
@@ -76,7 +112,8 @@ func stage(corpus, kosit, work string) error {
 	if err := os.MkdirAll(in, 0o755); err != nil {
 		return err
 	}
-	var index, kositList, mustangList strings.Builder
+	var index, kositList, mustangList, npaList strings.Builder
+	nlFiles := 0
 	for i, src := range sources {
 		ext := strings.ToLower(filepath.Ext(src))
 		e := entry{Name: fmt.Sprintf("%04d%s", i+1, ext), Source: src}
@@ -93,17 +130,27 @@ func stage(corpus, kosit, work string) error {
 		if err != nil {
 			return err
 		}
-		if !e.isPDF() {
+		switch {
+		case e.nl():
+			xsl := npaStylesheet(data)
+			if xsl == "" {
+				return fmt.Errorf("%s: neither a CII nor a UBL invoice", src)
+			}
+			fmt.Fprintf(&npaList, "%s\t%s\n", filepath.Join(nl.npa, "xsl", xsl), abs)
+			nlFiles++
+		case e.isPDF():
+			fmt.Fprintln(&mustangList, abs)
+		default:
 			fmt.Fprintln(&kositList, abs)
+			fmt.Fprintln(&mustangList, abs)
 		}
-		fmt.Fprintln(&mustangList, abs)
 	}
-	for name, s := range map[string]string{"index.tsv": index.String(), "kosit.list": kositList.String(), "mustang.list": mustangList.String()} {
+	for name, s := range map[string]string{"index.tsv": index.String(), "kosit.list": kositList.String(), "mustang.list": mustangList.String(), "npa.list": npaList.String()} {
 		if err := os.WriteFile(filepath.Join(work, name), []byte(s), 0o644); err != nil {
 			return err
 		}
 	}
-	fmt.Printf("%d invoices staged in %s\n", len(sources), in)
+	fmt.Printf("%d invoices staged in %s, %d of them for the NPa XSLT\n", len(sources), in, nlFiles)
 	return nil
 }
 
