@@ -2,7 +2,8 @@
 // schema of their Factur-X profile, the EN 16931 business rules, the
 // Factur-X profile rules, and optionally the French (BR-FR) and German
 // (BR-DE) rules, the profiles that France and Germany admit, the checks of
-// Chorus Pro for French B2G invoices, and the Peppol BIS Billing 3.0 rules.
+// Chorus Pro for French B2G invoices, the Peppol BIS Billing 3.0 rules and
+// the Dutch rules of NLCIUS (BR-NL).
 //
 // The syntax is detected from the root element. A UBL 2.1 Invoice or
 // CreditNote is checked against the OASIS UBL 2.1 XML schema of its document
@@ -11,9 +12,9 @@
 // artefacts: the business rules and code lists, and the UBL syntax rules
 // UBL-CR, UBL-SR and UBL-DT. The Factur-X profile rules, which are CII
 // rules, do not apply. The French rules implement the UBL schematron of
-// BR-FR (Flux 2), the German rules the XRechnung UBL schematron and the
-// Peppol rules the UBL schematron of Peppol BIS Billing 3.0, on the UBL
-// document itself, with their own rule identifiers, contexts and messages
+// BR-FR (Flux 2), the German rules the XRechnung UBL schematron, the
+// Peppol rules the UBL schematron of Peppol BIS Billing 3.0 and the Dutch
+// rules the SI-UBL 2.0 schematron, on the UBL document itself, with their own rule identifiers, contexts and messages
 // (see the UBLCatalog of each package). The Chorus Pro rules run on a CII
 // view of the UBL document. All findings are located in the UBL document.
 //
@@ -49,6 +50,7 @@ import (
 	"github.com/ritoon/zerechnung/internal/rules/en16931"
 	"github.com/ritoon/zerechnung/internal/rules/facturx"
 	"github.com/ritoon/zerechnung/internal/rules/fr"
+	"github.com/ritoon/zerechnung/internal/rules/nl"
 	"github.com/ritoon/zerechnung/internal/rules/peppol"
 	"github.com/ritoon/zerechnung/internal/rules/ubl"
 	"github.com/ritoon/zerechnung/internal/schema"
@@ -86,6 +88,7 @@ const (
 
 	SourceChorusPro = rules.SourceChorusPro
 	SourcePeppol    = rules.SourcePeppol
+	SourceNL        = rules.SourceNL
 )
 
 // RuleSet selects groups of rules.
@@ -101,11 +104,13 @@ const (
 	GermanyProfile                     // profiles the BMF accepts as e-invoices (DE-PROFILE-01: not MINIMUM nor BASIC WL)
 	ChorusPro                          // French B2G checks for Chorus Pro (CPRO-*), see Options.PublicBuyer
 	Peppol                             // Peppol BIS Billing 3.0 rules (PEPPOL-*) and their national rules (NO, DK, IT, SE, NL; for UBL also GR, IS, DE)
+	Netherlands                        // Dutch rules of NLCIUS (BR-NL), and for UBL the SI-UBL 2.0 version check (SI-V20-INV-R000)
 
 	// Default is the set used when Options.Rules is zero: schema, EN 16931
 	// and profile rules. Whatever the rule sets, the German rules apply to
-	// XRECHNUNG invoices and the Peppol rules to invoices whose BT-24 is the
-	// Peppol BIS Billing 3.0 identifier (see RulesFor).
+	// XRECHNUNG invoices, the Peppol rules to invoices whose BT-24 is the
+	// Peppol BIS Billing 3.0 identifier and the Dutch rules to NLCIUS
+	// invoices (see RulesFor).
 	Default = Schema | EN16931 | FacturX
 )
 
@@ -114,17 +119,18 @@ type Options struct {
 	// Profile overrides the profile read from BT-24.
 	Profile invoice.Profile
 	// Rules selects the rule sets; zero means Default. The German rules for
-	// an XRECHNUNG invoice and the Peppol rules for a Peppol invoice are
-	// added whatever Rules: selecting other sets, such as Default | France,
-	// never drops them.
+	// an XRECHNUNG invoice, the Peppol rules for a Peppol invoice and the
+	// Dutch rules for an NLCIUS invoice are added whatever Rules: selecting
+	// other sets, such as Default | France, never drops them.
 	Rules RuleSet
 	// Auto adds the national rules of the seller's country (BT-40): the
 	// French rules (France) for a seller in France, the BMF profile check
-	// (GermanyProfile) for a seller in Germany. The German rules BR-DE and
-	// the Peppol rules need no option: they apply to XRECHNUNG and Peppol
-	// invoices, which declare themselves in BT-24. Auto never adds the
-	// Peppol rules otherwise: most Factur-X and ZUGFeRD invoices do not meet
-	// them (no electronic address, no buyer reference).
+	// (GermanyProfile) for a seller in Germany. The German rules BR-DE, the
+	// Peppol rules and the Dutch rules BR-NL need no option: they apply to
+	// XRECHNUNG, Peppol and NLCIUS invoices, which declare themselves in
+	// BT-24. Auto never adds the Peppol or the Dutch rules otherwise: most
+	// Factur-X and ZUGFeRD invoices do not meet them (no electronic address,
+	// no buyer reference).
 	Auto bool
 	// RejectBasicWL makes the French rules report the profile BASIC WL as an
 	// error (FR-PROFILE-03). The reform admits BASIC WL for now, and no end
@@ -233,12 +239,16 @@ func Tree(root *xmltree.Node, opts *Options) *Report {
 	// checked on the UBL document: the CII rules would give false findings
 	// on a CII view.
 	run(Peppol, SourcePeppol, peppol.Check)
+	// The Dutch rules of a UBL invoice are those of the SI-UBL 2.0
+	// schematron, also checked on the UBL document.
+	run(Netherlands, SourceNL, nl.Check)
 	return r
 }
 
 // RulesFor returns the rule sets that apply to doc with opts: opts.Rules
-// (Default when zero), plus the German rules for an XRECHNUNG invoice and
-// the Peppol rules for a Peppol invoice whatever opts.Rules, plus the
+// (Default when zero), plus the German rules for an XRECHNUNG invoice, the
+// Peppol rules for a Peppol invoice and the Dutch rules for an NLCIUS
+// invoice whatever opts.Rules, plus the
 // national rules of the seller's country with opts.Auto. The profile is the
 // one of doc, which Options.Profile overrides.
 func RulesFor(doc *rules.Doc, opts *Options) RuleSet {
@@ -251,6 +261,8 @@ func RulesFor(doc *rules.Doc, opts *Options) RuleSet {
 		set |= Germany
 	case invoice.ProfilePeppol:
 		set |= Peppol
+	case invoice.ProfileNLCIUS:
+		set |= Netherlands
 	}
 	if opts.Auto {
 		switch doc.Agreement.Value("SellerTradeParty/PostalTradeAddress/CountryID") {
@@ -264,8 +276,8 @@ func RulesFor(doc *rules.Doc, opts *Options) RuleSet {
 }
 
 // Catalog returns the rules implemented by the selected rule sets, for the
-// CII and the UBL syntax. A French or German rule of both syntaxes appears
-// once.
+// CII and the UBL syntax. A French, German, Peppol or Dutch rule of both
+// syntaxes appears once.
 func Catalog(set RuleSet) []RuleInfo {
 	var out []RuleInfo
 	add := func(s RuleSet, c []RuleInfo) {
@@ -289,6 +301,8 @@ func Catalog(set RuleSet) []RuleInfo {
 	add(ChorusPro, choruspro.Catalog)
 	add(Peppol, peppol.Catalog)
 	add(Peppol, newRules(peppol.UBLCatalog, peppol.Catalog))
+	add(Netherlands, nl.Catalog)
+	add(Netherlands, newRules(nl.UBLCatalog, nl.Catalog))
 	return out
 }
 

@@ -27,7 +27,7 @@ func TestZUGFeRD1(t *testing.T) {
 	for _, opts := range []*Options{
 		nil,
 		{Rules: Schema},
-		{Rules: Default | France | Germany | GermanyProfile | ChorusPro | Peppol},
+		{Rules: Default | France | Germany | GermanyProfile | ChorusPro | Peppol | Netherlands},
 		{Rules: EN16931 | FacturX},
 		{Auto: true, RejectBasicWL: true},
 	} {
@@ -135,7 +135,7 @@ func TestCatalogZUGFeRD1(t *testing.T) {
 	if got := ids(Catalog(Schema)); !slices.Equal(got, []string{ruleZF1Profile, ruleZF1Value, ruleZF1Mandatory, ruleZF1Scope}) {
 		t.Errorf("Catalog(Schema) ZF1 rules = %v", got)
 	}
-	if got := ids(Catalog(EN16931 | FacturX | France | Germany | Peppol)); got != nil {
+	if got := ids(Catalog(EN16931 | FacturX | France | Germany | Peppol | Netherlands)); got != nil {
 		t.Errorf("Catalog without Schema lists %v", got)
 	}
 }

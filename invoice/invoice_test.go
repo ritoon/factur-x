@@ -109,7 +109,7 @@ func TestProfile(t *testing.T) {
 		if got := ParseProfile(p.String()); got != p {
 			t.Errorf("ParseProfile(%q) = %s", p.String(), got)
 		}
-		if p != ProfileExtendedCTCFR && p != ProfilePeppol {
+		if p != ProfileExtendedCTCFR && p != ProfilePeppol && p != ProfileNLCIUS {
 			if got := ProfileFromConformanceLevel(p.ConformanceLevel()); got != p {
 				t.Errorf("ProfileFromConformanceLevel(%q) = %s", p.ConformanceLevel(), got)
 			}
@@ -120,12 +120,15 @@ func TestProfile(t *testing.T) {
 		"urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0#conformant#urn:xeinkauf.de:kosit:extension:xrechnung_3.0": ProfileXRechnung,
 		"urn:zugferd.de:2p0:basicwl": ProfileBasicWL,
 		" urn:cen.eu:en16931:2017 ":  ProfileEN16931,
-		"urn:cen.eu:en16931:2017#conformant#urn:cpro.gouv.fr:1p0:extended-ctc-fr":                             ProfileExtendedCTCFR,
-		"urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0":                          ProfilePeppol,
-		" urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0#conformant#urn:example ": ProfilePeppol,
-		"urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:2.0":                          ProfileUnknown,
-		"urn:fdc:peppol.eu:2017:poacc:billing:3.0":                                                            ProfileUnknown,
-		"urn:example": ProfileUnknown,
+		"urn:cen.eu:en16931:2017#conformant#urn:cpro.gouv.fr:1p0:extended-ctc-fr":                              ProfileExtendedCTCFR,
+		"urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0":                           ProfilePeppol,
+		" urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0#conformant#urn:example ":  ProfilePeppol,
+		"urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:2.0":                           ProfileUnknown,
+		"urn:fdc:peppol.eu:2017:poacc:billing:3.0":                                                             ProfileUnknown,
+		"urn:cen.eu:en16931:2017#compliant#urn:fdc:nen.nl:nlcius:v1.0":                                         ProfileNLCIUS,
+		"urn:cen.eu:en16931:2017#compliant#urn:fdc:nen.nl:nlcius:v1.0#conformant#urn:fdc:nen.nl:gaccount:v1.0": ProfileNLCIUS,
+		"urn:fdc:nen.nl:nlcius:v1.0": ProfileUnknown,
+		"urn:example":                ProfileUnknown,
 	} {
 		if got := ProfileFromURN(urn); got != want {
 			t.Errorf("ProfileFromURN(%q) = %s, want %s", urn, got, want)
@@ -155,8 +158,14 @@ func TestProfile(t *testing.T) {
 		}
 	}
 	if ParseProfile("basic-wl") != ProfileBasicWL || ParseProfile("en16931") != ProfileEN16931 || ParseProfile("extended-ctc-fr") != ProfileExtendedCTCFR ||
-		ParseProfile(" peppol ") != ProfilePeppol || ProfileFromConformanceLevel("PEPPOL") != ProfileUnknown {
+		ParseProfile(" peppol ") != ProfilePeppol || ProfileFromConformanceLevel("PEPPOL") != ProfileUnknown ||
+		ParseProfile("NLCIUS") != ProfileNLCIUS || ProfileFromConformanceLevel("NLCIUS") != ProfileUnknown {
 		t.Error("ParseProfile")
+	}
+	if ProfileNLCIUS.ConformanceLevel() != "EN 16931" || ProfileNLCIUS.Filename() != "factur-x.xml" ||
+		!ProfileNLCIUS.AtLeast(ProfileEN16931) || ProfileNLCIUS.AtLeast(ProfileExtendedCTCFR) || !ProfileNLCIUS.EN16931() ||
+		DetectProfile("urn:cen.eu:en16931:2017#compliant#urn:fdc:nen.nl:nlcius") != ProfileNLCIUS {
+		t.Error("NLCIUS profile")
 	}
 	if ProfilePeppol.ConformanceLevel() != "EN 16931" || ProfilePeppol.Filename() != "factur-x.xml" || ProfilePeppol.AFRelationship() != "Alternative" {
 		t.Error("Peppol XMP values")

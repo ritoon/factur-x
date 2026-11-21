@@ -7,8 +7,8 @@ import (
 )
 
 // level is the data set of a profile: each level carries the elements of the
-// levels below it. XRECHNUNG and PEPPOL use the EN 16931 set, EXTENDED-CTC-FR
-// the EXTENDED set.
+// levels below it. XRECHNUNG, PEPPOL and NLCIUS use the EN 16931 set,
+// EXTENDED-CTC-FR the EXTENDED set.
 type level uint8
 
 const (

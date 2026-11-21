@@ -11,7 +11,7 @@ Ce dossier mesure l'exactitude du package sur les artefacts officiels, à chaque
 
 ## Artefacts
 
-`fetch.sh` vérifie chaque dépôt par son commit et chaque fichier téléchargé par son SHA-256 ; il garde ce qui est déjà présent et vérifié.
+`fetch.sh` vérifie chaque dépôt par son commit et chaque fichier téléchargé par son SHA-256 ; il garde ce qui est déjà présent et vérifié. Le dépôt phive-rules, qui embarque les fichiers de test de tous ses jeux de règles (1,4 Go), n'est récupéré que pour le dossier utile, par un clone partiel (`fetch_git_sparse` de [`lib.sh`](lib.sh)).
 
 | Artefact | Version | Vérification | Variable |
 |---|---|---|---|
@@ -21,6 +21,8 @@ Ce dossier mesure l'exactitude du package sur les artefacts officiels, à chaque
 | [Configuration du validateur KoSIT](https://github.com/itplr-kosit/validator-configuration-xrechnung/releases/tag/v2026-08-31) XRechnung 3.0.2 | release 2026-08-31 | SHA-256 | `FX_KOSIT_CONF` |
 | [fnfempe/France_RFE](https://github.com/fnfempe/France_RFE) | `v1.4.0.04`, commit `97ba0f3` | commit | `FX_FNFE` |
 | [OpenPEPPOL/peppol-bis-invoice-3](https://github.com/OpenPEPPOL/peppol-bis-invoice-3) | `3.0.22`, commit `38d693d` | commit | `FX_PEPPOL` |
+| [peppolautoriteit-nl/validation](https://github.com/peppolautoriteit-nl/validation) (artefacts de l'autorité Peppol néerlandaise, licence MIT) | release 2026-05-21 (SI-UBL 2.0.3.13, NLCIUS-CII 1.0.3.13), commit `4e93ae8` | commit | `FX_NL` |
+| Fichiers de test SimplerInvoicing de [phax/phive-rules](https://github.com/phax/phive-rules) (`phive-rules-simplerinvoicing/src/test/resources/external/test-files/simplerinvoicing`, Apache-2.0) | commit `bab0629` | commit (clone partiel de ce seul dossier) | `FX_NL_TESTS` |
 | Paquet OASIS [UBL-2.1.zip](https://docs.oasis-open.org/ubl/os-UBL-2.1/UBL-2.1.zip) | 2.1 | SHA-256 | `FX_UBL_ZIP` |
 | XSD Factur-X : BASIC, EN 16931 et EXTENDED du paquet FeRD ZUGFeRD 2.5.2, MINIMUM et BASIC WL du paquet FNFE-MPE 1.09 | 1.09.2 | SHA-256 de chacun des 20 fichiers | `FX_XSD`, `FX_XSD_DIR` |
 | Schematrons Factur-X de BASIC, EN 16931 et EXTENDED et leurs listes de codes (`FACTUR-X_<profil>.sch`, `FACTUR-X_<profil>_codedb.xml`) du paquet FeRD ZUGFeRD 2.5.2 | 1.09.2 | SHA-256 de chacun des 6 fichiers | `FX_FACTURX_SCH` |
