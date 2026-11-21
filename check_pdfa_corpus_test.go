@@ -86,10 +86,8 @@ var veraPDFUncovered = func() map[string]string {
 }()
 
 // veraPDFValid lists the valid files of the corpus that raise an error, by
-// reason.
-var veraPDFValid = map[string]string{
-	"6-1-5-t01-pass-a": "PDF-35: the /Info entries differ from their XMP equivalents, which the veraPDF profiles for PDF/A-2 and PDF/A-3 do not check",
-}
+// reason. None does; a file added here must say why.
+var veraPDFValid = map[string]string{}
 
 var veraPDFName = regexp.MustCompile(`^veraPDF test suite (.+)-(pass|fail)-[a-z]+\.pdf$`)
 

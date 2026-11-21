@@ -61,7 +61,7 @@ var ContainerCatalog = []rules.RuleInfo{
 	{ID: "PDF-32", Severity: rules.Error, Description: "The document has no document-level JavaScript (/JavaScript in the catalog /Names), which PDF/A forbids."},
 	{ID: "PDF-33", Severity: rules.Error, Description: "No action forbidden by PDF/A (Launch, Sound, Movie, ResetForm, ImportData, Hide, SetOCGState, Rendition, Trans, GoTo3DView, JavaScript, SetState, NOP, or a named action other than NextPage, PrevPage, FirstPage and LastPage) in the /OpenAction, the outlines, the annotations or a chain of /Next actions."},
 	{ID: "PDF-34", Severity: rules.Error, Description: "No additional-actions dictionary (/AA) in the document catalog, the pages, the annotations or the form fields, as PDF/A requires."},
-	{ID: "PDF-35", Severity: rules.Error, Description: "The entries of the document information dictionary (/Info) that have an XMP equivalent (Title, Author, Subject, Keywords, Creator, Producer, CreationDate, ModDate) have the same value in the XMP metadata, as ISO 19005-3 requires. Not checked for PDF/A-4."},
+	{ID: "PDF-35", Severity: rules.Warning, Description: "The entries of the document information dictionary (/Info) that have an XMP equivalent (Title, Author, Subject, Keywords, Creator, Producer, CreationDate, ModDate) have the same value in the XMP metadata. ISO 19005-1 required it (6.7.3); ISO 19005-2 and 19005-3 no longer do (6.1.5), but a reader may show either value. Not checked for PDF/A-4, which only admits a document information dictionary holding ModDate alone (6.1.3)."},
 	{ID: "PDF-36", Severity: rules.Error, Description: "Every embedded file besides the invoice has an /AFRelationship entry (PDF/A-3 associated file)."},
 	{ID: "PDF-37", Severity: rules.Error, Description: "Every embedded file besides the invoice has a MIME type (/Subtype of the embedded file stream), as PDF/A-3 requires."},
 	{ID: "PDF-38", Severity: rules.Error, Description: "No stream uses a filter PDF/A forbids: LZWDecode, Crypt with a crypt filter other than Identity, or a filter ISO 32000-1 does not define (ISO 19005-3, 6.1.7.2). The streams of the pages, their resources, the annotation appearances, the font programs, the embedded files and the metadata are checked, then every other stream of the file. Inline images of the page content are not checked."},
@@ -236,7 +236,8 @@ func (k *containerCheck) document(c *container) *xmp.Info {
 	}
 	if info != nil {
 		k.identification(c, info)
-		// PDF/A-4 deprecates the document information dictionary.
+		// PDF/A-4 deprecates the document information dictionary: it
+		// admits one holding ModDate alone, with no XMP equivalence.
 		if strings.TrimSpace(info.PDFAPart) != "4" {
 			k.docInfo(c, info)
 		}

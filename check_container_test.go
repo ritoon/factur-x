@@ -535,6 +535,26 @@ func TestCheckContainerPDFALimit(t *testing.T) {
 	}
 }
 
+// TestCheckContainerDocInfo checks that /Info entries that differ from the
+// XMP leave a PDF/A-3 file without error: ISO 19005-2 and 19005-3 do not
+// require them to match, so PDF-35 is a warning.
+func TestCheckContainerDocInfo(t *testing.T) {
+	f := valid(ciiXML(invoice.URNEN16931))
+	f.info = "<< /Title (Avoir) /Author (Jean Dupont) /CreationDate (D:20250101000000Z) >>"
+	_, findings, err := CheckContainer(f.build())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(rulesOf(findings), ","); got != "PDF-35,PDF-35,PDF-35" {
+		t.Errorf("rules %q", got)
+	}
+	for _, f := range findings {
+		if f.Severity != rules.Warning {
+			t.Errorf("%s", f)
+		}
+	}
+}
+
 func TestCheckContainerNotPDF(t *testing.T) {
 	if _, _, err := CheckContainer([]byte("hello")); err == nil {
 		t.Fatal("no error")
