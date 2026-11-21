@@ -19,6 +19,14 @@ type negativeCase struct {
 	valid string   // when set, the package raises no error: why
 }
 
+// fnfeInfo is why five FNFE-MPE examples raise no error. The corpus moved
+// them from ZUGFeRDv2/correct to ZUGFeRDv2/fail without saying what is wrong
+// (commit cfa47d6, "updated validation status fnfe examples"). Besides
+// PDF-35, which the examples of the series left in ZUGFeRDv2/correct raise
+// too, the four EN 16931 ones raise the warning PDF-14 (/AFRelationship
+// Data).
+const fnfeInfo = "Mustang raises no error either; the /Info entries differ from the XMP (PDF-35), a warning since PDF/A-2 and PDF/A-3 do not require them to match"
+
 // negativeCases are the invoices of ZUGFeRDv2/fail and the not_validating
 // samples of XML-Rechnung, with the verdicts of KoSIT 1.6.3 and Mustang 2.26.0
 // measured by the parity job (conformance/README.md). FX-SCH-A-* are the
@@ -36,16 +44,16 @@ var negativeCases = map[string]negativeCase{
 		rules: []string{"FX-PROFILE-03"}, ref: "Mustang : FX-SCH-A-000493 (BT-24)",
 	},
 	"ZUGFeRDv2/fail/FNFE-factur-x-examples/Avoir_FR_type380_EN16931.pdf": {
-		rules: []string{"PDF-35"}, ref: "Mustang : aucune erreur",
+		rules: []string{"PDF-35"}, ref: "Mustang : aucune erreur", valid: fnfeInfo,
 	},
 	"ZUGFeRDv2/fail/FNFE-factur-x-examples/Avoir_FR_type380_MINIMUM.pdf": {
 		rules: []string{"XSD-UNEXPECTED"}, ref: "Mustang : SCHEMA",
 	},
 	"ZUGFeRDv2/fail/FNFE-factur-x-examples/Avoir_FR_type381_BASICWL.pdf": {
-		rules: []string{"PDF-35"}, ref: "Mustang : aucune erreur",
+		rules: []string{"PDF-35"}, ref: "Mustang : aucune erreur", valid: fnfeInfo,
 	},
 	"ZUGFeRDv2/fail/FNFE-factur-x-examples/Avoir_FR_type381_EN16931.pdf": {
-		rules: []string{"PDF-35"}, ref: "Mustang : aucune erreur",
+		rules: []string{"PDF-35"}, ref: "Mustang : aucune erreur", valid: fnfeInfo,
 	},
 	"ZUGFeRDv2/fail/FNFE-factur-x-examples/Avoir_FR_type381_MINIMUM.pdf": {
 		rules: []string{"XSD-UNEXPECTED"}, ref: "Mustang : SCHEMA",
@@ -54,13 +62,13 @@ var negativeCases = map[string]negativeCase{
 		rules: []string{"FX-PROFILE-03"}, ref: "Mustang : FX-SCH-A-000493 (BT-24)",
 	},
 	"ZUGFeRDv2/fail/FNFE-factur-x-examples/Facture_DOM_EN16931.pdf": {
-		rules: []string{"PDF-35"}, ref: "Mustang : aucune erreur",
+		rules: []string{"PDF-35"}, ref: "Mustang : aucune erreur", valid: fnfeInfo,
 	},
 	"ZUGFeRDv2/fail/FNFE-factur-x-examples/Facture_FR_BASIC.pdf": {
 		rules: []string{"FX-PROFILE-03"}, ref: "Mustang : FX-SCH-A-000493 (BT-24)",
 	},
 	"ZUGFeRDv2/fail/FNFE-factur-x-examples/Facture_FR_EN16931.pdf": {
-		rules: []string{"PDF-35"}, ref: "Mustang : aucune erreur",
+		rules: []string{"PDF-35"}, ref: "Mustang : aucune erreur", valid: fnfeInfo,
 	},
 	"ZUGFeRDv2/fail/FNFE-factur-x-examples/Facture_UE_BASIC.pdf": {
 		rules: []string{"BR-IC-11", "BR-IC-12", "FX-PROFILE-03"}, ref: "Mustang : BR-IC-11, BR-IC-12, FX-SCH-A-000493 (BT-24)",

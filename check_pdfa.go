@@ -665,8 +665,10 @@ func (s *pdfaScan) embeddedFiles(invoice *fileSpec) {
 }
 
 // docInfo checks that the entries of the document information dictionary
-// that have an XMP equivalent have the same value in the XMP metadata
-// (ISO 19005-3, 6.6.2.3.1). An empty entry needs no equivalent.
+// that have an XMP equivalent have the same value in the XMP metadata. An
+// empty entry needs no equivalent. ISO 19005-1 required it (6.7.3), ISO
+// 19005-2 and 19005-3 no longer do (6.1.5): the veraPDF corpus holds a valid
+// PDF/A-2 file whose /Info differs from its XMP. PDF-35 is thus a warning.
 func (k *containerCheck) docInfo(c *container, info *xmp.Info) {
 	d, ok := c.r.Dict(c.r.Trailer().Get("Info"))
 	if !ok {
