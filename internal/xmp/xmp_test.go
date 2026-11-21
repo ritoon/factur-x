@@ -396,3 +396,34 @@ func TestMergePDFAIdentification(t *testing.T) {
 		})
 	}
 }
+
+func TestMergePDFAOnly(t *testing.T) {
+	p := Params{PDFAOnly: true, Date: params.Date, DocInfo: DocInfo{Title: "Devis"}}
+	for _, in := range []string{"", zugferd1} {
+		out := Merge([]byte(in), p)
+		info, err := Parse(out)
+		if err != nil {
+			t.Fatalf("Parse: %v\n%s", err, out)
+		}
+		if info.PDFAPart != "3" || info.ModifyDate != "2026-11-16T12:00:00+01:00" {
+			t.Errorf("pdfaid:part %q, xmp:ModifyDate %q", info.PDFAPart, info.ModifyDate)
+		}
+		if in == "" {
+			// A new packet: no hybrid-invoice property nor schema.
+			if info.Invoice != nil || len(info.Schemas) != 0 || bytes.Contains(out, []byte("fx:")) || info.PDFAConformance != "B" {
+				t.Errorf("fresh packet with invoice data:\n%s", out)
+			}
+			if !bytes.Contains(out, []byte("Devis")) {
+				t.Errorf("dc:title missing:\n%s", out)
+			}
+			continue
+		}
+		// The ZUGFeRD 1.0 properties and their schema are kept.
+		if info.Invoice == nil || info.Invoice.DocumentFileName != "ZUGFeRD-invoice.xml" || info.Schema(NSZUGFeRD1) == nil {
+			t.Errorf("invoice data of the packet not kept:\n%s", out)
+		}
+		if again := Merge(out, p); !bytes.Equal(again, out) {
+			t.Errorf("second merge differs:\n%s\n----\n%s", out, again)
+		}
+	}
+}

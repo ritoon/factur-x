@@ -148,3 +148,62 @@ func TestEmbedRequirePDFA(t *testing.T) {
 		t.Errorf("embed -require-pdfa on a PDF declared PDF/A-3: %v", err)
 	}
 }
+
+// vectorPDF is a PDF of one page that draws an RGB rectangle, without
+// PDF/A declaration nor output intent.
+const vectorPDF = "%PDF-1.7\n" +
+	"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n" +
+	"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n" +
+	"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R >>\nendobj\n" +
+	"4 0 obj\n<< /Length 33 >>\nstream\n0.2 0.4 0.6 rg 10 10 100 100 re f\nendstream\nendobj\n" +
+	"trailer\n<< /Root 1 0 R >>\n%%EOF\n"
+
+func TestPDFA(t *testing.T) {
+	dir := t.TempDir()
+	in := filepath.Join(dir, "in.pdf")
+	if err := os.WriteFile(in, []byte(vectorPDF), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "out.pdf")
+	if err := pdfaCmd([]string{"-o", out, in}); err != nil {
+		t.Fatal(err)
+	}
+	invoice := filepath.Join(dir, "invoice.pdf")
+	if err := embed([]string{"-xml", "../../testdata/EN16931_Einfach.cii.xml", "-require-pdfa", "-o", invoice, out}); err != nil {
+		t.Fatalf("embed in the converted PDF: %v", err)
+	}
+	if code, rules := runValidate(t, invoice); code != 0 || len(rules) > 0 {
+		t.Errorf("validate: exit %d, %v", code, rules)
+	}
+
+	// A refusal lists its reasons, one per line.
+	err := pdfaCmd([]string{"-o", filepath.Join(dir, "host.pdf"), "../../testdata/host.pdf"})
+	var ce *zerechnung.ConversionError
+	if !errors.Is(err, zerechnung.ErrNotConvertible) || !errors.As(err, &ce) ||
+		!strings.HasPrefix(err.Error(), "the PDF cannot be converted to PDF/A-3:\n  page 1 /Contents: the font \"Helvetica\"") {
+		t.Errorf("pdfa on a PDF with a font not embedded: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "host.pdf")); !os.IsNotExist(err) {
+		t.Errorf("output written: %v", err)
+	}
+}
+
+func TestEmbedConvertPDFA(t *testing.T) {
+	dir := t.TempDir()
+	in := filepath.Join(dir, "in.pdf")
+	if err := os.WriteFile(in, []byte(vectorPDF), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	const xml = "../../testdata/EN16931_Einfach.cii.xml"
+	out := filepath.Join(dir, "out.pdf")
+	if err := embed([]string{"-xml", xml, "-convert-pdfa", "-require-pdfa", "-o", out, in}); err != nil {
+		t.Fatal(err)
+	}
+	if code, rules := runValidate(t, out); code != 0 || len(rules) > 0 {
+		t.Errorf("validate: exit %d, %v", code, rules)
+	}
+	err := embed([]string{"-xml", xml, "-convert-pdfa", "-o", out, "../../testdata/host.pdf"})
+	if !errors.Is(err, zerechnung.ErrNotConvertible) || !strings.Contains(err.Error(), "\n  page 1 /Contents: the font") {
+		t.Errorf("embed -convert-pdfa on a PDF with a font not embedded: %v", err)
+	}
+}

@@ -39,7 +39,8 @@ Usage:
   zerechnung extract [-o out.xml] invoice.pdf
   zerechnung info invoice.pdf
   zerechnung validate [-fr] [-de] [-peppol] [-nl] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-hybrid] [-json] invoice.pdf|invoice.xml
-  zerechnung embed -xml invoice.xml [-profile p] [-attach file]... [-require-pdfa] [-o out.pdf] input.pdf
+  zerechnung embed -xml invoice.xml [-profile p] [-attach file]... [-require-pdfa] [-convert-pdfa] [-o out.pdf] input.pdf
+  zerechnung pdfa [-o out.pdf] input.pdf
   zerechnung json invoice.pdf|invoice.xml
   zerechnung rules [-fr] [-de] [-choruspro] [-peppol] [-nl]
 
@@ -63,6 +64,8 @@ func main() {
 		code, err = validateCmd(args, os.Stdout)
 	case "embed":
 		err = embed(args)
+	case "pdfa":
+		err = pdfaCmd(args)
 	case "json":
 		err = jsonCmd(args)
 	case "rules":
@@ -260,6 +263,7 @@ func embed(args []string) error {
 	var attach fileList
 	fs.Var(&attach, "attach", "supplementary file to embed besides the invoice, with AFRelationship Supplement and the MIME type of its extension (repeatable)")
 	requirePDFA := fs.Bool("require-pdfa", false, "refuse an input PDF whose XMP metadata does not declare PDF/A-2, PDF/A-3 or PDF/A-4")
+	convertPDFA := fs.Bool("convert-pdfa", false, "convert to PDF/A-3 an input PDF whose XMP metadata does not declare PDF/A-2, PDF/A-3 or PDF/A-4 (see the pdfa command)")
 	out := fs.String("o", "", "output PDF (default: standard output)")
 	_, pdf, err := oneFile(fs, args)
 	if err != nil {
@@ -272,7 +276,7 @@ func embed(args []string) error {
 	if err != nil {
 		return err
 	}
-	opts := &zerechnung.EmbedOptions{Relationship: *rel, RequirePDFA: *requirePDFA}
+	opts := &zerechnung.EmbedOptions{Relationship: *rel, RequirePDFA: *requirePDFA, ConvertPDFA: *convertPDFA}
 	for _, p := range attach {
 		data, err := os.ReadFile(p)
 		if err != nil {
@@ -287,9 +291,44 @@ func embed(args []string) error {
 	}
 	res, err := zerechnung.Embed(pdf, xml, opts)
 	if err != nil {
-		return err
+		return reasons(err)
 	}
 	return writeOut(*out, res)
+}
+
+// pdfaCmd converts a PDF to PDF/A-3. When the conversion is refused, every
+// reason is printed, one per line.
+func pdfaCmd(args []string) error {
+	fs := flag.NewFlagSet("pdfa", flag.ContinueOnError)
+	out := fs.String("o", "", "output PDF (default: standard output)")
+	_, pdf, err := oneFile(fs, args)
+	if err != nil {
+		return err
+	}
+	res, err := zerechnung.ConvertPDFA(pdf, nil)
+	if err != nil {
+		return reasons(err)
+	}
+	return writeOut(*out, res)
+}
+
+// reasonsError lists the reasons of a ConversionError one per line.
+type reasonsError struct{ *zerechnung.ConversionError }
+
+func (e reasonsError) Error() string {
+	return "the PDF cannot be converted to PDF/A-3:\n  " + strings.Join(e.Reasons, "\n  ")
+}
+
+func (e reasonsError) Unwrap() error { return e.ConversionError }
+
+// reasons returns err, with the reasons one per line when it is a
+// ConversionError.
+func reasons(err error) error {
+	var ce *zerechnung.ConversionError
+	if errors.As(err, &ce) {
+		return reasonsError{ce}
+	}
+	return err
 }
 
 func jsonCmd(args []string) error {

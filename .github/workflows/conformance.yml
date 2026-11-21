@@ -51,6 +51,34 @@ jobs:
           path: test.log
           retention-days: 30
 
+  verapdf:
+    # The files that ConvertPDFA writes, checked by veraPDF 1.30.3 (Docker
+    # image pinned by digest): the PDF/A-2b and PDF/A-3b files of the veraPDF
+    # corpus, converted, and the non-conforming PDF files that the tests
+    # generate and convert. Every converted file passes, but the known
+    # failures of convert_corpus_test.go.
+    name: veraPDF sur les PDF convertis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - uses: actions/cache@v5
+        with:
+          path: conformance/.artifacts/verapdf-corpus
+          key: verapdf-${{ hashFiles('conformance/verapdf.sh', 'conformance/lib.sh') }}
+      - name: Convert the files and check them with veraPDF
+        run: conformance/verapdf.sh
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: verapdf-report
+          path: |
+            conformance/.artifacts/pdfa/report.txt
+            conformance/.artifacts/pdfa/verapdf.log
+          retention-days: 30
+
   parity:
     # Rules raised by this package and by the KoSIT validator 1.6.3
     # (XRechnung 3.0.2 configuration of 2026-08-31) and Mustang 2.26.0, and,

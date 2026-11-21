@@ -2,6 +2,7 @@ package zerechnung_test
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -123,4 +124,27 @@ func Example_vatOnDebits() {
 	// Output:
 	// <ram:DueDateTypeCode>5</ram:DueDateTypeCode> true
 	// errors: 0
+}
+
+// ConvertPDFA lists why a PDF cannot be converted to PDF/A-3: here, the
+// font of the host of the tests is not embedded.
+func ExampleConvertPDFA() {
+	host, err := os.ReadFile("testdata/host.pdf")
+	if err != nil {
+		log.Fatal(err)
+	}
+	pdfa, err := zerechnung.ConvertPDFA(host, nil)
+	var ce *zerechnung.ConversionError
+	if errors.As(err, &ce) {
+		for _, r := range ce.Reasons {
+			fmt.Println(r)
+		}
+		return
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(len(pdfa) > 0)
+	// Output:
+	// page 1 /Contents: the font "Helvetica" (Type1) shows text but its font program is not embedded, which PDF/A requires; embed the font when producing the PDF
 }

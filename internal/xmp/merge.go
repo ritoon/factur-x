@@ -32,6 +32,11 @@ type Params struct {
 	// Those that have an XMP equivalent missing from the packet are added,
 	// as PDF/A requires both to agree.
 	DocInfo DocInfo
+	// PDFAOnly writes the PDF/A identification, the dates and the entries
+	// of DocInfo, without the hybrid-invoice properties and their extension
+	// schema: those of the packet, if any, are kept as they are. The other
+	// hybrid-invoice fields of Params are ignored.
+	PDFAOnly bool
 }
 
 // DocInfo holds the entries of a PDF document information dictionary.
@@ -61,7 +66,8 @@ type edit struct {
 // pdfaid:conformance, pdfaid:rev, xmp:ModifyDate and xmp:MetadataDate are
 // replaced, as are the extension schema descriptions of the hybrid-invoice
 // namespaces. An existing pdfaid:rev is kept for part 4; part 4 without one
-// gets "2020", the edition of ISO 19005-4.
+// gets "2020", the edition of ISO 19005-4. With Params.PDFAOnly, the
+// hybrid-invoice properties and their schema description are left alone.
 // Everything else is kept byte for byte. A packet that cannot be parsed is
 // replaced by a new one.
 func Merge(existing []byte, p Params) []byte {
@@ -93,15 +99,16 @@ func fresh(p Params) []byte {
 	return []byte(b.String())
 }
 
-// managed reports whether Merge replaces a property.
-func managed(space, local string) bool {
+// managed reports whether Merge replaces a property; the hybrid-invoice
+// properties are replaced unless pdfaOnly is set.
+func managed(space, local string, pdfaOnly bool) bool {
 	switch space {
 	case nsPDFAID:
 		return local == "part" || local == "conformance" || local == "rev"
 	case nsXMP:
 		return local == "ModifyDate" || local == "MetadataDate"
 	}
-	return isInvoiceNS(space)
+	return !pdfaOnly && isInvoiceNS(space)
 }
 
 func mergeInto(data []byte, rdf *node, p Params) ([]byte, bool) {
@@ -134,7 +141,7 @@ func mergeInto(data []byte, rdf *node, p Params) ([]byte, bool) {
 			if a.space == nsPDFAID {
 				found.set(local, unescape(a.value))
 			}
-			if managed(a.space, local) {
+			if managed(a.space, local, p.PDFAOnly) {
 				dEdits = append(dEdits, edit{start: trimLeft(data, a.start), end: a.end})
 				continue
 			}
@@ -146,7 +153,7 @@ func mergeInto(data []byte, rdf *node, p Params) ([]byte, bool) {
 			if c.space == nsPDFAID {
 				found.set(local, c.text(data))
 			}
-			if managed(c.space, local) {
+			if managed(c.space, local, p.PDFAOnly) {
 				dEdits = append(dEdits, edit{start: trimLeft(data, c.start), end: c.end})
 				continue
 			}
@@ -158,7 +165,7 @@ func mergeInto(data []byte, rdf *node, p Params) ([]byte, bool) {
 						continue
 					}
 					for _, li := range b.children {
-						if li.is(nsRDF, "li") && isInvoiceNS(schemaNS(data, li)) {
+						if li.is(nsRDF, "li") && !p.PDFAOnly && isInvoiceNS(schemaNS(data, li)) {
 							dEdits = append(dEdits, edit{start: trimLeft(data, li.start), end: li.end})
 						}
 					}
@@ -180,7 +187,7 @@ func mergeInto(data []byte, rdf *node, p Params) ([]byte, bool) {
 	writeDescriptions(&b, rdfPrefix, about, identify(found, p), p, present, bag == nil)
 	ins := strings.TrimSuffix(b.String(), "\n") + indentBefore(data, rdf.endStart)
 	edits = append(edits, edit{start: trimLeft(data, rdf.endStart), end: rdf.endStart, text: ins})
-	if bag != nil {
+	if bag != nil && !p.PDFAOnly {
 		var li strings.Builder
 		writeSchemaLI(&li, rdfPrefix, p.NamespaceURI, true)
 		if bag.endStart == bag.end {
@@ -352,7 +359,9 @@ func writeDescriptions(b *strings.Builder, r, about string, id pdfaID, p Params,
 	if needPDF {
 		ns = append(ns, "pdf", nsPDF)
 	}
-	ns = append(ns, "fx", p.NamespaceURI)
+	if !p.PDFAOnly {
+		ns = append(ns, "fx", p.NamespaceURI)
+	}
 	open(ns...)
 	prop("pdfaid:part", id.part)
 	if id.rev != "" {
@@ -391,13 +400,15 @@ func writeDescriptions(b *strings.Builder, r, about string, id pdfaID, p Params,
 			prop("pdf:Producer", di.Producer)
 		}
 	}
-	prop("fx:DocumentType", p.DocumentType)
-	prop("fx:DocumentFileName", p.DocumentFileName)
-	prop("fx:Version", p.Version)
-	prop("fx:ConformanceLevel", p.ConformanceLevel)
+	if !p.PDFAOnly {
+		prop("fx:DocumentType", p.DocumentType)
+		prop("fx:DocumentFileName", p.DocumentFileName)
+		prop("fx:Version", p.Version)
+		prop("fx:ConformanceLevel", p.ConformanceLevel)
+	}
 	b.WriteString("    </" + r + ":Description>\n")
 
-	if withSchema {
+	if withSchema && !p.PDFAOnly {
 		open("pdfaExtension", nsPDFAExtension, "pdfaSchema", nsPDFASchema, "pdfaProperty", nsPDFAProperty)
 		b.WriteString("      <pdfaExtension:schemas>\n        <" + r + ":Bag>")
 		writeSchemaLI(b, r, p.NamespaceURI, false)

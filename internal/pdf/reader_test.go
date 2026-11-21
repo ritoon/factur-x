@@ -277,11 +277,11 @@ func TestFilters(t *testing.T) {
 func TestUnsupportedFilter(t *testing.T) {
 	b := &pdftest.Builder{Trailer: "/Root 1 0 R"}
 	b.Add("<< /Type /Catalog /S 2 0 R >>")
-	b.AddStream("<< /Filter /LZWDecode >>", []byte{0x80, 0x0b})
+	b.AddStream("<< /Filter /DCTDecode >>", []byte{0xff, 0xd8})
 	r := open(t, b.Bytes(pdftest.Options{}))
 	_, err := r.Decode(r.Resolve(r.Catalog().Get("S")).(*pdf.Stream))
 	var ufe *pdf.UnsupportedFilterError
-	if !errors.As(err, &ufe) || ufe.Filter != "LZWDecode" {
+	if !errors.As(err, &ufe) || ufe.Filter != "DCTDecode" {
 		t.Fatalf("err = %v", err)
 	}
 }
