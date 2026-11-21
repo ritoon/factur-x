@@ -58,10 +58,11 @@ func TestCheckContainer(t *testing.T) {
 	modFile := func(fn func(fl *file)) *fixture {
 		return mod(func(f *fixture) { fn(&f.files[0]) })
 	}
-	// pdfa4 returns a valid PDF/A-4f fixture (PDF 2.0) modified by fn.
+	// pdfa4 returns a valid PDF/A-4f fixture (PDF 2.0, no /Info) modified
+	// by fn.
 	pdfa4 := func(fn func(f *fixture)) *fixture {
 		return mod(func(f *fixture) {
-			f.version = "2.0"
+			f.version, f.noInfo = "2.0", true
 			f.xmp = xmpWith(func(p *xmp.Params) { p.PDFAPart = "4" })
 			fn(f)
 		})
@@ -342,6 +343,20 @@ func TestCheckContainerPDFA(t *testing.T) {
 	info := func(entries string) *fixture {
 		return mod(func(f *fixture) { f.info = strings.Replace(testInfo, ">>", entries+" >>", 1) })
 	}
+	// pdfa4Info returns a PDF/A-4f fixture whose trailer has the document
+	// information dictionary info (none when empty) and whose catalog has a
+	// /PieceInfo entry when piece is set.
+	pdfa4Info := func(info string, piece bool) *fixture {
+		return mod(func(f *fixture) {
+			f.version, f.info, f.noInfo = "2.0", info, info == ""
+			f.xmp = xmpWith(func(p *xmp.Params) { p.PDFAPart = "4" })
+			if piece {
+				f.extra = func(*pdftest.Builder) (string, string) {
+					return "/PieceInfo << /App << /LastModified (D:20261116120000+01'00') >> >>", ""
+				}
+			}
+		})
+	}
 	attachment := func(fl file) *fixture {
 		return mod(func(f *fixture) { f.files = append(f.files, fl) })
 	}
@@ -453,10 +468,21 @@ func TestCheckContainerPDFA(t *testing.T) {
 			f.info = strings.Replace(f.info, "(D:20260101000000Z)", "(D:20250101000000Z)", 1)
 		}), "PDF-35,PDF-35"},
 		{"no Info", mod(func(f *fixture) { f.info = "null" }), ""},
-		{"PDF/A-4 Info not checked", mod(func(f *fixture) {
-			f.version, f.info = "2.0", "<< /Title (Avoir) >>"
-			f.xmp = xmpWith(func(p *xmp.Params) { p.PDFAPart = "4" })
-		}), ""},
+
+		// PDF-70: /Info of a PDF/A-4 document.
+		{"PDF/A-4 without Info", pdfa4Info("", false), ""},
+		{"PDF/A-4 Info without PieceInfo", pdfa4Info(testInfo, false), "PDF-70"},
+		{"PDF/A-4 ModDate alone without PieceInfo", pdfa4Info("<< /ModDate (D:20261116120000+01'00') >>", false), "PDF-70"},
+		{"PDF/A-4 ModDate alone with PieceInfo", pdfa4Info("<< /ModDate (D:20261116120000+01'00') >>", true), ""},
+		// PDF-35 does not apply: the ModDate differs from xmp:ModifyDate.
+		{"PDF/A-4 Info not compared with XMP", pdfa4Info("<< /ModDate (D:20250101000000Z) >>", true), ""},
+		{"PDF/A-4 Info with title and PieceInfo", pdfa4Info("<< /ModDate (D:20261116120000+01'00') /Title (Facture) >>", true), "PDF-70"},
+		{"PDF/A-4 Info without ModDate", pdfa4Info("<< /Title (Facture) >>", true), "PDF-70"},
+		{"PDF/A-4 empty Info", pdfa4Info("<< >>", true), "PDF-70"},
+		{"PDF/A-4 Info not a dictionary", pdfa4Info("(Facture)", true), "PDF-70"},
+		{"PDF/A-4 Info null", pdfa4Info("null", false), ""},
+		{"PDF/A-4 null entries", pdfa4Info("<< /ModDate (D:20261116120000+01'00') /Title null >>", true), ""},
+		{"PDF/A-3 PieceInfo", catalog("/PieceInfo << /App << /LastModified (D:20261116120000+01'00') >> >>"), ""},
 
 		// PDF-36, PDF-37, PDF-39: other embedded files.
 		{"other attachment", attachment(notes("Supplement", "text#2Fplain")), ""},

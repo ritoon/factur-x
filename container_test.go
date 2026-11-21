@@ -72,6 +72,7 @@ type fixture struct {
 	noID           bool
 	encrypted      bool
 	info           string // document information dictionary; testInfo when empty
+	noInfo         bool   // no /Info in the trailer
 	names          string // entries added to the /Names dictionary of the catalog
 	pagesExtra     string // entries added to the root of the page tree
 	// extra, when set, adds objects and returns entries appended to the
@@ -208,11 +209,14 @@ func (f *fixture) build() []byte {
 	b.Set(cat, catalog+" >>")
 	b.Set(pages, fmt.Sprintf("<< /Type /Pages /Kids [%d 0 R] /Count 1%s >>", page, f.pagesExtra))
 	b.Set(page, pageDict+" >>")
-	info := f.info
-	if info == "" {
-		info = testInfo
+	b.Trailer = fmt.Sprintf("/Root %d 0 R", cat)
+	if !f.noInfo {
+		info := f.info
+		if info == "" {
+			info = testInfo
+		}
+		b.Trailer += fmt.Sprintf(" /Info %d 0 R", b.Add(info))
 	}
-	b.Trailer = fmt.Sprintf("/Root %d 0 R /Info %d 0 R", cat, b.Add(info))
 	if !f.noID {
 		b.Trailer += " /ID [<00112233445566778899AABBCCDDEEFF> <00112233445566778899AABBCCDDEEFF>]"
 	}
@@ -647,6 +651,77 @@ func TestEmbedPDFAPart(t *testing.T) {
 			m := a.Metadata
 			if m == nil || m.PDFAPart != tc.part || m.PDFAConformance != tc.conf || m.PDFARev != tc.rev {
 				t.Errorf("metadata %+v, want part %d, conformance %q, rev %q", m, tc.part, tc.conf, tc.rev)
+			}
+		})
+	}
+}
+
+// TestEmbedPDFA4Info checks the document information dictionary that Embed
+// leaves in a document declared PDF/A-4: none, or ModDate alone when the
+// catalog has /PieceInfo (ISO 19005-4, 6.1.3). Its entries go to the XMP
+// metadata. A PDF/A-3 document keeps its /Info.
+func TestEmbedPDFA4Info(t *testing.T) {
+	const a4f = "<pdfaid:part>4</pdfaid:part><pdfaid:rev>2020</pdfaid:rev><pdfaid:conformance>F</pdfaid:conformance>"
+	piece := func(*pdftest.Builder) (string, string) {
+		return "/PieceInfo << /App << /LastModified (D:20260101000000Z) >> >>", ""
+	}
+	x := ciiXML(invoice.URNEN16931)
+	for _, tc := range []struct {
+		name  string
+		f     *fixture
+		info  string // entries of the resulting /Info, "" when absent
+		rules string // findings of CheckContainer on the result
+	}{
+		{"PDF 2.0", &fixture{version: "2.0", xmp: pdfaPacket(a4f)}, "", ""},
+		{"PDF 2.0, xref stream", &fixture{version: "2.0", xmp: pdfaPacket(a4f), opts: pdftest.Options{Layout: 1, ObjStm: true}}, "", ""},
+		{"PDF 2.0, no XMP", &fixture{version: "2.0"}, "", ""},
+		{"PDF 2.0, PieceInfo", &fixture{version: "2.0", xmp: pdfaPacket(a4f), extra: piece}, "ModDate", ""},
+		{"PDF 2.0, PieceInfo, no Info", &fixture{version: "2.0", xmp: pdfaPacket(a4f), extra: piece, noInfo: true}, "", ""},
+		{"PDF 1.7 declared PDF/A-4f", &fixture{version: "1.7", xmp: pdfaPacket(a4f)}, "", "PDF-30"},
+		{"PDF/A-3", &fixture{}, "Producer,Title,CreationDate,ModDate", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			in := tc.f.build()
+			out, err := Embed(in, x, &EmbedOptions{ModDate: testDate})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, findings, err := CheckContainer(out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Join(rulesOf(findings), ","); got != tc.rules {
+				t.Errorf("rules %q, want %q", got, tc.rules)
+				for _, f := range findings {
+					t.Log(f)
+				}
+			}
+			c, err := openContainer(out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			info, _ := c.r.Dict(c.r.Trailer().Get("Info"))
+			var keys []string
+			for _, kv := range info {
+				keys = append(keys, string(kv.Key))
+			}
+			if got := strings.Join(keys, ","); got != tc.info {
+				t.Errorf("/Info entries %q, want %q", got, tc.info)
+			}
+			if s, _ := info.Get("ModDate").(pdf.String); info != nil && string(s) != "D:20261116120000+01'00'" {
+				t.Errorf("Info ModDate %q", s)
+			}
+			// The update itself names no /Info when there is none: veraPDF
+			// reads the newest trailer alone.
+			if tc.info == "" && bytes.Contains(out[len(in):], []byte("/Info")) {
+				t.Error("the update has an /Info entry")
+			}
+			xi, _, _ := c.xmpInfo()
+			if tc.f.noInfo {
+				return
+			}
+			if xi.InfoProps["Title"] != "Facture" || xi.InfoProps["Producer"] != "pdftest" || xi.CreateDate != "2026-01-01T00:00:00Z" {
+				t.Errorf("XMP title %q, producer %q, creation date %q", xi.InfoProps["Title"], xi.InfoProps["Producer"], xi.CreateDate)
 			}
 		})
 	}

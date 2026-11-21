@@ -22,10 +22,13 @@ import (
 // validation profiles for PDF/A-2b and PDF/A-3b number them: file
 // structure, colour spaces, graphics states, images, fonts, annotations,
 // forms, XMP metadata, optional content. They are not applied to a document
-// that declares PDF/A-4. They do not replace a PDF/A validator: the content
-// streams (colour operators, inline images, text rendering), the font
-// programs and the glyphs they define, and the level A and U requirements
-// (structure, Unicode mapping) are not checked.
+// that declares PDF/A-4. PDF-70 applies to that document alone, in place of
+// PDF-35: ISO 19005-4 restricts the document information dictionary
+// (6.1.3), as rules 6.1.3-4 and 6.1.3-5 of the veraPDF profile for PDF/A-4
+// check it. The checks do not replace a PDF/A validator: the content streams
+// (colour operators, inline images, text rendering), the font programs and
+// the glyphs they define, and the level A and U requirements (structure,
+// Unicode mapping) are not checked.
 var ContainerCatalog = []rules.RuleInfo{
 	{ID: "PDF-01", Severity: rules.Error, Description: "The PDF is not encrypted (PDF/A forbids encryption; the attachment cannot be read)."},
 	{ID: "PDF-02", Severity: rules.Error, Description: "The document catalog has an XMP metadata stream (/Metadata)."},
@@ -96,6 +99,7 @@ var ContainerCatalog = []rules.RuleInfo{
 	{ID: "PDF-67", Severity: rules.Error, Description: "The PDF/A extension schemas are described as 6.6.2.3.3 requires: a pdfaExtension:schemas Bag; schemas with pdfaSchema:schema, namespaceURI and prefix; properties with pdfaProperty:name, valueType, category (external or internal) and description; value types with pdfaType:type, namespaceURI, prefix and description; fields with pdfaField:name, valueType and description; the required prefixes and no other field. Whether the value types are defined is not checked."},
 	{ID: "PDF-68", Severity: rules.Error, Description: "The optional content configurations have a unique /Name, no /AS entry, and an /Order array, when present, that lists every optional content group (6.9)."},
 	{ID: "PDF-69", Severity: rules.Error, Description: "The document has no alternate presentations (/AlternatePresentations in the catalog /Names), no presentation steps (/PresSteps of a page) and no /Requirements entry in the catalog (6.10, 6.11)."},
+	{ID: "PDF-70", Severity: rules.Error, Description: "A document that declares PDF/A-4 has no document information dictionary (/Info in the trailer) unless the catalog has a /PieceInfo entry, and then one holding ModDate alone (ISO 19005-4, 6.1.3): PDF 2.0 deprecates /Info in favour of the XMP metadata. Not checked for the other parts, whose /Info PDF-35 compares with the XMP metadata."},
 }
 
 // countries holds the countries whose usage of the container applies to an
@@ -238,7 +242,9 @@ func (k *containerCheck) document(c *container) *xmp.Info {
 		k.identification(c, info)
 		// PDF/A-4 deprecates the document information dictionary: it
 		// admits one holding ModDate alone, with no XMP equivalence.
-		if strings.TrimSpace(info.PDFAPart) != "4" {
+		if strings.TrimSpace(info.PDFAPart) == "4" {
+			k.docInfoPDFA4(c)
+		} else {
 			k.docInfo(c, info)
 		}
 	}

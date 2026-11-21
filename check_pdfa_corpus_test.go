@@ -36,7 +36,7 @@ var clauseRules = map[string]string{
 var pdfaRules = strings.Fields(`PDF-01 PDF-02 PDF-03 PDF-06 PDF-07 PDF-08 PDF-31 PDF-32 PDF-33 PDF-34
 	PDF-35 PDF-36 PDF-37 PDF-38 PDF-39 PDF-41 PDF-42 PDF-43 PDF-44 PDF-45 PDF-46 PDF-47 PDF-48 PDF-49
 	PDF-50 PDF-51 PDF-52 PDF-53 PDF-54 PDF-55 PDF-56 PDF-57 PDF-58 PDF-59 PDF-60 PDF-61 PDF-62 PDF-63
-	PDF-64 PDF-65 PDF-66 PDF-67 PDF-68 PDF-69`)
+	PDF-64 PDF-65 PDF-66 PDF-67 PDF-68 PDF-69 PDF-70`)
 
 // veraPDFUncovered lists the invalid files of the corpus that CheckContainer
 // does not report, by reason. A listed file that gets reported fails the

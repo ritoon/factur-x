@@ -307,7 +307,7 @@ func TestCheckContainerISO19005(t *testing.T) {
 
 		// PDF/A-4 is out of the scope of these rules.
 		{"PDF/A-4", mod(func(f *fixture) {
-			f.version = "2.0"
+			f.version, f.noInfo = "2.0", true
 			f.xmp = xmpWith(func(p *xmp.Params) { p.PDFAPart = "4" })
 			f.extra = func(*pdftest.Builder) (string, string) {
 				return "/Requirements [<< /Type /Requirement /S /EnableJavaScripts >>]", "/PresSteps << /Type /NavNode >>"
