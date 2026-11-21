@@ -9,9 +9,10 @@ import (
 // specification identifier BT-24.
 type Profile int
 
-// Profiles, from the smallest to the largest data set. XRECHNUNG and PEPPOL
-// (Peppol BIS Billing 3.0) are CIUS of EN 16931 and sit at its level;
-// EXTENDED-CTC-FR is the French subset of EXTENDED.
+// Profiles, from the smallest to the largest data set. XRECHNUNG, PEPPOL
+// (Peppol BIS Billing 3.0) and NLCIUS (the Dutch CIUS, SI-UBL 2.0 in UBL)
+// are CIUS of EN 16931 and sit at its level; EXTENDED-CTC-FR is the French
+// subset of EXTENDED.
 const (
 	ProfileUnknown Profile = iota
 	ProfileMinimum
@@ -20,6 +21,7 @@ const (
 	ProfileEN16931
 	ProfileXRechnung
 	ProfilePeppol
+	ProfileNLCIUS
 	ProfileExtendedCTCFR
 	ProfileExtended
 )
@@ -27,7 +29,7 @@ const (
 // Profiles lists the known profiles.
 var Profiles = []Profile{
 	ProfileMinimum, ProfileBasicWL, ProfileBasic, ProfileEN16931,
-	ProfileXRechnung, ProfilePeppol, ProfileExtendedCTCFR, ProfileExtended,
+	ProfileXRechnung, ProfilePeppol, ProfileNLCIUS, ProfileExtendedCTCFR, ProfileExtended,
 }
 
 // Specification identifiers (BT-24) written for each profile.
@@ -40,6 +42,7 @@ const (
 	URNXRechnung      = "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0"
 	URNExtendedCTCFR  = "urn:cen.eu:en16931:2017#conformant#urn.cpro.gouv.fr:1p0:extended-ctc-fr"
 	URNPeppol         = "urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0"
+	URNNLCIUS         = "urn:cen.eu:en16931:2017#compliant#urn:fdc:nen.nl:nlcius:v1.0"
 	urnXRechnungOld   = "urn:cen.eu:en16931:2017#compliant#urn:xoev-de:kosit:standard:xrechnung_"
 	urnXRechnungNew   = "urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_"
 	urnExtendedCTCFR2 = "urn:cen.eu:en16931:2017#conformant#urn:cpro.gouv.fr:1p0:extended-ctc-fr"
@@ -57,7 +60,8 @@ const (
 )
 
 // String returns the profile name as written in the XMP ConformanceLevel
-// ("BASIC WL", "EN 16931"), or "PEPPOL", "EXTENDED-CTC-FR" and "UNKNOWN".
+// ("BASIC WL", "EN 16931"), or "PEPPOL", "NLCIUS", "EXTENDED-CTC-FR" and
+// "UNKNOWN".
 func (p Profile) String() string {
 	switch p {
 	case ProfileMinimum:
@@ -72,6 +76,8 @@ func (p Profile) String() string {
 		return "XRECHNUNG"
 	case ProfilePeppol:
 		return "PEPPOL"
+	case ProfileNLCIUS:
+		return "NLCIUS"
 	case ProfileExtendedCTCFR:
 		return "EXTENDED-CTC-FR"
 	case ProfileExtended:
@@ -95,6 +101,8 @@ func (p Profile) URN() string {
 		return URNXRechnung
 	case ProfilePeppol:
 		return URNPeppol
+	case ProfileNLCIUS:
+		return URNNLCIUS
 	case ProfileExtendedCTCFR:
 		return URNExtendedCTCFR
 	case ProfileExtended:
@@ -105,13 +113,13 @@ func (p Profile) URN() string {
 
 // ConformanceLevel returns the value of fx:ConformanceLevel in the XMP
 // metadata of a Factur-X PDF. The Factur-X specification defines no value for
-// EXTENDED-CTC-FR nor for Peppol BIS Billing 3.0: such invoices are declared
-// EXTENDED and EN 16931.
+// EXTENDED-CTC-FR, Peppol BIS Billing 3.0 nor NLCIUS: such invoices are
+// declared EXTENDED and EN 16931.
 func (p Profile) ConformanceLevel() string {
 	switch p {
 	case ProfileExtendedCTCFR:
 		return "EXTENDED"
-	case ProfilePeppol:
+	case ProfilePeppol, ProfileNLCIUS:
 		return "EN 16931"
 	case ProfileUnknown:
 		return ""
@@ -147,11 +155,11 @@ func (p Profile) HasLines() bool { return p >= ProfileBasic }
 // invoices (BASIC and above). MINIMUM and BASIC WL are not.
 func (p Profile) EN16931() bool { return p >= ProfileBasic }
 
-// level orders profiles by data set: XRECHNUNG and PEPPOL are at the
-// EN 16931 level, EXTENDED-CTC-FR below EXTENDED.
+// level orders profiles by data set: XRECHNUNG, PEPPOL and NLCIUS are at
+// the EN 16931 level, EXTENDED-CTC-FR below EXTENDED.
 func (p Profile) level() int {
 	switch p {
-	case ProfileXRechnung, ProfilePeppol:
+	case ProfileXRechnung, ProfilePeppol, ProfileNLCIUS:
 		return int(ProfileEN16931)
 	default:
 		return int(p)
@@ -183,9 +191,11 @@ func (p *Profile) UnmarshalText(b []byte) error {
 // ProfileFromURN returns the profile identified by a specification identifier
 // (BT-24). It recognizes the Factur-X identifiers, the ZUGFeRD 2.x ones
 // (urn:zugferd.de:2p0:…), all XRechnung versions, both spellings of the
-// EXTENDED-CTC-FR identifier and the Peppol BIS Billing 3.0 identifier, alone
-// or followed by more text as rule PEPPOL-EN16931-R004 admits. Surrounding
-// white space is ignored.
+// EXTENDED-CTC-FR identifier, the Peppol BIS Billing 3.0 identifier, alone
+// or followed by more text as rule PEPPOL-EN16931-R004 admits, and the
+// NLCIUS identifier, alone or followed by an extension such as the G-account
+// one (…#conformant#urn:fdc:nen.nl:gaccount:v1.0). Surrounding white space
+// is ignored.
 func ProfileFromURN(urn string) Profile {
 	u := strings.TrimSpace(urn)
 	switch u {
@@ -208,6 +218,9 @@ func ProfileFromURN(urn string) Profile {
 	}
 	if strings.HasPrefix(u, URNPeppol) {
 		return ProfilePeppol
+	}
+	if strings.HasPrefix(u, URNNLCIUS) {
+		return ProfileNLCIUS
 	}
 	return ProfileUnknown
 }
@@ -261,6 +274,8 @@ func DetectProfile(urn string) Profile {
 		return ProfileExtended
 	case strings.Contains(u, "xrechnung"):
 		return ProfileXRechnung
+	case strings.Contains(u, "nlcius"):
+		return ProfileNLCIUS
 	case strings.Contains(u, "basicwl"), strings.Contains(u, "basic-wl"):
 		return ProfileBasicWL
 	case strings.Contains(u, "basic"):
@@ -303,15 +318,19 @@ func ProfileFromConformanceLevel(level string) Profile {
 }
 
 // ParseProfile returns the profile named by s, which may be a profile name
-// ("en16931", "basic-wl", "extended-ctc-fr", "peppol") or a specification
-// identifier.
+// ("en16931", "basic-wl", "extended-ctc-fr", "peppol", "nlcius") or a
+// specification identifier.
 func ParseProfile(s string) Profile {
 	if p := ProfileFromURN(s); p != ProfileUnknown {
 		return p
 	}
-	if strings.EqualFold(strings.TrimSpace(s), "PEPPOL") {
-		// Not an XMP ConformanceLevel: Peppol invoices are declared EN 16931.
+	// Not XMP ConformanceLevel values: Peppol and NLCIUS invoices are
+	// declared EN 16931.
+	switch strings.ToUpper(strings.TrimSpace(s)) {
+	case "PEPPOL":
 		return ProfilePeppol
+	case "NLCIUS":
+		return ProfileNLCIUS
 	}
 	return ProfileFromConformanceLevel(s)
 }

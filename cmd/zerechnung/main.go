@@ -4,10 +4,10 @@
 //
 //	zerechnung extract [-o out.xml] invoice.pdf
 //	zerechnung info invoice.pdf
-//	zerechnung validate [-fr] [-de] [-peppol] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-hybrid] [-json] invoice.pdf|invoice.xml
+//	zerechnung validate [-fr] [-de] [-peppol] [-nl] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-hybrid] [-json] invoice.pdf|invoice.xml
 //	zerechnung embed -xml invoice.xml [-profile p] [-attach file]... [-o out.pdf] input.pdf
 //	zerechnung json invoice.pdf|invoice.xml
-//	zerechnung rules [-fr] [-de] [-choruspro] [-peppol]
+//	zerechnung rules [-fr] [-de] [-choruspro] [-peppol] [-nl]
 //
 // validate exits with status 1 when the invoice has errors.
 package main
@@ -38,12 +38,12 @@ validate and json also accept an XML invoice in CII or UBL 2.1 syntax.
 Usage:
   zerechnung extract [-o out.xml] invoice.pdf
   zerechnung info invoice.pdf
-  zerechnung validate [-fr] [-de] [-peppol] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-hybrid] [-json] invoice.pdf|invoice.xml
+  zerechnung validate [-fr] [-de] [-peppol] [-nl] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-hybrid] [-json] invoice.pdf|invoice.xml
   zerechnung embed -xml invoice.xml [-profile p] [-attach file]... [-o out.pdf] input.pdf
   zerechnung json invoice.pdf|invoice.xml
-  zerechnung rules [-fr] [-de] [-choruspro] [-peppol]
+  zerechnung rules [-fr] [-de] [-choruspro] [-peppol] [-nl]
 
-Profiles: minimum, basicwl, basic, en16931, extended, xrechnung, extended-ctc-fr, peppol.
+Profiles: minimum, basicwl, basic, en16931, extended, xrechnung, extended-ctc-fr, peppol, nlcius.
 `
 
 func main() {
@@ -177,6 +177,7 @@ func validateCmd(args []string, w io.Writer) (int, error) {
 	serviceRequired := fs.Bool("service-required", false, "with -choruspro: the public buyer requires a service code (BT-10)")
 	engagementRequired := fs.Bool("engagement-required", false, "with -choruspro: the public buyer requires an engagement number (BT-13)")
 	pep := fs.Bool("peppol", false, "apply the Peppol BIS Billing 3.0 rules (applied anyway when BT-24 is the Peppol identifier)")
+	nl := fs.Bool("nl", false, "apply the Dutch rules BR-NL of NLCIUS (applied anyway when BT-24 is the NLCIUS identifier)")
 	profile := fs.String("profile", "", "validate against this profile instead of BT-24")
 	hybrid := fs.Bool("hybrid", false, "the XML is the invoice of a Factur-X PDF: check an EN 16931 invoice against the Factur-X schematron (always the case for a PDF)")
 	asJSON := fs.Bool("json", false, "print the report as JSON")
@@ -190,7 +191,7 @@ func validateCmd(args []string, w io.Writer) (int, error) {
 			return 0, fmt.Errorf("unknown profile %q", *profile)
 		}
 	}
-	if *fr || *de || *cpro || *pep {
+	if *fr || *de || *cpro || *pep || *nl {
 		opts.Rules = validate.Default
 		if *fr {
 			opts.Rules |= validate.France
@@ -203,6 +204,9 @@ func validateCmd(args []string, w io.Writer) (int, error) {
 		}
 		if *pep {
 			opts.Rules |= validate.Peppol
+		}
+		if *nl {
+			opts.Rules |= validate.Netherlands
 		}
 	}
 	opts.PublicBuyer = validate.PublicBuyer{ServiceCodeRequired: *serviceRequired, EngagementRequired: *engagementRequired}
@@ -326,6 +330,7 @@ func rulesCmd(args []string) error {
 	de := fs.Bool("de", false, "include the German rules")
 	cpro := fs.Bool("choruspro", false, "include the Chorus Pro checks")
 	pep := fs.Bool("peppol", false, "include the Peppol BIS Billing 3.0 rules")
+	nl := fs.Bool("nl", false, "include the Dutch rules of NLCIUS")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -341,6 +346,9 @@ func rulesCmd(args []string) error {
 	}
 	if *pep {
 		set |= validate.Peppol
+	}
+	if *nl {
+		set |= validate.Netherlands
 	}
 	for _, r := range validate.Catalog(set) {
 		fmt.Printf("%-28s %-8s %s\n", r.ID, r.Severity, strings.TrimSpace(r.Description))

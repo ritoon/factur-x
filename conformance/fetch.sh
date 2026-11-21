@@ -44,6 +44,10 @@ fetch_git "$DEST/peppol-bis-invoice-3" https://github.com/OpenPEPPOL/peppol-bis-
 RFE_COMMIT=97ba0f3d4ef2abed5780e9490d5c3a2be832ab1d
 fetch_git "$DEST/France_RFE" https://github.com/fnfempe/France_RFE.git "$RFE_COMMIT"
 
+# Artefacts of the Dutch rules (FX_NL, FX_NL_TESTS), pinned in fetch-nl.sh,
+# which the CI workflow runs alone.
+"$here/fetch-nl.sh" "$DEST"
+
 # KoSIT validator configuration for XRechnung 3.0.2, release 2026-08-31: the
 # CII D16B schema (FX_KOSIT_CONF), and the scenarios that parity.sh runs.
 fetch_file "$DEST/xrechnung-3.0.2-validator-configuration-2026-08-31.zip" \
@@ -145,9 +149,4 @@ vars=(
 	"FX_XSD_DIR=$DEST/xsd"
 	"FX_FACTURX_SCH=$DEST/facturx-sch"
 )
-for v in "${vars[@]}"; do
-	printf 'export %q\n' "$v"
-	if [ -n "${GITHUB_ENV:-}" ]; then
-		echo "$v" >>"$GITHUB_ENV"
-	fi
-done
+export_vars "${vars[@]}"

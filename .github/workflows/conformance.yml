@@ -32,7 +32,7 @@ jobs:
       - uses: actions/cache@v5
         with:
           path: conformance/.artifacts
-          key: artifacts-${{ hashFiles('conformance/fetch.sh', 'conformance/lib.sh') }}
+          key: artifacts-${{ hashFiles('conformance/fetch.sh', 'conformance/fetch-nl.sh', 'conformance/lib.sh') }}
       - name: Fetch the artefacts at pinned versions
         run: conformance/fetch.sh >/dev/null
       - name: go test with every artefact
@@ -71,7 +71,7 @@ jobs:
       - uses: actions/cache@v5
         with:
           path: conformance/.artifacts
-          key: parity-${{ hashFiles('conformance/fetch.sh', 'conformance/lib.sh', 'conformance/parity.sh') }}
+          key: parity-${{ hashFiles('conformance/fetch.sh', 'conformance/fetch-nl.sh', 'conformance/lib.sh', 'conformance/parity.sh') }}
       - name: Test the comparison tool
         run: cd conformance/parity && go vet ./... && go test ./...
       - name: Compare with KoSIT and Mustang

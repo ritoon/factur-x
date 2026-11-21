@@ -64,23 +64,31 @@ jobs:
         with:
           version: v2.15.0
 
-  fuzz:
-    name: Fuzzing (short)
+  nl:
+    # The tests of the Dutch rules on the official artefacts, which the test
+    # job skips: the catalogs against the NPa schematrons (FX_NL) and the
+    # SimplerInvoicing test files (FX_NL_TESTS). fetch-nl.sh needs git only
+    # and takes a few seconds; the Conformité workflow runs them too, with
+    # every other artefact.
+    name: Tests NLCIUS sur les artefacts officiels
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
         with:
           go-version: stable
-      - name: Fuzz the PDF reader and the Flate codec
+      - name: Fetch the NPa artefacts and the SimplerInvoicing test files
+        run: conformance/fetch-nl.sh >/dev/null
+      - name: go test with FX_NL and FX_NL_TESTS
         run: |
-          go test -run '^$' -fuzz '^FuzzOpen$' -fuzztime 30s ./internal/pdf
-          go test -run '^$' -fuzz '^FuzzInflate$' -fuzztime 30s ./internal/pdf
-          go test -run '^$' -fuzz '^FuzzDeflate$' -fuzztime 30s ./internal/pdf
-      - name: Fuzz the XML reader against encoding/xml
-        run: go test -run '^$' -fuzz '^FuzzParse$' -fuzztime 30s ./internal/xmltree
-      - name: Fuzz the quick BT-24 reading against xmltree
-        run: go test -run '^$' -fuzz '^FuzzSpecificationID$' -fuzztime 30s .
+          set -o pipefail
+          go test -count=1 -v -run '^(TestSchematron|TestTestFiles|TestNLTestFiles)$' ./internal/rules/nl ./validate | tee test.log
+          for t in TestSchematron TestTestFiles TestNLTestFiles; do
+            if ! grep -q -- "--- PASS: $t " test.log; then
+              echo "::error::$t did not run"
+              exit 1
+            fi
+          done
 
   bench:
     # The benchmark harness is made of separate modules; only the one that

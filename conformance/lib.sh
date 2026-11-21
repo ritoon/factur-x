@@ -29,6 +29,24 @@ fetch_git() {
 	[ "$(git -C "$dir" rev-parse HEAD)" = "$commit" ] || die "$url: HEAD is not $commit"
 }
 
+# fetch_git_sparse dir url commit path...: fetch_git for the given paths of
+# the commit only, for a repository too large to fetch whole.
+fetch_git_sparse() {
+	local dir=$1 url=$2 commit=$3
+	shift 3
+	if [ "$(git -C "$dir" rev-parse HEAD 2>/dev/null)" = "$commit" ] && [ -z "$(git -C "$dir" status --porcelain)" ] &&
+		[ "$(git -C "$dir" sparse-checkout list 2>/dev/null)" = "$(printf '%s\n' "$@")" ]; then
+		return
+	fi
+	log "$url @ ${commit:0:7} ($*)"
+	rm -rf "$dir"
+	git init -q "$dir"
+	git -C "$dir" sparse-checkout set --cone "$@"
+	git -C "$dir" fetch -q --depth 1 --filter=blob:none "$url" "$commit"
+	git -C "$dir" -c advice.detachedHead=false checkout -q FETCH_HEAD
+	[ "$(git -C "$dir" rev-parse HEAD)" = "$commit" ] || die "$url: HEAD is not $commit"
+}
+
 # fetch_file path url sha256: a download, checked by SHA-256.
 fetch_file() {
 	local path=$1 url=$2 sum=$3 got
@@ -41,4 +59,16 @@ fetch_file() {
 	got=$(sha256 "$path.part")
 	[ "$got" = "$sum" ] || die "$url: SHA-256 $got, want $sum"
 	mv "$path.part" "$path"
+}
+
+# export_vars name=value...: prints the export lines to eval, and appends the
+# variables to $GITHUB_ENV under GitHub Actions.
+export_vars() {
+	local v
+	for v in "$@"; do
+		printf 'export %q\n' "$v"
+		if [ -n "${GITHUB_ENV:-}" ]; then
+			echo "$v" >>"$GITHUB_ENV"
+		fi
+	done
 }

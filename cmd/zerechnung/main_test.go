@@ -51,18 +51,21 @@ func runValidate(t *testing.T, args ...string) (int, map[string]bool) {
 
 // TestValidateDeclaredRules checks that the rule options of validate do not
 // drop the rules an invoice declares in BT-24: BR-DE for XRECHNUNG, Peppol
-// for a Peppol invoice.
+// for a Peppol invoice, BR-NL for an NLCIUS invoice.
 func TestValidateDeclaredRules(t *testing.T) {
 	xrechnung := mutated(t, "../../testdata/XRECHNUNG_Einfach.cii.xml",
 		"<ram:BuyerReference>04011000-12345-34</ram:BuyerReference>", "")
 	peppol := mutated(t, "../../internal/rules/peppol/testdata/peppol.xml",
 		"URIUniversalCommunication>", "X>")
+	nlcius := mutated(t, "../../internal/rules/nl/testdata/nlcius.ubl.xml",
+		"<cbc:BuyerReference>PO-4512</cbc:BuyerReference>", "")
 	for _, flags := range [][]string{
 		nil,
 		{"-fr"},
 		{"-de"},
 		{"-choruspro"},
 		{"-peppol"},
+		{"-nl"},
 		{"-fr", "-auto"},
 	} {
 		code, got := runValidate(t, append(flags, xrechnung)...)
@@ -72,6 +75,31 @@ func TestValidateDeclaredRules(t *testing.T) {
 		code, got = runValidate(t, append(flags, peppol)...)
 		if code != 1 || !got["PEPPOL-EN16931-R010"] {
 			t.Errorf("validate %v on Peppol invoice without electronic address: code %d, PEPPOL-EN16931-R010 reported %v", flags, code, got["PEPPOL-EN16931-R010"])
+		}
+		code, got = runValidate(t, append(flags, nlcius)...)
+		if code != 1 || !got["BR-NL-2"] {
+			t.Errorf("validate %v on NLCIUS invoice without BT-10: code %d, BR-NL-2 reported %v", flags, code, got["BR-NL-2"])
+		}
+	}
+}
+
+// TestValidateNLOption checks that -nl applies the Dutch rules to an invoice
+// that does not declare NLCIUS (on a UBL invoice, the SI-UBL 2.0 version
+// check reports it), and that they are not applied otherwise.
+func TestValidateNLOption(t *testing.T) {
+	const peppol = "../../internal/rules/peppol/testdata/peppol.ubl.xml"
+	for _, c := range []struct {
+		flags []string
+		want  bool
+	}{
+		{nil, false},
+		{[]string{"-auto"}, false},
+		{[]string{"-peppol"}, false},
+		{[]string{"-nl"}, true},
+	} {
+		_, got := runValidate(t, append(c.flags, peppol)...)
+		if got["SI-V20-INV-R000"] != c.want {
+			t.Errorf("validate %v on a Peppol invoice: SI-V20-INV-R000 reported %v, want %v", c.flags, got["SI-V20-INV-R000"], c.want)
 		}
 	}
 }
