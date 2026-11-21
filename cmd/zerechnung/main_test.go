@@ -3,10 +3,13 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ritoon/zerechnung"
 )
 
 // mutated writes to a temporary file the invoice name with old replaced by
@@ -123,5 +126,25 @@ func TestValidatePeppolOption(t *testing.T) {
 		if got["PEPPOL-EN16931-R004"] != c.want {
 			t.Errorf("validate %v on a Factur-X invoice: PEPPOL-EN16931-R004 reported %v, want %v", c.flags, got["PEPPOL-EN16931-R004"], c.want)
 		}
+	}
+}
+
+// TestEmbedRequirePDFA checks that embed -require-pdfa refuses an input PDF
+// that does not declare PDF/A and writes nothing.
+func TestEmbedRequirePDFA(t *testing.T) {
+	const host, xml = "../../testdata/host.pdf", "../../testdata/EN16931_Einfach.cii.xml"
+	out := filepath.Join(t.TempDir(), "out.pdf")
+	err := embed([]string{"-xml", xml, "-require-pdfa", "-o", out, host})
+	if !errors.Is(err, zerechnung.ErrNotPDFA) {
+		t.Fatalf("embed -require-pdfa on a PDF without PDF/A declaration: %v, want ErrNotPDFA", err)
+	}
+	if _, err := os.Stat(out); !os.IsNotExist(err) {
+		t.Errorf("output written: %v", err)
+	}
+	if err := embed([]string{"-xml", xml, "-o", out, host}); err != nil {
+		t.Fatalf("embed without -require-pdfa: %v", err)
+	}
+	if err := embed([]string{"-xml", xml, "-require-pdfa", "-o", out, out}); err != nil {
+		t.Errorf("embed -require-pdfa on a PDF declared PDF/A-3: %v", err)
 	}
 }

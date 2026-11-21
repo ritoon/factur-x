@@ -147,6 +147,24 @@ func TestCreateInvalid(t *testing.T) {
 	}
 }
 
+// TestCreateRequirePDFA checks that Create, with Embed.RequirePDFA, refuses
+// a host that does not declare PDF/A (testdata/host.pdf has no XMP
+// metadata) and accepts one that declares PDF/A-3.
+func TestCreateRequirePDFA(t *testing.T) {
+	host := readFile(t, "testdata/host.pdf")
+	strict := &zerechnung.CreateOptions{Calculate: true, Embed: zerechnung.EmbedOptions{RequirePDFA: true}}
+	if _, err := zerechnung.Create(host, newInvoice(), strict); !errors.Is(err, zerechnung.ErrNotPDFA) {
+		t.Fatalf("host without PDF/A declaration: %v, want ErrNotPDFA", err)
+	}
+	pdfa, err := zerechnung.Create(host, newInvoice(), &zerechnung.CreateOptions{Calculate: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := zerechnung.Create(pdfa, newInvoice(), strict); err != nil {
+		t.Errorf("host declared PDF/A-3: %v", err)
+	}
+}
+
 func TestDetectProfile(t *testing.T) {
 	p, err := zerechnung.DetectProfile(readFile(t, "testdata/XRECHNUNG_Einfach.cii.xml"))
 	if err != nil || p != invoice.ProfileXRechnung {

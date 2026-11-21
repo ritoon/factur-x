@@ -5,7 +5,7 @@
 //	zerechnung extract [-o out.xml] invoice.pdf
 //	zerechnung info invoice.pdf
 //	zerechnung validate [-fr] [-de] [-peppol] [-nl] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-hybrid] [-json] invoice.pdf|invoice.xml
-//	zerechnung embed -xml invoice.xml [-profile p] [-attach file]... [-o out.pdf] input.pdf
+//	zerechnung embed -xml invoice.xml [-profile p] [-attach file]... [-require-pdfa] [-o out.pdf] input.pdf
 //	zerechnung json invoice.pdf|invoice.xml
 //	zerechnung rules [-fr] [-de] [-choruspro] [-peppol] [-nl]
 //
@@ -39,7 +39,7 @@ Usage:
   zerechnung extract [-o out.xml] invoice.pdf
   zerechnung info invoice.pdf
   zerechnung validate [-fr] [-de] [-peppol] [-nl] [-auto] [-reject-basicwl] [-choruspro [-service-required] [-engagement-required]] [-profile p] [-hybrid] [-json] invoice.pdf|invoice.xml
-  zerechnung embed -xml invoice.xml [-profile p] [-attach file]... [-o out.pdf] input.pdf
+  zerechnung embed -xml invoice.xml [-profile p] [-attach file]... [-require-pdfa] [-o out.pdf] input.pdf
   zerechnung json invoice.pdf|invoice.xml
   zerechnung rules [-fr] [-de] [-choruspro] [-peppol] [-nl]
 
@@ -259,6 +259,7 @@ func embed(args []string) error {
 	rel := fs.String("relationship", "", "AFRelationship (default: Data for MINIMUM and BASIC WL, Alternative otherwise; Germany and XRECHNUNG admit only Alternative)")
 	var attach fileList
 	fs.Var(&attach, "attach", "supplementary file to embed besides the invoice, with AFRelationship Supplement and the MIME type of its extension (repeatable)")
+	requirePDFA := fs.Bool("require-pdfa", false, "refuse an input PDF whose XMP metadata does not declare PDF/A-2, PDF/A-3 or PDF/A-4")
 	out := fs.String("o", "", "output PDF (default: standard output)")
 	_, pdf, err := oneFile(fs, args)
 	if err != nil {
@@ -271,7 +272,7 @@ func embed(args []string) error {
 	if err != nil {
 		return err
 	}
-	opts := &zerechnung.EmbedOptions{Relationship: *rel}
+	opts := &zerechnung.EmbedOptions{Relationship: *rel, RequirePDFA: *requirePDFA}
 	for _, p := range attach {
 		data, err := os.ReadFile(p)
 		if err != nil {

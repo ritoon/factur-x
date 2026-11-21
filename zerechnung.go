@@ -56,7 +56,9 @@ type CreateOptions struct {
 	// Validate, when not nil, validates the XML before embedding it and makes
 	// Create fail with a *ValidationError when the report has errors.
 	Validate *validate.Options
-	// Embed tunes the PDF part. Its Profile field is ignored.
+	// Embed tunes the PDF part. Its Profile field is ignored. Set
+	// Embed.RequirePDFA to refuse a pdf that does not declare PDF/A-2,
+	// PDF/A-3 or PDF/A-4.
 	Embed EmbedOptions
 }
 
@@ -74,7 +76,9 @@ func (e *ValidationError) Error() string {
 	return fmt.Sprintf("zerechnung: invalid invoice: %d error(s), first: %s", len(errs), errs[0])
 }
 
-// Create writes inv as CII XML for its profile and embeds it in pdf.
+// Create writes inv as CII XML for its profile and embeds it in pdf. With
+// opts.Embed.RequirePDFA, it fails with an error wrapping ErrNotPDFA when
+// pdf does not declare PDF/A-2, PDF/A-3 or PDF/A-4.
 func Create(pdf []byte, inv *invoice.Invoice, opts *CreateOptions) ([]byte, error) {
 	if opts == nil {
 		opts = &CreateOptions{}
