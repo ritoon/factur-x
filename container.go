@@ -24,6 +24,10 @@ var (
 	ErrNoInvoice = errors.New("zerechnung: no invoice XML attachment in the PDF")
 	// ErrEncrypted is returned for encrypted PDFs, which PDF/A forbids.
 	ErrEncrypted = pdf.ErrEncrypted
+	// ErrNotPDFA is wrapped by the error of Embed and Create, with
+	// EmbedOptions.RequirePDFA, when the host PDF does not declare PDF/A-2,
+	// PDF/A-3 or PDF/A-4.
+	ErrNotPDFA = errors.New("zerechnung: the PDF does not declare PDF/A-2, PDF/A-3 or PDF/A-4")
 )
 
 // XMP namespaces of the hybrid-invoice schema.
@@ -394,6 +398,35 @@ func (c *container) xmpInfo() (info *xmp.Info, present bool, err error) {
 	return info, true, err
 }
 
+// requirePDFA returns an error wrapping ErrNotPDFA when the XMP metadata of
+// the document does not declare PDF/A-2, PDF/A-3 or PDF/A-4 with a
+// conformance level of that part: A, B or U for PDF/A-2 and PDF/A-3; none,
+// F or E for PDF/A-4. Embed declares PDF/A-3 on a PDF/A-2 host and
+// PDF/A-4f on a plain PDF/A-4 host, which their rules allow.
+func (c *container) requirePDFA() error {
+	info, present, err := c.xmpInfo()
+	switch {
+	case !present:
+		return fmt.Errorf("%w: the document catalog has no XMP metadata stream", ErrNotPDFA)
+	case err != nil:
+		return fmt.Errorf("%w: the XMP metadata cannot be read: %v", ErrNotPDFA, err)
+	case info == nil:
+		return fmt.Errorf("%w: the XMP metadata stream cannot be decoded", ErrNotPDFA)
+	}
+	part, conf := strings.TrimSpace(info.PDFAPart), strings.TrimSpace(info.PDFAConformance)
+	switch {
+	case part == "":
+		return fmt.Errorf("%w: the XMP metadata has no pdfaid:part", ErrNotPDFA)
+	case part != "2" && part != "3" && part != "4":
+		return fmt.Errorf("%w: pdfaid:part is %q", ErrNotPDFA, part)
+	case part == "4" && conf != "" && conf != "F" && conf != "E":
+		return fmt.Errorf("%w: pdfaid:conformance is %q; PDF/A-4 has no level, or level F or E", ErrNotPDFA, conf)
+	case part != "4" && conf != "A" && conf != "B" && conf != "U":
+		return fmt.Errorf("%w: pdfaid:conformance is %q; PDF/A-%s has levels A, B and U", ErrNotPDFA, conf, part)
+	}
+	return nil
+}
+
 func metadataOf(info *xmp.Info) *Metadata {
 	if info == nil {
 		return nil
@@ -732,6 +765,15 @@ type EmbedOptions struct {
 	// Attachments are supplementary files embedded besides the invoice: a
 	// purchase order, a timesheet, a delivery note...
 	Attachments []File
+	// RequirePDFA makes Embed refuse a host PDF whose XMP metadata does not
+	// declare PDF/A-2, PDF/A-3 or PDF/A-4 (pdfaid:part 2, 3 or 4, with a
+	// conformance level of that part: A, B or U for PDF/A-2 and PDF/A-3;
+	// none, F or E for PDF/A-4), instead of declaring PDF/A-3 or PDF/A-4f on
+	// a document that may not conform. The error wraps ErrNotPDFA. Only the
+	// declaration is read: CheckContainer reports the PDF/A requirements it
+	// can verify without rendering, and a PDF/A validator such as veraPDF
+	// checks the rest.
+	RequirePDFA bool
 }
 
 // File is a supplementary file that Embed attaches to the PDF besides the
@@ -947,7 +989,9 @@ func putFile(u *pdf.Update, name, desc, rel, mime string, date time.Time, data [
 // for Data and Source, the seller's country (see EmbedOptions).
 //
 // Embed does not convert the PDF to PDF/A: fonts, colour spaces and output
-// intents are left as they are. CheckContainer reports what is missing. Nor
+// intents are left as they are. CheckContainer reports what is missing.
+// With EmbedOptions.RequirePDFA, Embed refuses a host that does not declare
+// PDF/A-2, PDF/A-3 or PDF/A-4, with an error wrapping ErrNotPDFA. Nor
 // does it validate the XML: only BT-24 is read, when Profile is unset, and
 // the seller's country (BT-40), when Relationship is Data or Source for
 // BASIC and above.
@@ -1000,6 +1044,11 @@ func Embed(pdfData, xml []byte, opts *EmbedOptions) ([]byte, error) {
 	c, err := openContainer(pdfData)
 	if err != nil {
 		return nil, err
+	}
+	if o.RequirePDFA {
+		if err := c.requirePDFA(); err != nil {
+			return nil, err
+		}
 	}
 	r := c.r
 	u := pdf.NewUpdate(r)

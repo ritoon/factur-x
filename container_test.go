@@ -646,6 +646,71 @@ func TestEmbedPDFAPart(t *testing.T) {
 	}
 }
 
+// TestEmbedRequirePDFA checks that EmbedOptions.RequirePDFA refuses the
+// hosts that do not declare PDF/A-2, PDF/A-3 or PDF/A-4, and leaves the
+// output unchanged for the others.
+func TestEmbedRequirePDFA(t *testing.T) {
+	x := ciiXML(invoice.URNEN16931)
+	for _, tc := range []struct {
+		name            string
+		version, packet string
+		err             string // detail of the error; "" when the host is accepted
+	}{
+		{"PDF/A-2b", "1.7", pdfaPacket("<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance>"), ""},
+		{"PDF/A-2u", "1.7", pdfaPacket("<pdfaid:part>2</pdfaid:part><pdfaid:conformance>U</pdfaid:conformance>"), ""},
+		{"PDF/A-3a", "1.7", pdfaPacket("<pdfaid:part>3</pdfaid:part><pdfaid:conformance>A</pdfaid:conformance>"), ""},
+		{"PDF/A-3b, attributes", "1.7", pdfaPacket("</rdf:Description><rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\" pdfaid:part=\"3\" pdfaid:conformance=\"B\">"), ""},
+		{"PDF/A-4", "2.0", pdfaPacket("<pdfaid:part>4</pdfaid:part><pdfaid:rev>2020</pdfaid:rev>"), ""},
+		{"PDF/A-4f", "2.0", pdfaPacket("<pdfaid:part>4</pdfaid:part><pdfaid:rev>2020</pdfaid:rev><pdfaid:conformance>F</pdfaid:conformance>"), ""},
+		{"PDF/A-4e", "2.0", pdfaPacket("<pdfaid:part>4</pdfaid:part><pdfaid:rev>2020</pdfaid:rev><pdfaid:conformance>E</pdfaid:conformance>"), ""},
+
+		{"no XMP", "1.7", "", "the document catalog has no XMP metadata stream"},
+		{"no XMP, PDF 2.0", "2.0", "", "the document catalog has no XMP metadata stream"},
+		{"XMP without RDF", "1.7", `<x:xmpmeta xmlns:x="adobe:ns:meta/"/>`, "the XMP metadata cannot be read"},
+		{"XMP without identification", "1.7", pdfaPacket(""), "the XMP metadata has no pdfaid:part"},
+		{"PDF/A-1b", "1.4", pdfaPacket("<pdfaid:part>1</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance>"), `pdfaid:part is "1"`},
+		{"PDF/A-3 without level", "1.7", pdfaPacket("<pdfaid:part>3</pdfaid:part>"), `pdfaid:conformance is ""; PDF/A-3 has levels A, B and U`},
+		{"PDF/A-2 at level F", "1.7", pdfaPacket("<pdfaid:part>2</pdfaid:part><pdfaid:conformance>F</pdfaid:conformance>"), `pdfaid:conformance is "F"; PDF/A-2 has levels A, B and U`},
+		{"PDF/A-4 at level B", "2.0", pdfaPacket("<pdfaid:part>4</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance>"), `pdfaid:conformance is "B"; PDF/A-4 has no level, or level F or E`},
+		{"XMP stream not decodable", "1.7", "", "the XMP metadata stream cannot be decoded"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &fixture{version: tc.version, xmp: tc.packet}
+			if tc.name == "XMP stream not decodable" {
+				f.extra = func(b *pdftest.Builder) (string, string) {
+					meta := b.AddStream("<< /Type /Metadata /Subtype /XML /Filter /FlateDecode >>", []byte("not deflate data"))
+					return fmt.Sprintf("/Metadata %d 0 R", meta), ""
+				}
+			}
+			in := f.build()
+			out, err := Embed(in, x, &EmbedOptions{ModDate: testDate, RequirePDFA: true})
+			if tc.err != "" {
+				if !errors.Is(err, ErrNotPDFA) || !strings.Contains(err.Error(), tc.err) {
+					t.Fatalf("error %v, want ErrNotPDFA with %q", err, tc.err)
+				}
+				if out != nil {
+					t.Error("output returned with the error")
+				}
+				// Without the option, the host is declared PDF/A.
+				if _, err := Embed(in, x, &EmbedOptions{ModDate: testDate}); err != nil {
+					t.Errorf("without RequirePDFA: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := Embed(in, x, &EmbedOptions{ModDate: testDate})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(out, want) {
+				t.Error("RequirePDFA changes the output of an accepted host")
+			}
+		})
+	}
+}
+
 func TestEmbedReplace(t *testing.T) {
 	f := &fixture{files: []file{{name: "notes.txt", data: []byte("notes"), rel: "Supplement"}}}
 	in := f.build()
