@@ -31,3 +31,34 @@ mustang corpus/XML-Rechnung/UBL/not_validating_* +PEPPOL-* Facture Peppol BIS 3.
 # Mustang : messages sans identifiant de règle
 
 mustang corpus/ZUGFeRDv2/fail/FX-With-UBL-REC50304330.pdf +SCHEMA Mustang signale la même erreur, une facture UBL dans un PDF Factur-X, par un message sans identifiant de règle (type 17).
+
+# XSLT de la NPa : règles EN 16931 (CEN 1.3.16 dans les XSLT, 1.3.17 dans ZeRechnung)
+
+npa nl/simplerinvoicing/SI-UBL-2.0.3.2/SI-UBL-2.0_UBL-SR-*_error_multiple_legalentity_companyid.xml +UBL-SR-57 UBL-SR-57 (une seule cac:PartyLegalEntity par partie) vient des artefacts CEN 1.3.17, que ZeRechnung applique ; les XSLT de la NPa incluent la version 1.3.16, qui ne l'a pas. Les deux côtés lèvent UBL-SR-11 ou UBL-SR-17, la règle que le fichier teste.
+
+# XSLT de la NPa : arrêts sur une erreur de type XPath dans une règle EN 16931
+#
+# Sur un élément répété là où le schéma n'en admet qu'un, le test d'une règle
+# CEN reçoit deux valeurs (normalize-space, substring-after, cast) et Saxon
+# arrête la transformation (XPTY0004). ZeRechnung lit la première valeur, et
+# signale la répétition par sa règle de syntaxe ou par le schéma XSD : même
+# verdict.
+
+npa nl/simplerinvoicing/SI-UBL-2.0.3.2/SI-UBL-2.0_UBL-SR-09_error_multiple_legalentity_registrationname.xml -BR-06 Arrêt dans le test de BR-06 sur les deux cbc:RegistrationName du vendeur ; ZeRechnung lève UBL-SR-09 (nom du vendeur répété), la règle que le fichier teste.
+npa nl/simplerinvoicing/SI-UBL-2.0.3.2/SI-UBL-2.0_UBL-SR-15_error_multiple_legalentity_registrationname.xml -BR-07 Arrêt dans le test de BR-07 sur les deux cbc:RegistrationName de l'acheteur ; ZeRechnung lève UBL-SR-15 (nom de l'acheteur répété), la règle que le fichier teste.
+npa nl/variants/cii-*-br-nl-11-two-amounts-due.xml -BR-DEC-18 Arrêt dans le test de BR-DEC-18 sur les deux ram:DuePayableAmount ; ZeRechnung lève CII-SR-487 (montant dû répété) et BR-NL-11, dont il tient le test pour échoué.
+npa nl/variants/ubl-*-br-nl-11-two-payable-amounts.xml -BR-CO-16 Arrêt dans le test de BR-CO-16 sur les deux cbc:PayableAmount ; ZeRechnung signale la répétition par le schéma XSD et lève BR-NL-11, dont il tient le test pour échoué.
+npa nl/variants/ubl-*-br-nl-12-two-codes.xml -BR-61 Arrêt dans le test de BR-61 sur les deux cbc:PaymentMeansCode ; ZeRechnung signale la répétition par le schéma XSD et lève BR-NL-12, dont il tient le test pour échoué.
+
+# XSLT de la NPa : assertions NLCIUS qu'aucune facture ne fait échouer
+#
+# Dans un motif schematron, un élément n'est vérifié que par la première règle
+# dont il vérifie le contexte : ces assertions ne s'appliquent jamais, et
+# ZeRechnung ne les implémente pas (voir la documentation de internal/rules/nl).
+
+npa cii/nlcius ~BR-NL-9 Même contexte que BR-NL-7 (/*/rsm:ExchangedDocument/ram:TypeCode[$si]), qui le précède dans le motif.
+npa cii/nlcius ~BR-NL-31 Même contexte que BR-NL-12 (ram:SpecifiedTradeSettlementPaymentMeans[$s]), qui le précède dans le motif.
+npa ubl/nlcius ~BR-NL-32-1 Assertion au message de BR-NL-34 : sa règle répète le contexte de BR-NL-32-1 (cac:AllowanceCharge/cbc:AllowanceChargeReasonCode), qui la précède dans le motif.
+npa ubl/nlcius ~BR-NL-32-2 Les deux assertions BR-NL-32-2, aux messages de BR-NL-32 et de BR-NL-34 : le contexte de BR-NL-32-1, cac:AllowanceCharge/cbc:AllowanceChargeReasonCode, couvre déjà les codes motifs des remises et charges des lignes de facture.
+npa ubl/nlcius ~BR-NL-32-3 Les deux assertions BR-NL-32-3, aux messages de BR-NL-32 et de BR-NL-34 : le contexte de BR-NL-32-1 couvre déjà les codes motifs des remises et charges des lignes d'avoir.
+npa ubl/SI-UBL-VERSION ~SI-INV-R000 Vérifie que la racine est une Invoice ou une CreditNote : un validateur ne donne la XSLT SI-UBL 2.0 qu'à ces documents, les seuls que ZeRechnung valide en UBL.

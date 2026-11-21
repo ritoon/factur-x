@@ -94,6 +94,17 @@
 //     and BR-GA-7 read the text nodes of a payment means identifier
 //     (text()) as one, the character data of the element.
 //
+// # Verification
+//
+// Besides the tests of the package, the parity job of the repository
+// (conformance/parity.sh) runs the XSLT that the NPa compiles from these
+// schematrons, with Saxon, on the SimplerInvoicing test files, the invoices
+// of testdata and the documents of the mutation cases (TestVariants), and
+// compares their failed assertions, errors and warnings, EN 16931 rules
+// included, with the findings of the package, invoice by invoice. It also
+// lists the assertions of the patterns above that no document makes fail:
+// only the unreachable ones listed above, and SI-INV-R000.
+//
 // Findings are located at the element of the rule context.
 package nl
 

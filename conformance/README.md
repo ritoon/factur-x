@@ -6,9 +6,9 @@ Ce dossier mesure l'exactitude du package sur les artefacts officiels, à chaque
 |---|---|
 | [`fetch.sh`](fetch.sh) | Récupère les artefacts officiels à des versions figées et les vérifie, puis affiche les variables `FX_*` qui activent les tests optionnels |
 | [`fetch-nl.sh`](fetch-nl.sh) | Récupère les seuls artefacts des règles néerlandaises (`FX_NL`, `FX_NL_TESTS`) ; `fetch.sh` l'appelle, et le job *Tests NLCIUS sur les artefacts officiels* du workflow [CI](../.github/workflows/ci.yml) l'exécute seul, en quelques secondes |
-| [`parity.sh`](parity.sh) | Exécute KoSIT et Mustang sur les factures du corpus et de la suite KoSIT, puis compare leurs règles à celles du package |
-| [`parity/`](parity) | Outil Go de comparaison (module séparé) et lanceur Java de Mustang |
-| [`parity/known.txt`](parity/known.txt) | Écarts connus et justifiés ; tout autre écart fait échouer le job |
+| [`parity.sh`](parity.sh) | Exécute KoSIT et Mustang sur les factures du corpus et de la suite KoSIT, et les XSLT de la NPa sur les factures NLCIUS, puis compare leurs règles à celles du package |
+| [`parity/`](parity) | Outil Go de comparaison (module séparé) et lanceurs Java de Mustang et des XSLT de la NPa |
+| [`parity/known.txt`](parity/known.txt) | Écarts connus et justifiés, et assertions NLCIUS qu'aucune facture ne déclenche ; tout autre écart fait échouer le job |
 
 ## Artefacts
 
@@ -30,12 +30,14 @@ Ce dossier mesure l'exactitude du package sur les artefacts officiels, à chaque
 
 FeRD et FNFE-MPE ne distribuent leurs paquets qu'au travers d'un formulaire : les 20 XSD et les 6 fichiers de schematron viennent de deux copies publiques de ces paquets sous Apache-2.0 ([LandrixSoftware/validator-configuration-zugferd](https://github.com/LandrixSoftware/validator-configuration-zugferd), [backoffice-plus/e-invoice-validator](https://github.com/backoffice-plus/e-invoice-validator)), à des commits figés. Chaque XSD est vérifié par le SHA-256 du fichier officiel, celui-là même dont `internal/schema/tables_gen.go` a été généré. Les schematrons et leurs listes de codes sont ceux que Mustang 2.26.0 embarque (`schematron/ZF_250`) et que contient le paquet officiel, aux fins de ligne près (CRLF dans le paquet et dans Mustang, LF dans la copie git) : leur SHA-256, sur le texte en LF, est vérifié par `fetch.sh` et par le générateur `internal/rules/facturx/gen`, dont `codedb_gen.go` est la sortie.
 
-Les validateurs de référence, téléchargés par `parity.sh` depuis leurs publications GitHub, sont vérifiés de la même façon ; KoSIT s'exécute avec la configuration XRechnung 3.0.2 du 2026-08-31 récupérée par `fetch.sh` :
+Les validateurs de référence, téléchargés par `parity.sh` depuis leurs publications GitHub, et Saxon depuis Maven Central, sont vérifiés de la même façon ; KoSIT s'exécute avec la configuration XRechnung 3.0.2 du 2026-08-31 récupérée par `fetch.sh`, Saxon avec les XSLT du dépôt de la NPa (`FX_NL`) :
 
 | Validateur | Fichier | SHA-256 |
 |---|---|---|
 | KoSIT validator 1.6.3 | `validator-1.6.3-standalone.jar` | `799e64be…` |
 | Mustang 2.26.0 | `Mustang-CLI-2.26.0.jar` | `42d7868c…` |
+| Saxon-HE 12.10 | `Saxon-HE-12.10.jar` | `b571af28…` |
+| XML Resolver 5.3.3, que Saxon 12 demande | `xmlresolver-5.3.3.jar`, `xmlresolver-5.3.3-data.jar` | `1fe4d5b9…`, `b0c487ad…` |
 
 ## Tests sur les artefacts
 
@@ -43,7 +45,7 @@ Le job *Tests sur les artefacts officiels* lance `go test ./...` avec toutes les
 
 ## Parité avec KoSIT et Mustang
 
-Le job *Parité avec KoSIT et Mustang* exécute les deux validateurs de référence et le package sur le même jeu de 282 factures :
+Le job *Parité avec KoSIT, Mustang et la NPa* exécute les deux validateurs de référence et le package sur le même jeu de 282 factures :
 
 - corpus ZUGFeRD : `XML-Rechnung/CII`, `XML-Rechnung/UBL`, `XML-Rechnung/FX`, `ZUGFeRDv2/correct` et `ZUGFeRDv2/fail` (factures invalides à dessein) ;
 - suite de tests KoSIT : `src/test` (cas métier et cas techniques, toutes valides).
@@ -83,6 +85,38 @@ Le tableau *Cas négatifs officiels* du rapport donne, pour chaque facture inval
 
 Le test `TestOfficialNegativeCases` ([`negative_test.go`](../negative_test.go)), exécuté par le job *Tests sur les artefacts officiels*, fige ces verdicts : chacune des 24 factures de `ZUGFeRDv2/fail` et des 2 exemples `not_validating` doit lever les règles que lèvent les références (sous le même identifiant ou, pour le même défaut, sous celui du package). Trois n'ont pas d'erreur, pour une raison donnée dans le test : un défaut de police PDF/A que seul veraPDF voit, un prix net incohérent qu'aucune règle EN 16931 ne contrôle, et un exemple où aucune référence ne trouve d'erreur non plus.
 
+## Parité NLCIUS avec les XSLT de la NPa
+
+Le même job exécute les XSLT que l'autorité Peppol néerlandaise (NPa) compile de ses schematrons, `xsl/nlcius-cii-1.0.xsl` (NLCIUS-CII 1.0.3.13), `xsl/si-ubl-2.0.xsl` (SI-UBL 2.0.3.13) et `xsl/si-ubl-2.0-ext-gaccount.xsl` (extension G-rekening 1.0.2.13) du dépôt `FX_NL`, sur 290 fichiers :
+
+- les 107 fichiers de test de SimplerInvoicing pour SI-UBL 2.0.3.2, NLCIUS-CII 1.0.3 et l'extension G-rekening 1.0, repris par phive-rules (`FX_NL_TESTS`) ;
+- les 3 factures NLCIUS du dépôt (`internal/rules/nl/testdata` : CII, UBL et G-rekening) ;
+- 180 variantes de ces factures : les documents des tests de mutation de `internal/rules/nl`, que `go test ./internal/rules/nl -run '^TestVariants$' -variants DIR` écrit, et qui enfreignent ou frôlent chacun une règle (condition sur le pays du fournisseur, valeur normalisée, code de type comparé comme un nombre, élément vide, montant illisible…).
+
+Chaque fichier reçoit la XSLT qu'un validateur choisit : NLCIUS-CII pour une facture CII ; pour une facture UBL, celle de l'extension G-rekening quand le `cbc:CustomizationID` enfant de la racine la déclare, celle de SI-UBL 2.0 sinon. [`parity/NPaBatch.java`](parity/NPaBatch.java) les exécute avec Saxon-HE 12.10 dans une seule JVM, chaque XSLT compilée une fois, et écrit le rapport SVRL de chaque fichier. Le Saxon-HE 9.6 que fournit le dépôt de la NPa n'est pas utilisé : il s'arrête sur une erreur interne en comparant une valeur non typée à un nombre (`" 0389 " = 380`).
+
+Pour chaque fichier, l'outil compare les règles levées **en erreur et en avertissement**, sous leur identifiant :
+
+- côté NPa, chaque assertion échouée du rapport SVRL, au niveau de son `flag` (`fatal` : erreur, `warning` : avertissement) : celles des motifs NLCIUS (`nlcius`, `SI-UBL-VERSION`, `g-account-extension`) et les règles EN 16931 que chaque XSLT inclut (CEN 1.3.16), syntaxe CII et UBL comprise ;
+- côté package, les constats des jeux `EN16931` et `Netherlands` de `validate.XML` avec `Rules: validate.Default | validate.Netherlands`, comme si le validateur avait été choisi ; ses constats de schéma XSD, de profil Factur-X et Peppol, que les XSLT n'ont pas, restent hors de la comparaison.
+
+Une règle levée d'un seul côté, ou à des niveaux différents, est un écart. Quand la transformation s'arrête sur une erreur dynamique (une valeur qui ne se convertit pas en `xs:decimal`, plusieurs valeurs là où le test n'en attend qu'une), le rapport ne contient que l'erreur et sa ligne dans la XSLT : l'outil retrouve l'assertion dont le test l'a levée, la tient pour échouée, comme le package (voir la documentation de `internal/rules/nl`), et ne compare qu'elle.
+
+L'outil liste enfin les assertions des motifs NLCIUS qu'aucun fichier ne fait échouer, chacune désignée par son identifiant et son message (deux assertions BR-NL-8 en UBL, trois au message de BR-NL-34 sous les identifiants de BR-NL-32) : chacune doit être justifiée dans `known.txt` par une ligne `npa syntaxe/motif ~RÈGLE raison`, sans quoi le job échoue.
+
+### Résultats NLCIUS
+
+| Référence | Fichiers comparés | Mêmes règles | Écarts justifiés |
+|---|---|---|---|
+| XSLT de la NPa (Saxon-HE 12.10) : NLCIUS-CII 1.0.3.13, SI-UBL 2.0.3.13, G-rekening 1.0.2.13 | 290 | 283 | 7 |
+
+Sur chacun des 290 fichiers, le package et les XSLT lèvent les mêmes règles BR-NL, BR-GA, SI-V20-INV-R000, BII2-T10-R001 et de contrôle des éléments vides, au même niveau, et rendent le même verdict. Les 7 écarts justifiés portent sur des règles EN 16931 :
+
+- UBL-SR-57 (une seule `cac:PartyLegalEntity` par partie), ajoutée par les artefacts CEN 1.3.17 que le package applique, absente de la version 1.3.16 des XSLT : 2 fichiers de test, qui lèvent par ailleurs de part et d'autre la règle qu'ils testent ;
+- 5 arrêts de la XSLT sur une erreur de type XPath dans une règle CEN (BR-06, BR-07, BR-DEC-18, BR-CO-16, BR-61), sur un élément répété que le schéma n'admet qu'une fois : le package lit la première valeur et signale la répétition par sa règle de syntaxe (UBL-SR-09, UBL-SR-15, CII-SR-487) ou par le schéma XSD, et la règle NLCIUS du cas.
+
+Les 5 autres arrêts sont rendus à l'identique : BR-NL-7 sur un code de type `38O`, BR-GA-3 sur un montant `3.025E2` ou répété, BR-CO-16 sur un montant dû `1e3`, en CII comme en UBL. Les 8 assertions NLCIUS qu'aucun fichier ne déclenche sont celles qu'écarte l'ordre des règles, que le package n'écrit pas : BR-NL-9 et BR-NL-31 en CII ; en UBL, BR-NL-32-2, BR-NL-32-3 et les trois assertions au message de BR-NL-34 ; et SI-INV-R000, qui vérifie que la racine est une `Invoice` ou une `CreditNote`, les seuls documents qu'un validateur donne à la XSLT SI-UBL 2.0.
+
 ## En local
 
 ```bash
@@ -94,4 +128,4 @@ go test ./...
 conformance/parity.sh
 ```
 
-`fetch.sh` demande git, curl et `pdfdetach` (poppler-utils) ; `parity.sh` demande en plus Java 17 ou suivant et unzip. Les artefacts vont dans `conformance/.artifacts`, ignoré par git.
+`fetch.sh` demande git, curl et `pdfdetach` (poppler-utils) ; `parity.sh` demande en plus Java 17 ou suivant et unzip, et exécute KoSIT, Mustang et les XSLT de la NPa. Les artefacts vont dans `conformance/.artifacts`, ignoré par git.

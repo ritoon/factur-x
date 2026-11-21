@@ -33,6 +33,7 @@ type result struct {
 	Rules   map[string]string `json:"rules"`             // compared rule (or equivalent, see equivalents) → highest level
 	Other   []string          `json:"other,omitempty"`   // findings outside the comparison
 	Failure string            `json:"failure,omitempty"` // the validator failed on the invoice
+	Stopped string            `json:"stopped,omitempty"` // the validator stopped on a dynamic error: Rules holds the assertion that raised it only
 }
 
 func newResult() result { return result{Covered: true, Rules: map[string]string{}} }
@@ -44,12 +45,16 @@ func (r *result) add(rule, level string) {
 	}
 }
 
+// rank orders the levels: error, warning, information, then no level ("",
+// the rule is not raised).
 func rank(level string) int {
 	switch level {
 	case levelError:
 		return 3
 	case levelWarning:
 		return 2
+	case "":
+		return 0
 	}
 	return 1
 }
@@ -334,7 +339,7 @@ func clip(s string) string {
 }
 
 // sortedRules returns the rules of a set, sorted.
-func sortedRules(m map[string]string) []string {
+func sortedRules[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
 	for r := range m {
 		out = append(out, r)

@@ -12,12 +12,14 @@ import (
 
 // reference is a reference validator.
 type reference struct {
-	Key     string                       // kosit, mustang: the name used in known.txt
+	Key     string                       // kosit, mustang, npa: the name used in known.txt
 	Title   string                       // for the report
 	dir     string                       // sub-directory of the work directory holding its reports
 	report  func(e entry) string         // name of the report of an invoice
-	parse   func([]byte) (result, error) // reads a report
+	parse   func([]byte) (result, error) // reads a report; nil for npa, whose reports npaRun.result reads
 	applies func(e entry) bool           // the validator was given the invoice
+	ours    func(string, []byte) result  // validates the invoice with this package
+	levels  bool                         // warnings and informations are compared too, not only errors
 }
 
 var references = []reference{
@@ -27,7 +29,8 @@ var references = []reference{
 		dir:     "kosit",
 		report:  func(e entry) string { return strings.TrimSuffix(e.Name, ".xml") + "-report.xml" },
 		parse:   parseKoSIT,
-		applies: func(e entry) bool { return !e.isPDF() },
+		applies: func(e entry) bool { return !e.isPDF() && !e.nl() },
+		ours:    ours,
 	},
 	{
 		Key:     "mustang",
@@ -35,7 +38,17 @@ var references = []reference{
 		dir:     "mustang",
 		report:  func(e entry) string { return e.Name + ".xml" },
 		parse:   parseMustang,
-		applies: func(entry) bool { return true },
+		applies: func(e entry) bool { return !e.nl() },
+		ours:    ours,
+	},
+	{
+		Key:     "npa",
+		Title:   "XSLT de la NPa (Saxon-HE 12.10) : NLCIUS-CII 1.0.3.13, SI-UBL 2.0.3.13, G-rekening 1.0.2.13",
+		dir:     "npa",
+		report:  func(e entry) string { return e.Name + ".svrl" },
+		applies: func(e entry) bool { return e.nl() },
+		ours:    oursNL,
+		levels:  true,
 	},
 }
 
@@ -55,9 +68,9 @@ func (c *comparison) identical() bool { return len(c.Known) == 0 && len(c.Unexpe
 // knownDiff is a line of known.txt: a difference that is understood and
 // justified.
 type knownDiff struct {
-	ref    string // kosit, mustang or *
-	glob   string // origin of the invoice, * matching any string (/ included)
-	diff   string // +RULE or -RULE; a final * matches a prefix
+	ref    string // kosit, mustang, npa or *
+	glob   string // origin of the invoice, * matching any string (/ included); for ~RULE, syntax/pattern
+	diff   string // +RULE, -RULE, or ~RULE (an NLCIUS assertion that the XSLT never raise); a final * matches a prefix
 	reason string
 	line   int
 	used   bool
@@ -93,7 +106,8 @@ func glob(pattern, s string) bool {
 }
 
 // readKnown reads known.txt: one difference per line, "reference invoice
-// difference reason", # starting a comment.
+// difference reason", # starting a comment. A difference is +RULE, -RULE or
+// ~RULE.
 func readKnown(name string) ([]*knownDiff, error) {
 	if name == "" {
 		return nil, nil
@@ -111,8 +125,8 @@ func readKnown(name string) ([]*knownDiff, error) {
 			continue
 		}
 		fields := strings.Fields(line)
-		if len(fields) < 4 || (fields[2][0] != '+' && fields[2][0] != '-') {
-			return nil, fmt.Errorf("%s:%d: want \"reference invoice ±RULE reason\"", name, n)
+		if len(fields) < 4 || !strings.ContainsRune("+-~", rune(fields[2][0])) {
+			return nil, fmt.Errorf("%s:%d: want \"reference invoice ±RULE reason\" or \"reference syntax/pattern ~RULE reason\"", name, n)
 		}
 		out = append(out, &knownDiff{
 			ref: fields[0], glob: fields[1], diff: fields[2],
@@ -120,6 +134,12 @@ func readKnown(name string) ([]*knownDiff, error) {
 		})
 	}
 	return out, sc.Err()
+}
+
+// report is the JSON report.
+type report struct {
+	Comparisons []comparison `json:"comparisons"`
+	NeverFired  []neverFired `json:"never_fired,omitempty"`
 }
 
 func compare(work, knownFile, mdFile, jsonFile string) (bool, error) {
@@ -131,13 +151,26 @@ func compare(work, knownFile, mdFile, jsonFile string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	npa, err := newNPaRun(work)
+	if err != nil {
+		return false, err
+	}
+	justify := func(ref, src, d string) (string, bool) {
+		for _, k := range known {
+			if k.match(ref, src, d) {
+				k.used = true
+				return k.reason, true
+			}
+		}
+		return "", false
+	}
 	var all []comparison
 	for _, e := range entries {
 		data, err := os.ReadFile(filepath.Join(work, "in", e.Name))
 		if err != nil {
 			return false, err
 		}
-		mine := ours(e.Name, data)
+		mine := map[string]result{} // by reference
 		for _, ref := range references {
 			if !ref.applies(e) {
 				continue
@@ -146,28 +179,37 @@ func compare(work, knownFile, mdFile, jsonFile string) (bool, error) {
 			if err != nil {
 				return false, fmt.Errorf("%s (%s): %w", e.Source, ref.Key, err)
 			}
-			r, err := ref.parse(rdata)
+			var r result
+			if ref.Key == "npa" {
+				r, err = npa.result(e, rdata)
+			} else {
+				r, err = ref.parse(rdata)
+			}
 			if err != nil {
 				return false, fmt.Errorf("%s: %s report: %w", e.Source, ref.Key, err)
 			}
 			if !r.Covered {
 				continue
 			}
-			c := comparison{Reference: ref.Key, Invoice: e.Source, Negative: e.negative(), Ours: mine, Ref: r}
-			diffs := diff(mine.Rules, r.Rules)
-			if mine.Failure != "" {
-				diffs = append(diffs, "!ZeRechnung: "+mine.Failure)
+			m, ok := mine[ref.Key]
+			if !ok {
+				m = ref.ours(e.Name, data)
+				mine[ref.Key] = m
 			}
-		next:
+			c := comparison{Reference: ref.Key, Invoice: e.Source, Negative: e.negative(), Ours: m, Ref: r}
+			diffs := diff(m.Rules, r, ref.levels)
+			if m.Failure != "" {
+				diffs = append(diffs, "!ZeRechnung: "+m.Failure)
+			}
+			if r.Failure != "" {
+				diffs = append(diffs, "!"+ref.Key+": "+r.Failure)
+			}
 			for _, d := range diffs {
-				for _, k := range known {
-					if k.match(ref.Key, e.Source, d) {
-						k.used = true
-						c.Known = append(c.Known, d+" : "+k.reason)
-						continue next
-					}
+				if why, ok := justify(ref.Key, e.Source, d); ok {
+					c.Known = append(c.Known, d+" : "+why)
+				} else {
+					c.Unexpected = append(c.Unexpected, d)
 				}
-				c.Unexpected = append(c.Unexpected, d)
 			}
 			all = append(all, c)
 		}
@@ -179,13 +221,21 @@ func compare(work, knownFile, mdFile, jsonFile string) (bool, error) {
 			ok = false
 		}
 	}
+	never := npa.neverFired()
+	for i, n := range never {
+		if why, found := justify("npa", n.where(), "~"+n.ID); found {
+			never[i].Known = why
+		} else {
+			ok = false
+		}
+	}
 	var unused []string
 	for _, k := range known {
 		if !k.used {
 			unused = append(unused, fmt.Sprintf("known.txt:%d: %s %s %s matches no difference", k.line, k.ref, k.glob, k.diff))
 		}
 	}
-	md := markdown(all, unused)
+	md := markdown(all, never, unused)
 	fmt.Print(md)
 	if mdFile != "" {
 		if err := os.WriteFile(mdFile, []byte(md), 0o644); err != nil {
@@ -193,7 +243,7 @@ func compare(work, knownFile, mdFile, jsonFile string) (bool, error) {
 		}
 	}
 	if jsonFile != "" {
-		b, err := json.MarshalIndent(all, "", "  ")
+		b, err := json.MarshalIndent(report{Comparisons: all, NeverFired: never}, "", "  ")
 		if err != nil {
 			return false, err
 		}
@@ -271,10 +321,16 @@ func errorsOf(m map[string]string) []string {
 // package, "-RULE" for the reference, a rule and its equivalent (see
 // equivalents) being the same. A rule raised as an error by one side and as
 // a warning or an information by the other is a difference: the level
-// decides the verdict.
-func diff(mine, ref map[string]string) []string {
+// decides the verdict. With levels, the warnings and informations are
+// compared too: a rule raised at a higher level by this package is "+RULE",
+// at a higher level by the reference "-RULE". When the reference stopped on
+// a dynamic error, only the rule that raised it is compared.
+func diff(mine map[string]string, ref result, levels bool) []string {
+	if levels {
+		return diffLevels(mine, ref)
+	}
 	var out []string
-	mineErr, refErr := errorsOf(mine), errorsOf(ref)
+	mineErr, refErr := errorsOf(mine), errorsOf(ref.Rules)
 	for _, m := range mineErr {
 		if !compared(m) {
 			continue // an equivalent only
@@ -285,6 +341,29 @@ func diff(mine, ref map[string]string) []string {
 	}
 	for _, r := range refErr {
 		if !slices.ContainsFunc(mineErr, func(m string) bool { return same(r, m) }) {
+			out = append(out, "-"+r)
+		}
+	}
+	return out
+}
+
+// diffLevels compares the rules at every level, under their identifiers.
+func diffLevels(mine map[string]string, ref result) []string {
+	rules := map[string]bool{}
+	for r := range ref.Rules {
+		rules[r] = true
+	}
+	if ref.Stopped == "" {
+		for m := range mine {
+			rules[m] = true
+		}
+	}
+	var out []string
+	for _, r := range sortedRules(rules) {
+		switch lm, lr := rank(mine[r]), rank(ref.Rules[r]); {
+		case lm > lr:
+			out = append(out, "+"+r)
+		case lm < lr:
 			out = append(out, "-"+r)
 		}
 	}
