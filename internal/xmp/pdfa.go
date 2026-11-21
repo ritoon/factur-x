@@ -14,6 +14,7 @@ import (
 // IssueKind classifies a PDF/A issue of an XMP packet.
 type IssueKind uint8
 
+// The kinds of issues, by clause of ISO 19005-2 and 19005-3.
 const (
 	IssuePacket    IssueKind = iota // 6.6.2.1: packet header, encoding, well-formedness
 	IssueProperty                   // 6.6.2.3.1: property of a schema neither predefined nor described
@@ -284,7 +285,6 @@ func checkSchemas(data []byte, schemas *node, own Declared, report func(IssueKin
 	}
 	type desc struct {
 		where, prefix string
-		valueType     string // "" for a value type field without one
 		fields        []field
 	}
 	var props []desc // properties, value types and fields
