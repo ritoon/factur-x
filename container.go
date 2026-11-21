@@ -976,6 +976,15 @@ func putFile(u *pdf.Update, name, desc, rel, mime string, date time.Time, data [
 // (factur-x.xml, xrechnung.xml, zugferd-invoice.xml) are replaced: the
 // result carries a single invoice. Other attachments are kept.
 //
+// The entries of the document information dictionary (/Info) that the XMP
+// metadata lacks (title, author, subject, keywords, creator, producer,
+// creation date) are added to it, and the /Info ModDate follows
+// xmp:ModifyDate. A document declared PDF/A-4 keeps its metadata in the XMP
+// alone: PDF/A-4 admits a document information dictionary only when the
+// catalog has a /PieceInfo entry, and then with ModDate alone (ISO 19005-4,
+// 6.1.3). Embed removes /Info from such a document, or reduces it to
+// ModDate when the catalog has /PieceInfo.
+//
 // The supplementary files of EmbedOptions.Attachments are written like the
 // invoice: embedded file stream with its MIME type and /Params /ModDate,
 // file specification with /F, /UF and /AFRelationship (Supplement by
@@ -1188,21 +1197,42 @@ func Embed(pdfData, xml []byte, opts *EmbedOptions) ([]byte, error) {
 	}
 	u.PutStream(metaRef, pdf.Dict{{Key: "Type", Val: pdf.Name("Metadata")}, {Key: "Subtype", Val: pdf.Name("XML")}}, packet)
 
-	// Keep /Info ModDate and xmp:ModifyDate equal.
+	// Keep /Info ModDate and xmp:ModifyDate equal. PDF/A-4 (ISO 19005-4,
+	// 6.1.3) admits a document information dictionary only when the catalog
+	// has a /PieceInfo entry, and then with ModDate alone: the XMP metadata,
+	// which has just received its entries, takes its place. For a document
+	// declared PDF/A-4, /Info is thus reduced to ModDate when the catalog has
+	// /PieceInfo, and removed otherwise.
 	trailer := pdf.Dict{}
-	if hasInfo {
-		if info.Has("ModDate") {
-			ni := info.Clone()
-			ni.Set("ModDate", date)
-			if ref, ok := infoObj.(pdf.Ref); ok {
-				u.Put(ref, ni)
-				trailer.Set("Info", ref)
-			} else {
-				trailer.Set("Info", ni)
-			}
-		} else {
-			trailer.Set("Info", infoObj)
+	var pdfa4 bool
+	if mi, err := xmp.Parse(packet); err == nil && mi != nil {
+		pdfa4 = strings.TrimSpace(mi.PDFAPart) == "4"
+	}
+	switch {
+	case pdfa4 && !cat.Has("PieceInfo"):
+		// The new trailer has no /Info: ISO 32000-2 (7.5.6) has the newest
+		// trailer repeat every entry it keeps, and veraPDF reads it alone.
+		// Readers that complete it with the older ones, as this package
+		// and PDFBox do, would still find an indirect /Info: that object
+		// becomes null. A direct /Info of an older trailer stays visible
+		// to them.
+		if ref, ok := infoObj.(pdf.Ref); ok {
+			u.Put(ref, nil)
 		}
+	case hasInfo && (pdfa4 || info.Has("ModDate")):
+		ni := info.Clone()
+		if pdfa4 {
+			ni = pdf.Dict{}
+		}
+		ni.Set("ModDate", date)
+		if ref, ok := infoObj.(pdf.Ref); ok {
+			u.Put(ref, ni)
+			trailer.Set("Info", ref)
+		} else {
+			trailer.Set("Info", ni)
+		}
+	case hasInfo:
+		trailer.Set("Info", infoObj)
 	}
 
 	// New version of the catalog.

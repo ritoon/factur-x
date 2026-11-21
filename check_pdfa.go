@@ -697,6 +697,44 @@ func (k *containerCheck) docInfo(c *container, info *xmp.Info) {
 	}
 }
 
+// docInfoPDFA4 checks the document information dictionary of a document
+// that declares PDF/A-4 (ISO 19005-4, 6.1.3). PDF 2.0 deprecates it in
+// favour of the XMP metadata; PDF/A-4 admits it only when the catalog has a
+// /PieceInfo entry, whose LastModified dates are compared with its ModDate,
+// and then with that entry alone. The veraPDF profile checks the two as
+// rules 6.1.3-4 and 6.1.3-5; a single finding is reported, the one that says
+// what to change: remove the dictionary when the catalog has no /PieceInfo,
+// reduce it to ModDate otherwise. A null /Info, or a reference to the null
+// object, is an absent entry (ISO 32000-2, 7.3.9 and 7.3.10).
+func (k *containerCheck) docInfoPDFA4(c *container) {
+	o := c.r.Resolve(c.r.Trailer().Get("Info"))
+	if o == nil {
+		return
+	}
+	const path = "trailer /Info"
+	if !c.catalog.Has("PieceInfo") {
+		k.add("PDF-70", path, "the trailer has a document information dictionary and the catalog has no /PieceInfo entry: PDF/A-4 then forbids /Info, whose entries belong in the XMP metadata")
+		return
+	}
+	d, ok := o.(pdf.Dict)
+	if !ok {
+		k.add("PDF-70", path, "/Info is not a dictionary; PDF/A-4 admits a document information dictionary holding ModDate alone")
+		return
+	}
+	var others []string
+	for _, kv := range d {
+		if kv.Key != "ModDate" {
+			others = append(others, "/"+string(kv.Key))
+		}
+	}
+	switch {
+	case len(others) > 0:
+		k.add("PDF-70", path, "the document information dictionary holds %s; PDF/A-4 admits ModDate alone", strings.Join(others, ", "))
+	case !d.Has("ModDate"):
+		k.add("PDF-70", path, "the document information dictionary has no ModDate entry; PDF/A-4 admits one holding ModDate alone")
+	}
+}
+
 // sameDate reports whether a PDF date and an XMP date are the same instant,
 // to the second.
 func sameDate(pdfDate, xmpDate string) bool {
