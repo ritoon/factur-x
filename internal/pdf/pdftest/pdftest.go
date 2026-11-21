@@ -91,6 +91,21 @@ func (b *Builder) SetStream(num int, dict string, data []byte) {
 	b.objs[num-1] = object{body: dict, stream: data, isStm: true}
 }
 
+// ICC returns the 128-byte header of an ICC profile of device class class
+// ("mntr", "prtr"...), colour space space ("RGB ", "CMYK"...) and major
+// version, followed by an empty tag table: enough for a reader of the
+// header, not for a colour engine.
+func ICC(class, space string, version byte) []byte {
+	b := make([]byte, 132)
+	putBE(b[0:4], len(b))
+	b[8] = version
+	copy(b[12:16], class)
+	copy(b[16:20], space)
+	copy(b[20:24], "XYZ ")
+	copy(b[36:40], "acsp")
+	return b
+}
+
 // Flate compresses data in zlib format.
 func Flate(data []byte) []byte {
 	var buf bytes.Buffer

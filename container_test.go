@@ -80,6 +80,8 @@ type fixture struct {
 	// specs holds the object numbers of the file specifications of files,
 	// set by build before it calls extra.
 	specs []int
+	// post, when set, rewrites the bytes of the file.
+	post func([]byte) []byte
 }
 
 // testInfo is the document information dictionary of the fixtures, and
@@ -199,7 +201,7 @@ func (f *fixture) build() []byte {
 	if !f.noOutputIntent {
 		dest := ""
 		if !f.noDest {
-			dest = fmt.Sprintf(" /DestOutputProfile %d 0 R", b.AddStream("<< /N 3 >>", []byte("not really an ICC profile")))
+			dest = fmt.Sprintf(" /DestOutputProfile %d 0 R", b.AddStream("<< /N 3 >>", pdftest.ICC("mntr", "RGB ", 2)))
 		}
 		catalog += " /OutputIntents [<< /Type /OutputIntent /S /GTS_PDFA1 /OutputConditionIdentifier (sRGB)" + dest + " >>]"
 	}
@@ -217,7 +219,11 @@ func (f *fixture) build() []byte {
 	if f.encrypted {
 		b.Trailer += fmt.Sprintf(" /Encrypt %d 0 R", b.Add("<< /Filter /Standard /V 2 /R 3 /O <00> /U <00> /P -4 >>"))
 	}
-	return b.Bytes(f.opts)
+	data := b.Bytes(f.opts)
+	if f.post != nil {
+		data = f.post(data)
+	}
+	return data
 }
 
 func readTestdata(t testing.TB, name string) []byte {
