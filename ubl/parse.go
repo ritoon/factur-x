@@ -74,7 +74,13 @@ func IsUBL(root *xmltree.Node) bool { return checkRoot(root) == nil }
 // date codes of UBL (BT-8: 3, 35 and 432) are read as the CII codes of the
 // model (5, 29 and 72). In a credit note, the payment due date (BT-9) is read
 // from cac:PaymentMeans/cbc:PaymentDueDate and the project reference (BT-11)
-// from the additional document reference of type 50.
+// from the additional document reference of type 50. When the specification
+// identifier declares the Dutch G-account extension (see
+// invoice.GAccountExtension), the elements that it adds to the binding are
+// read too: cac:PaymentMeans/cbc:ID into PaymentMeans.ID, and the
+// cbc:PaymentMeansID and cbc:Amount of each cac:PaymentTerms into
+// PaymentTerms.PaymentMeansID and PartialAmount. In other invoices they are
+// kept as extensions.
 //
 // Nothing is dropped: the elements and attributes outside the binding are kept
 // as extensions (see invoice.Extension) in the Extensions field of the value
@@ -180,6 +186,13 @@ type reader struct {
 	mandate string
 
 	buf []byte
+}
+
+// gaccount reports whether the specification identifier read so far
+// declares the Dutch G-account extension, whose elements are then read into
+// the model rather than kept as extensions.
+func (r *reader) gaccount() bool {
+	return strings.Contains(r.inv.SpecificationID, invoice.GAccountExtension)
 }
 
 func (r *reader) issue(n *xmltree.Node, msg string) {
@@ -1046,9 +1059,12 @@ func (r *reader) paymentMeans(n *xmltree.Node) {
 	inv.PaymentMeans = append(inv.PaymentMeans, invoice.PaymentMeans{})
 	pm := &inv.PaymentMeans[len(inv.PaymentMeans)-1]
 	h := r.hold(n, &pm.Extensions)
-	var codeDone, cardDone, payeeDone, mandateDone bool
+	var idDone, codeDone, cardDone, payeeDone, mandateDone bool
 	for _, c := range n.Children {
 		switch {
+		case c.Name == "ID" && !idDone && r.gaccount():
+			idDone = true
+			pm.ID = r.text(c)
 		case c.Name == "PaymentMeansCode" && !codeDone:
 			codeDone = true
 			pm.TypeCode = r.textAttrs(c, "name", "", "")
@@ -1165,12 +1181,21 @@ func (r *reader) paymentTerms(n *xmltree.Node) {
 	r.terms = append(r.terms, invoice.PaymentTerms{})
 	t := &r.terms[len(r.terms)-1]
 	h := r.hold(n, &t.Extensions)
+	gaccount := r.gaccount()
+	var refDone, amountDone bool
 	for _, c := range n.Children {
-		if c.Name == "Note" && t.Description == "" {
+		switch {
+		case c.Name == "Note" && t.Description == "":
 			t.Description = r.text(c)
-			continue
+		case c.Name == "PaymentMeansID" && !refDone && gaccount:
+			refDone = true
+			t.PaymentMeansID = r.text(c)
+		case c.Name == "Amount" && !amountDone && gaccount:
+			amountDone = true
+			t.PartialAmount = r.decimal(c)
+		default:
+			r.unread(c)
 		}
-		r.unread(c)
 	}
 	r.release(h)
 }

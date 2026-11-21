@@ -1,8 +1,11 @@
 package validate
 
 import (
+	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -154,9 +157,13 @@ func TestCatalogNL(t *testing.T) {
 }
 
 // TestNLCIUSRoundTrip reads the NLCIUS invoices and writes them back in
-// both syntaxes: the results are still valid NLCIUS invoices.
+// both syntaxes: the results are still valid NLCIUS invoices. UBL carries
+// every business term of these invoices, the G-account extension included.
+// CII has no such extension: it loses the identifiers that the extension
+// adds and its second payment terms, and the result is an NLCIUS invoice
+// without the extension.
 func TestNLCIUSRoundTrip(t *testing.T) {
-	for _, file := range []string{nlciusInvoice, nlciusUBLInvoice} {
+	for _, file := range []string{nlciusInvoice, nlciusUBLInvoice, gaccountInvoice} {
 		data := []byte(readXML(t, file))
 		parse := cii.Parse
 		if strings.HasSuffix(file, ".ubl.xml") {
@@ -170,10 +177,17 @@ func TestNLCIUSRoundTrip(t *testing.T) {
 			t.Fatalf("%s: profile %s", file, inv.Profile)
 		}
 		ciiData, err := cii.Marshal(inv, &cii.MarshalOptions{Strict: true})
+		if file == gaccountInvoice {
+			var loss *cii.LossError
+			if !errors.As(err, &loss) || strings.Join(loss.Terms, ", ") != "EXT PaymentMeans.ID, EXT PaymentTerms.PaymentMeansID, EXT PaymentTerms.PartialAmount, EXT PaymentTerms[2:]" {
+				t.Errorf("%s: CII in strict mode: %v", file, err)
+			}
+			ciiData, err = cii.Marshal(inv, nil)
+		}
 		if err != nil {
 			t.Fatalf("%s: %v", file, err)
 		}
-		ublData, err := ublsyntax.Marshal(inv, nil)
+		ublData, err := ublsyntax.Marshal(inv, &ublsyntax.MarshalOptions{Strict: true})
 		if err != nil {
 			t.Fatalf("%s: %v", file, err)
 		}
@@ -182,13 +196,28 @@ func TestNLCIUSRoundTrip(t *testing.T) {
 				t.Errorf("%s: profile %s\n%s\n%s", file, r.Profile, r, out)
 			}
 		}
+		if file != gaccountInvoice {
+			continue
+		}
+		if bytes.Contains(ciiData, []byte(invoice.GAccountExtension)) {
+			t.Errorf("%s: CII declares the G-account extension:\n%s", file, ciiData)
+		}
+		// The UBL invoice is read back as it was read from the file.
+		back, err := ublsyntax.Parse(ublData)
+		if err != nil {
+			t.Fatalf("%s: %v", file, err)
+		}
+		if !reflect.DeepEqual(back.PaymentMeans, inv.PaymentMeans) || !reflect.DeepEqual(back.PaymentTerms, inv.PaymentTerms) {
+			t.Errorf("%s: payment means %+v\npayment terms %+v\nread back as %+v\n%+v", file, inv.PaymentMeans, inv.PaymentTerms, back.PaymentMeans, back.PaymentTerms)
+		}
 	}
 }
 
 // TestNLTestFiles validates the test files of SimplerInvoicing that break no
 // rule (FX_NL_TESTS, see conformance/fetch-nl.sh; their name has _ok): they
 // are NLCIUS invoices without error, whatever the rule set. The valid
-// example of the G-account extension gives no warning either.
+// example of the G-account extension gives no warning either, and is written
+// back in UBL without loss and without warning.
 func TestNLTestFiles(t *testing.T) {
 	dir := os.Getenv("FX_NL_TESTS")
 	if dir == "" {
@@ -207,8 +236,24 @@ func TestNLTestFiles(t *testing.T) {
 				t.Fatal(err)
 			}
 			r := XML(b, &Options{Auto: true})
-			if r.Profile != invoice.ProfileNLCIUS || !r.Valid() || strings.HasPrefix(sub, "si-ubl-2.0-ext-gaccount") && len(r.Findings) > 0 {
+			gaccount := strings.HasPrefix(sub, "si-ubl-2.0-ext-gaccount")
+			if r.Profile != invoice.ProfileNLCIUS || !r.Valid() || gaccount && len(r.Findings) > 0 {
 				t.Errorf("%s: profile %s\n%s", filepath.Base(file), r.Profile, r)
+			}
+			if !gaccount {
+				continue
+			}
+			inv, err := ublsyntax.Parse(b)
+			if err != nil {
+				t.Fatalf("%s: %v", filepath.Base(file), err)
+			}
+			out, err := ublsyntax.Marshal(inv, &ublsyntax.MarshalOptions{Strict: true})
+			if err != nil {
+				t.Errorf("%s: %v", filepath.Base(file), err)
+				continue
+			}
+			if r := XML(out, &Options{Auto: true}); r.Profile != invoice.ProfileNLCIUS || len(r.Findings) > 0 {
+				t.Errorf("%s written back: profile %s\n%s\n%s", filepath.Base(file), r.Profile, r, out)
 			}
 		}
 	}

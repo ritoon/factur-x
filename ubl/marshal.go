@@ -66,6 +66,17 @@ func IsCreditNote(typeCode string) bool {
 // 50. The logistics charges of the model are written as document level
 // charges, which is how EN 16931 counts them.
 //
+// When the specification identifier written declares the Dutch G-account
+// extension (see invoice.GAccountExtension), the elements that the extension
+// adds to the binding are written too: PaymentMeans.ID in
+// cac:PaymentMeans/cbc:ID, and each payment terms entry that has a
+// description, a PaymentMeansID or a PartialAmount in a cac:PaymentTerms of
+// its own, with cbc:PaymentMeansID, cbc:Note and cbc:Amount. The due date
+// (BT-9) and the mandate reference (BT-89) are still read from the first
+// entry; those of the other entries cannot be carried. Without the extension,
+// these fields of the model are not part of the binding, nor are the payment
+// terms after the first.
+//
 // Mandatory elements of the binding are always written, empty when the
 // invoice has no value for them, so that a validator reports the missing
 // value. Amounts are written with the number of decimals they hold.
@@ -94,6 +105,7 @@ func Marshal(inv *invoice.Invoice, opts *MarshalOptions) ([]byte, error) {
 	if spec == "" {
 		spec = customizationID(inv)
 	}
+	w.gaccount = strings.Contains(spec, invoice.GAccountExtension)
 	w.document(inv, spec)
 	if o.Indent {
 		w.b = append(w.b, '\n')
@@ -260,17 +272,7 @@ func (w *writer) document(inv *invoice.Invoice, spec string) {
 		w.delivery(inv.DeliveryDate, inv.ShipTo)
 	}
 	w.paymentMeans(inv, terms)
-	if terms != nil && terms.Description != "" {
-		w.start("cac:PaymentTerms")
-		w.leafReq("cbc:Note", terms.Description)
-		w.end("cac:PaymentTerms")
-	}
-	if terms != nil {
-		w.loseIf(terms.PartialAmount.IsSet(), "EXT PaymentTerms.PartialAmount")
-	}
-	if len(inv.PaymentTerms) > 1 {
-		w.lose("EXT PaymentTerms")
-	}
+	w.paymentTerms(inv, terms)
 	for i := range inv.AllowancesCharges {
 		w.allowanceCharge(&inv.AllowancesCharges[i], true)
 	}
@@ -564,7 +566,8 @@ func (w *writer) delivery(date invoice.Date, ship *invoice.Party) {
 // paymentMeans writes the payment instructions (BG-16). The remittance
 // information (BT-83) is repeated in each of them, the mandate reference
 // (BT-89) goes to the direct debit, and in a credit note the payment due date
-// (BT-9) goes to the first one.
+// (BT-9) goes to the first one. With the G-account extension, each one
+// carries its identifier.
 func (w *writer) paymentMeans(inv *invoice.Invoice, terms *invoice.PaymentTerms) {
 	var due invoice.Date
 	var mandate string
@@ -603,6 +606,11 @@ func (w *writer) paymentMeans(inv *invoice.Invoice, terms *invoice.PaymentTerms)
 	for i := range inv.PaymentMeans {
 		pm := &inv.PaymentMeans[i]
 		w.start("cac:PaymentMeans")
+		if w.gaccount {
+			w.leaf("cbc:ID", pm.ID)
+		} else {
+			w.loseText(pm.ID, "EXT PaymentMeans.ID")
+		}
 		w.leafAttr("cbc:PaymentMeansCode", "name", pm.Information, pm.TypeCode)
 		if pm.TypeCode == "" {
 			w.leafReq("cbc:PaymentMeansCode", "")
@@ -650,6 +658,42 @@ func (w *writer) paymentMeans(inv *invoice.Invoice, terms *invoice.PaymentTerms)
 		w.end("cac:PaymentMeans")
 		w.loseText(pm.PayerAccountName, "BT-216")
 		w.loseText(pm.PayerBIC, "BT-215")
+	}
+}
+
+// paymentTerms writes the payment terms (BT-20), first is the first entry of
+// inv.PaymentTerms. With the G-account extension, each entry that holds
+// more than a due date or a mandate reference is written, with its payment
+// means reference and its amount.
+func (w *writer) paymentTerms(inv *invoice.Invoice, first *invoice.PaymentTerms) {
+	if !w.gaccount {
+		if first != nil {
+			if first.Description != "" {
+				w.start("cac:PaymentTerms")
+				w.leafReq("cbc:Note", first.Description)
+				w.end("cac:PaymentTerms")
+			}
+			w.loseText(first.PaymentMeansID, "EXT PaymentTerms.PaymentMeansID")
+			w.loseIf(first.PartialAmount.IsSet(), "EXT PaymentTerms.PartialAmount")
+		}
+		if len(inv.PaymentTerms) > 1 {
+			w.lose("EXT PaymentTerms")
+		}
+		return
+	}
+	for i := range inv.PaymentTerms {
+		t := &inv.PaymentTerms[i]
+		if t.Description != "" || t.PaymentMeansID != "" || t.PartialAmount.IsSet() {
+			w.start("cac:PaymentTerms")
+			w.leaf("cbc:PaymentMeansID", t.PaymentMeansID)
+			w.leaf("cbc:Note", t.Description)
+			w.amount("cbc:Amount", t.PartialAmount)
+			w.end("cac:PaymentTerms")
+		}
+		if i > 0 {
+			w.loseIf(!t.DueDate.IsZero(), "EXT PaymentTerms.DueDate")
+			w.loseText(t.DirectDebitMandateID, "EXT PaymentTerms.DirectDebitMandateID")
+		}
 	}
 }
 

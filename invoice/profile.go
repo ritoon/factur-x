@@ -48,6 +48,15 @@ const (
 	urnExtendedCTCFR2 = "urn:cen.eu:en16931:2017#conformant#urn:cpro.gouv.fr:1p0:extended-ctc-fr"
 )
 
+// GAccountExtension ends the specification identifier (BT-24) of an SI-UBL
+// 2.0 invoice that uses the Dutch G-account extension: URNNLCIUS followed by
+// it. Such an invoice is paid in part to the G-account of the supplier (a
+// blocked account for wage taxes and VAT): it has two means of payment
+// identified by PaymentMeans.ID and two payment terms that refer to them
+// (PaymentTerms.PaymentMeansID, PartialAmount). The Dutch Peppol Authority
+// defines the extension for UBL only.
+const GAccountExtension = "#conformant#urn:fdc:nen.nl:gaccount:v1.0"
+
 // Specification identifiers of ZUGFeRD 1.0, in the
 // rsm:CrossIndustryDocument syntax that predates CII D16B. They are read,
 // never written (see ProfileFromZUGFeRD1URN).
