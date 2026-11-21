@@ -273,7 +273,7 @@ func (d *Doc) Origin(n *xmltree.Node) *xmltree.Node {
 // 2.0 invoice that uses the Dutch G-account extension:
 // urn:cen.eu:en16931:2017#compliant#urn:fdc:nen.nl:nlcius:v1.0 followed by
 // it.
-const GAccountExtension = "#conformant#urn:fdc:nen.nl:gaccount:v1.0"
+const GAccountExtension = invoice.GAccountExtension
 
 // GAccount reports whether the invoice is a UBL invoice whose specification
 // identifier, its first cbc:CustomizationID, contains GAccountExtension. The

@@ -72,6 +72,14 @@ func (e *LossError) Error() string {
 // otherwise: a ZUGFeRD 1.0 identifier, which only a CrossIndustryDocument
 // carries, is replaced.
 //
+// The Dutch G-account extension (see invoice.GAccountExtension) is defined
+// for UBL only, the Dutch Peppol Authority publishing no such extension of
+// NLCIUS-CII: it is removed from BT-24, and the payment means identifiers
+// (PaymentMeans.ID) and payment means references (PaymentTerms.PaymentMeansID)
+// that it adds are reported as lost, in every profile. The amounts of the
+// payment terms (PaymentTerms.PartialAmount) are written in EXTENDED, like
+// the payment terms after the first.
+//
 // Mandatory elements of the target schema are always written, empty when the
 // invoice has no value for them, so that a validator reports the missing
 // value. Amounts are written with the number of decimals they hold.
@@ -211,6 +219,8 @@ func (w *writer) context(inv *invoice.Invoice, target invoice.Profile) {
 	spec := target.URN()
 	if inv.SpecificationID != "" && !zugferd1URN(inv.SpecificationID) && detectProfile(inv.SpecificationID) == target {
 		spec = strings.TrimSpace(inv.SpecificationID)
+		// The G-account extension exists in UBL only.
+		spec = strings.Replace(spec, invoice.GAccountExtension, "", 1)
 	}
 	w.start("ram:GuidelineSpecifiedDocumentContextParameter")
 	w.leafReq("ram:ID", spec)
@@ -850,6 +860,9 @@ func (w *writer) paymentMeans(pm *invoice.PaymentMeans) {
 	en := w.lvl >= lvlEN16931
 	w.start("ram:SpecifiedTradeSettlementPaymentMeans")
 	w.hold(pm.Extensions)
+	// The identifier of the G-account extension has no place in CII: the
+	// Dutch Peppol Authority defines that extension for UBL only.
+	w.text(false, "", pm.ID, "EXT PaymentMeans.ID")
 	w.leafReq("ram:TypeCode", pm.TypeCode)
 	w.text(en, "ram:Information", pm.Information, "BT-82")
 	if pm.CardID != "" || pm.CardholderName != "" {
@@ -941,6 +954,9 @@ func (w *writer) paymentTerms(inv *invoice.Invoice) {
 	ext := w.lvl >= lvlExtended
 	for i := range inv.PaymentTerms {
 		t := &inv.PaymentTerms[i]
+		// The payment means reference of the G-account extension has no
+		// place in CII (see paymentMeans).
+		w.text(false, "", t.PaymentMeansID, "EXT PaymentTerms.PaymentMeansID")
 		if w.lvl < lvlBasicWL {
 			w.text(false, "", t.Description, "BT-20")
 			w.date(false, "", t.DueDate, "BT-9")

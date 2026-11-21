@@ -63,6 +63,10 @@ type writer struct {
 	indent bool
 	credit bool   // writing a CreditNote
 	cur    string // invoice currency (BT-5), the currencyID of the amounts
+	// gaccount is set when the specification identifier written declares
+	// the Dutch G-account extension, which adds payment means identifiers
+	// and several payment terms to the binding.
+	gaccount bool
 
 	losses []string
 }

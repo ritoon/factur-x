@@ -278,6 +278,12 @@ func (inv *Invoice) InvoicedObject() Identifier {
 // PaymentMeans is one means of payment (BG-16) with its credit transfer
 // (BG-17), payment card (BG-18) or direct debit (BG-19) details.
 type PaymentMeans struct {
+	// ID identifies the means of payment, so that payment terms can refer
+	// to it (NL-GA-04 of the Dutch G-account extension, see
+	// GAccountExtension, which requires the value GACCOUNT on the means
+	// paid to the G-account). Only UBL with that extension carries it.
+	ID string
+
 	TypeCode    string // BT-81 Payment means type code (UNTDID 4461: 30, 58, 59, 48, 49…)
 	Information string // BT-82 Payment means text
 
@@ -337,11 +343,20 @@ type LogisticsCharge struct {
 
 // PaymentTerms are payment terms (BT-20) with the due date (BT-9) and the
 // direct debit mandate (BT-89).
+//
+// With the Dutch G-account extension (see GAccountExtension), an invoice has
+// two payment terms that split the amount due for payment (BT-115) between
+// two means of payment: each one names its means in PaymentMeansID and gives
+// its share in PartialAmount.
 type PaymentTerms struct {
 	Description          string  // BT-20 Payment terms
 	DueDate              Date    // BT-9 Payment due date
 	DirectDebitMandateID string  // BT-89 Mandate reference identifier
-	PartialAmount        Decimal // Partial payment amount (EXT)
+	PartialAmount        Decimal // Partial payment amount (EXT, NL-GA-03 Payment amount of the G-account extension)
+	// PaymentMeansID refers to the means of payment whose ID it equals
+	// (NL-GA-02 of the G-account extension). Only UBL with that extension
+	// carries it.
+	PaymentMeansID string
 
 	// Extensions hold, for instance, the payment discount and penalty
 	// terms (EXT, see Extension).
@@ -351,7 +366,7 @@ type PaymentTerms struct {
 // IsZero reports whether the payment terms hold no data.
 func (t *PaymentTerms) IsZero() bool {
 	return t.Description == "" && t.DueDate.IsZero() && t.DirectDebitMandateID == "" &&
-		!t.PartialAmount.IsSet() && len(t.Extensions) == 0
+		!t.PartialAmount.IsSet() && t.PaymentMeansID == "" && len(t.Extensions) == 0
 }
 
 // AllowanceCharge is an allowance or a charge, at document level (BG-20,

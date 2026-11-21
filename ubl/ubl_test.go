@@ -364,6 +364,75 @@ func TestMarshalStrict(t *testing.T) {
 	}
 }
 
+// TestGAccount writes the payment means identifiers and the payment terms
+// of the Dutch G-account extension when the specification identifier written
+// declares it, and reports them as lost otherwise.
+func TestGAccount(t *testing.T) {
+	inv := mustParse(t, readFile(t, "../testdata/EN16931_Einfach.ubl.xml"))
+	inv.SpecificationID, inv.Profile = invoice.URNNLCIUS, invoice.ProfileNLCIUS
+	inv.PaymentMeans = []invoice.PaymentMeans{
+		{ID: "BENEFICIARY", TypeCode: "30", PayeeIBAN: "NL91ABNA0417164300"},
+		{ID: "GACCOUNT", TypeCode: "30", PayeeIBAN: "NL20INGB0001234567"},
+	}
+	due := invoice.NewDate(2026, 12, 2)
+	inv.PaymentTerms = []invoice.PaymentTerms{
+		{Description: "30 dagen", DueDate: due, PaymentMeansID: "BENEFICIARY", PartialAmount: invoice.MustDecimal("90.00")},
+		{PaymentMeansID: "GACCOUNT", PartialAmount: invoice.MustDecimal("10.00")},
+	}
+
+	_, err := Marshal(inv, &MarshalOptions{Strict: true})
+	var le *LossError
+	if !errors.As(err, &le) || strings.Join(le.Terms, ", ") != "EXT PaymentMeans.ID, EXT PaymentTerms.PaymentMeansID, EXT PaymentTerms.PartialAmount, EXT PaymentTerms" {
+		t.Errorf("without the extension: got %v", err)
+	}
+	out := mustMarshal(t, inv, nil)
+	for _, s := range []string{"<cbc:ID>BENEFICIARY</cbc:ID>", "<cbc:PaymentMeansID>", "<cbc:Amount "} {
+		if bytes.Contains(out, []byte(s)) {
+			t.Errorf("without the extension: %s written", s)
+		}
+	}
+
+	spec := invoice.URNNLCIUS + invoice.GAccountExtension
+	out = mustMarshal(t, inv, &MarshalOptions{CustomizationID: spec, Strict: true})
+	want := `<cac:PaymentMeans><cbc:ID>BENEFICIARY</cbc:ID><cbc:PaymentMeansCode>30</cbc:PaymentMeansCode>`
+	if !bytes.Contains(out, []byte(want)) {
+		t.Errorf("payment means identifier: want %s in\n%s", want, out)
+	}
+	want = `<cac:PaymentTerms><cbc:PaymentMeansID>BENEFICIARY</cbc:PaymentMeansID><cbc:Note>30 dagen</cbc:Note><cbc:Amount currencyID="EUR">90.00</cbc:Amount></cac:PaymentTerms>` +
+		`<cac:PaymentTerms><cbc:PaymentMeansID>GACCOUNT</cbc:PaymentMeansID><cbc:Amount currencyID="EUR">10.00</cbc:Amount></cac:PaymentTerms>`
+	if !bytes.Contains(out, []byte(want)) {
+		t.Errorf("payment terms: want %s in\n%s", want, out)
+	}
+	back := mustParse(t, out)
+	if back.SpecificationID != spec || !reflect.DeepEqual(back.PaymentMeans, inv.PaymentMeans) || !reflect.DeepEqual(back.PaymentTerms, inv.PaymentTerms) {
+		t.Errorf("read back: %q\n%+v\n%+v", back.SpecificationID, back.PaymentMeans, back.PaymentTerms)
+	}
+
+	// An invoice that does not declare the extension keeps its elements as
+	// extensions.
+	gaccount := string(readFile(t, "../internal/rules/nl/testdata/gaccount.ubl.xml"))
+	if !strings.Contains(gaccount, spec+"<") {
+		t.Fatal("G-account identifier not found")
+	}
+	plain := mustParse(t, []byte(strings.Replace(gaccount, spec+"<", invoice.URNNLCIUS+"<", 1)))
+	want = "PaymentMeans[0]: ID PaymentMeans[1]: ID PaymentTerms[0]: PaymentMeansID PaymentTerms[0]: Amount PaymentTerms[1]: PaymentMeansID PaymentTerms[1]: Amount"
+	if got := strings.Join(plain.Unmodeled(), " "); got != want || plain.PaymentMeans[0].ID != "" || plain.PaymentTerms[0].PaymentMeansID != "" || plain.PaymentTerms[0].PartialAmount.IsSet() {
+		t.Errorf("without the extension: unmodeled %q, want %q", got, want)
+	}
+	if got := mustParse(t, []byte(gaccount)).Unmodeled(); len(got) > 0 {
+		t.Errorf("G-account invoice: unmodeled %q", got)
+	}
+
+	// The due date and the mandate reference of the second entry have no
+	// place in UBL.
+	inv.PaymentTerms[1].DueDate = due
+	inv.PaymentTerms[1].DirectDebitMandateID = "M-1"
+	_, err = Marshal(inv, &MarshalOptions{CustomizationID: spec, Strict: true})
+	if !errors.As(err, &le) || strings.Join(le.Terms, ", ") != "EXT PaymentTerms.DueDate, EXT PaymentTerms.DirectDebitMandateID" {
+		t.Errorf("second due date and mandate: got %v", err)
+	}
+}
+
 func TestParseRejects(t *testing.T) {
 	if _, err := Parse(readFile(t, "../testdata/EN16931_Einfach.cii.xml")); !errors.Is(err, ErrNotUBL) {
 		t.Errorf("CII invoice: %v, want ErrNotUBL", err)
