@@ -24,6 +24,19 @@ type crRule struct {
 	path  string
 }
 
+// gaccountDropped lists the UBL-CR assertions that the artefacts of the Dutch
+// G-account extension leave out of the CEN syntax rules
+// (si-ubl-2.0-ext-gaccount/EN16931-syntax-modified.sch), since the extension
+// uses these elements: the payment means identifier (NL-GA-04), the payment
+// means reference (NL-GA-02) and the amount (NL-GA-03) of the payment terms.
+// They are not checked on an invoice that declares the extension (see
+// rules.Doc.GAccount).
+var gaccountDropped = map[string]bool{
+	"UBL-CR-411": true, // cac:PaymentMeans/cbc:ID
+	"UBL-CR-453": true, // cac:PaymentTerms/cbc:PaymentMeansID
+	"UBL-CR-459": true, // cac:PaymentTerms/cbc:Amount
+}
+
 // selectPath returns the nodes at path relative to the nodes from: a path of
 // prefixed element names ("cac:PartyName/cbc:Name"), optionally ending with
 // an attribute step ("@schemeID"), which keeps the elements that carry the
@@ -96,7 +109,11 @@ func (k *checker) rootRules() {
 	})
 
 	k.crSpecial(r, all)
+	gaccount := k.d.GAccount()
 	for _, cr := range crRules {
+		if gaccount && gaccountDropped[cr.id] {
+			continue
+		}
 		var found []*xmltree.Node
 		switch cr.scope {
 		case crRoot:

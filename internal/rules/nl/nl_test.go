@@ -314,7 +314,7 @@ func TestCatalog(t *testing.T) {
 		n, errs, warning int
 	}{
 		{"CII", Catalog, 32, 10, 22},
-		{"UBL", UBLCatalog, 35, 14, 21},
+		{"UBL", UBLCatalog, 43, 22, 21},
 	} {
 		seen := map[string]bool{}
 		sev := map[rules.Severity]int{}

@@ -36,7 +36,8 @@ func ubl(paths ...string) []pattern {
 }
 
 // checkUBL runs the rules of the SI-UBL 2.0 artefacts on the UBL document of
-// c.
+// c: the patterns SI-UBL-VERSION and nlcius, or, for an invoice that declares
+// the G-account extension, the patterns g-account-extension and nlcius.
 func checkUBL(c *rules.Checker) {
 	root := c.Doc.UBL
 	k := &checker{Checker: c, root: root}
@@ -46,7 +47,11 @@ func checkUBL(c *rules.Checker) {
 		country = strings.ToUpper(nsv(code))
 	}
 	k.s = k.si && country == "NL"
-	k.run(versionRules, "")
+	if c.Doc.GAccount() {
+		k.run(gaccountRules, "")
+	} else {
+		k.run(versionRules, "")
+	}
 	k.run(ublRules, "SI-UBL-2")
 }
 
@@ -54,7 +59,7 @@ func checkUBL(c *rules.Checker) {
 // SI-UBL 2.0 invoice ($si of si-ubl-2.0-nlcius.sch).
 func isSIUBL(id string) bool {
 	return strings.Contains(id, "#compliant#urn:fdc:nen.nl:nlcius:v1.0") ||
-		strings.Contains(id, "#conformant#urn:fdc:nen.nl:gaccount:v1.0")
+		strings.Contains(id, rules.GAccountExtension)
 }
 
 // Messages of the UBL assertions.

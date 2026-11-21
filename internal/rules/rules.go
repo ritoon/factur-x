@@ -269,6 +269,26 @@ func (d *Doc) Origin(n *xmltree.Node) *xmltree.Node {
 	return n
 }
 
+// GAccountExtension ends the specification identifier (BT-24) of an SI-UBL
+// 2.0 invoice that uses the Dutch G-account extension:
+// urn:cen.eu:en16931:2017#compliant#urn:fdc:nen.nl:nlcius:v1.0 followed by
+// it.
+const GAccountExtension = "#conformant#urn:fdc:nen.nl:gaccount:v1.0"
+
+// GAccount reports whether the invoice is a UBL invoice whose specification
+// identifier, its first cbc:CustomizationID, contains GAccountExtension. The
+// validation artefacts of the Dutch Peppol Authority for the extension
+// (si-ubl-2.0-ext-gaccount.sch) then apply instead of those of SI-UBL 2.0:
+// they add the rules BR-GA (package nl) and leave out three UBL syntax rules
+// (package ubl). The NPa publishes no such artefacts for the CII syntax.
+func (d *Doc) GAccount() bool {
+	if d == nil || d.UBL == nil {
+		return false
+	}
+	id := d.UBL.Elem("CustomizationID")
+	return id != nil && strings.Contains(id.Text, GAccountExtension)
+}
+
 // SpecificationID returns BT-24.
 func (d *Doc) SpecificationID() string {
 	return d.Context.Value("GuidelineSpecifiedDocumentContextParameter/ID")
