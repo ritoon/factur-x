@@ -6,6 +6,7 @@ Ce dossier mesure l'exactitude du package sur les artefacts officiels, à chaque
 |---|---|
 | [`fetch.sh`](fetch.sh) | Récupère les artefacts officiels à des versions figées et les vérifie, puis affiche les variables `FX_*` qui activent les tests optionnels |
 | [`fetch-nl.sh`](fetch-nl.sh) | Récupère les seuls artefacts des règles néerlandaises (`FX_NL`, `FX_NL_TESTS`) ; `fetch.sh` l'appelle, et le job *Tests NLCIUS sur les artefacts officiels* du workflow [CI](../.github/workflows/ci.yml) l'exécute seul, en quelques secondes |
+| [`verapdf.sh`](verapdf.sh) | Convertit en PDF/A-3 les fichiers PDF/A-2b et PDF/A-3b du corpus veraPDF et les PDF non conformes des tests, puis vérifie les fichiers convertis avec veraPDF |
 | [`parity.sh`](parity.sh) | Exécute KoSIT et Mustang sur les factures du corpus et de la suite KoSIT, et les XSLT de la NPa sur les factures NLCIUS, puis compare leurs règles à celles du package |
 | [`parity/`](parity) | Outil Go de comparaison (module séparé) et lanceurs Java de Mustang et des XSLT de la NPa |
 | [`parity/known.txt`](parity/known.txt) | Écarts connus et justifiés, et assertions NLCIUS qu'aucune facture ne déclenche ; tout autre écart fait échouer le job |
@@ -43,6 +44,26 @@ Les validateurs de référence, téléchargés par `parity.sh` depuis leurs publ
 ## Tests sur les artefacts
 
 Le job *Tests sur les artefacts officiels* lance `go test ./...` avec toutes les variables `FX_*` définies (voir la section Tests du [README](../README.md#tests)) et échoue si un test est ignoré : chaque test optionnel tourne donc à chaque pull request.
+
+## veraPDF sur les PDF convertis
+
+Le job *veraPDF sur les PDF convertis* exécute [`verapdf.sh`](verapdf.sh), qui vérifie avec veraPDF 1.30.3 les fichiers qu'écrit `ConvertPDFA`. veraPDF tourne depuis l'image Docker du consortium veraPDF, figée par son empreinte (`verapdf/cli:v1.30.3@sha256:d74b7026…`) : le package reste en pur Go. Le script :
+
+1. récupère le corpus veraPDF au commit de `fetch.sh` (`FX_VERAPDF`) ;
+2. lance `TestConvertCorpus`, `TestConvertPDFA` et `TestEmbedConvertPDFA` avec `FX_PDFA_OUT` : les 998 fichiers PDF/A-2b et PDF/A-3b du corpus, valides et invalides, sont convertis (ou refusés), comme les PDF non conformes que génèrent les tests de [`convert_test.go`](../convert_test.go) (actions et JavaScript, LZW, états graphiques, annotations sans le drapeau Print, ressources héritées, fichiers incorporés incomplets, métadonnées refusées par PDF/A…) et la facture hybride de `testdata` ; les fichiers convertis sont écrits dans `conformance/.artifacts/pdfa/out` ;
+3. exécute veraPDF sur ce dossier, qui détecte la conformité déclarée (PDF/A-3B) ;
+4. relance les mêmes tests avec `FX_PDFA_REPORT` : chaque fichier converti doit passer veraPDF, sauf les échecs connus que liste `convertKnownFailures` dans [`convert_corpus_test.go`](../convert_corpus_test.go). Un échec non listé, un fichier listé qui passe ou n'est plus converti, un fichier absent du rapport font échouer le job.
+
+### Résultats de la conversion
+
+| Fichiers | Convertis | Refusés | Convertis qui passent veraPDF | Échecs connus |
+|---|---|---|---|---|
+| Corpus veraPDF, PDF/A-2b et PDF/A-3b (998) | 859 | 139 | 835 | 24 |
+| PDF non conformes générés par les tests (10) | 10 | — | 10 | 0 |
+
+Des 139 refus, un seul porte sur un fichier valide du corpus : un document signé, que la réécriture invaliderait (`convertRefusedValid`). Les autres sont des fichiers invalides que la conversion ne sait pas réparer sans moteur PDF : police non incorporée, DeviceCMYK sans profil CMYK, annotation masquée ou sans apparence, opérateur inconnu, profil ICC de l'intention de sortie inutilisable, chiffrement…
+
+Les 24 échecs connus portent sur ce que la conversion ne lit pas : les programmes de polices (glyphes définis, largeurs, glyphe `.notdef`, table `cmap` et noms de glyphes d'un tableau `Differences`), les valeurs de CID au-delà de 65535, les données JPEG 2000 et un type de valeur d'un schéma d'extension XMP sans `pdfaType:field`.
 
 ## Parité avec KoSIT et Mustang
 

@@ -19,6 +19,7 @@ Keep generating your invoice PDFs the way you do today. ZeRechnung adds the XML 
 - Pure Go, standard library only. No CGO, no Java, no external binary, no network calls.
 - All Factur-X / ZUGFeRD 2.x profiles, from MINIMUM to EXTENDED, plus XRechnung, Peppol BIS Billing 3.0 and NLCIUS, in CII and UBL 2.1.
 - Validation compared with the reference validators (KoSIT, Mustang) on every pull request, with the French 2026 reform, German, Dutch and Peppol rules built in.
+- PDF/A-3 conversion of the PDFs that need no PDF engine for it, with the reasons for a refusal otherwise, checked by veraPDF in the CI.
 - Fast: reading and validating a typical invoice takes about 25 µs.
 
 > **Status: v0.** The API may still change before v1.
@@ -103,7 +104,7 @@ A few things happen behind that call:
 - With `Validate`, `Create` checks the XML first and returns a `*zerechnung.ValidationError` with the full report if anything is wrong. Nothing is written in that case.
 - The PDF is changed with an incremental update. Your original bytes stay untouched, so an existing signature remains valid.
 
-ZeRechnung does not convert PDFs to PDF/A. Your PDF should already be PDF/A-3 (or PDF/A-4 for PDF 2.0), which most PDF generators can do with an option. The [Creating invoices](https://github.com/ritoon/zerechnung/wiki/Creating-invoices) page explains what the package writes and how to refuse a PDF that is not PDF/A.
+Your PDF should already be PDF/A-3 (or PDF/A-4 for PDF 2.0), which most PDF generators can do with an option. If yours cannot, ZeRechnung can [convert it to PDF/A-3](#convert-a-pdf-to-pdfa-3) when that needs no PDF engine, and tells you why otherwise. The [Creating invoices](https://github.com/ritoon/zerechnung/wiki/Creating-invoices) page explains what the package writes and how to refuse a PDF that is not PDF/A.
 
 ### Read an invoice you received
 
@@ -204,6 +205,20 @@ if errors.Is(err, zerechnung.ErrNotPDFA) {
 }
 ```
 
+### Convert a PDF to PDF/A-3
+
+```go
+pdf, err := zerechnung.Embed(host, xml, &zerechnung.EmbedOptions{ConvertPDFA: true})
+var ce *zerechnung.ConversionError
+if errors.As(err, &ce) { // wraps zerechnung.ErrNotConvertible
+	for _, r := range ce.Reasons {
+		log.Println(r) // page 1 /Contents: the font "Helvetica" (Type1) shows text but its font program is not embedded…
+	}
+}
+```
+
+`ConvertPDFA` (or `EmbedOptions.ConvertPDFA`, for a host that does not declare PDF/A) rewrites a PDF 1.x file as PDF/A-3, in pure Go and without rendering it. It adds a PDF/A output intent (an sRGB ICC profile computed by the package, unless the PDF has one), declares PDF/A-3 in the XMP metadata, removes JavaScript, forbidden actions and other entries PDF/A does not allow, re-encodes LZW streams with Flate, cleans graphics states, images and annotations, and completes the embedded files. It refuses, with every reason and where it was found, what it cannot fix without a PDF engine: a font that shows visible text without being embedded, DeviceCMYK without a CMYK profile, a hidden annotation or one without an appearance, a signed document, PDF 2.0. The converted file must then pass the PDF/A checks of `Check`, and the CI runs veraPDF on the converted files (see [How accurate is it?](#how-accurate-is-it)).
+
 ### Show what is wrong when Create refuses an invoice
 
 ```go
@@ -265,7 +280,8 @@ warning [PDF] PDF-06: the catalog has no PDF/A output intent (/S /GTS_PDFA1) (ca
 | `zerechnung info invoice.pdf` | Summarises the PDF and the invoice |
 | `zerechnung extract [-o out.xml] invoice.pdf` | Extracts the XML |
 | `zerechnung validate [-fr] [-de] [-auto] [-json] ... file` | Validates a PDF or an XML file, and exits with code 1 on errors |
-| `zerechnung embed -xml invoice.xml [-attach file]... input.pdf` | Embeds an XML invoice in a PDF |
+| `zerechnung embed -xml invoice.xml [-attach file]... [-convert-pdfa] input.pdf` | Embeds an XML invoice in a PDF, converting it to PDF/A-3 first with `-convert-pdfa` |
+| `zerechnung pdfa [-o out.pdf] input.pdf` | Converts a PDF to PDF/A-3, or prints why it cannot, one reason per line |
 | `zerechnung json file` | Prints the parsed invoice as JSON |
 | `zerechnung rules [-fr] [-de] ...` | Lists the rules that are implemented |
 
@@ -291,6 +307,7 @@ Every pull request runs the reference validators on the official test corpora an
 - KoSIT validator (XRechnung): the same errors on all 128 invoices.
 - Mustang: the same errors on 241 of 282 invoices. Each of the 41 differences comes from the references themselves and is explained in [known.txt](conformance/parity/known.txt).
 - Dutch NPa validators (NLCIUS): the same rules on 283 of 290 files, with the 7 differences justified.
+- veraPDF on the files `ConvertPDFA` writes: of the 998 PDF/A-2b and PDF/A-3b test files of the veraPDF corpus, 859 are converted and 835 of them pass; the 24 others are known failures (font programs, CID values, JPEG 2000 data, an XMP value type), listed in [convert_corpus_test.go](convert_corpus_test.go). The non-conforming PDFs the tests generate all pass once converted.
 
 A new difference fails the build. The method is described on [Coverage and accuracy](https://github.com/ritoon/zerechnung/wiki/Coverage-and-accuracy#measured-accuracy).
 
@@ -309,7 +326,7 @@ The full tables are in [bench/ecosystem/results](bench/ecosystem/results/2026-11
 
 ## Limitations
 
-- No PDF/A conversion. Your PDF must already meet PDF/A-2, PDF/A-3 or PDF/A-4. `Check` reports many PDF/A problems, but it does not replace a full validator such as veraPDF.
+- PDF/A conversion is partial. `ConvertPDFA` does not embed fonts, convert CMYK colours, create annotation appearances or write PDF/A-4, and it does not read font programs or JPEG 2000 data: such PDFs are refused or, for what is not read, left to veraPDF. Without conversion, your PDF must already meet PDF/A-2, PDF/A-3 or PDF/A-4. `Check` reports many PDF/A problems, but it does not replace a full validator such as veraPDF.
 - Encrypted PDFs are detected, not decrypted.
 - ZUGFeRD 1.0 is read only, and written back as Factur-X.
 - For EXTENDED-CTC-FR, only the CII syntax rules of the FNFE schematron are applied, not its business rules (BR-FREXT).

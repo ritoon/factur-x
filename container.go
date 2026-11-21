@@ -774,6 +774,13 @@ type EmbedOptions struct {
 	// can verify without rendering, and a PDF/A validator such as veraPDF
 	// checks the rest.
 	RequirePDFA bool
+	// ConvertPDFA converts a host PDF whose XMP metadata does not declare
+	// PDF/A-2, PDF/A-3 or PDF/A-4 with ConvertPDFA before embedding the
+	// invoice; a host that declares it is kept as is. When the conversion
+	// fails, Embed fails with its error, which wraps ErrNotConvertible.
+	// ModDate is the date of the conversion. RequirePDFA is then met by
+	// the converted host.
+	ConvertPDFA bool
 }
 
 // File is a supplementary file that Embed attaches to the PDF besides the
@@ -997,10 +1004,12 @@ func putFile(u *pdf.Update, name, desc, rel, mime string, date time.Time, data [
 // Embed fails when EmbedOptions.Relationship does not fit the profile or,
 // for Data and Source, the seller's country (see EmbedOptions).
 //
-// Embed does not convert the PDF to PDF/A: fonts, colour spaces and output
-// intents are left as they are. CheckContainer reports what is missing.
-// With EmbedOptions.RequirePDFA, Embed refuses a host that does not declare
-// PDF/A-2, PDF/A-3 or PDF/A-4, with an error wrapping ErrNotPDFA. Nor
+// Embed does not convert the PDF to PDF/A unless EmbedOptions.ConvertPDFA
+// is set: fonts, colour spaces and output intents are left as they are, and
+// CheckContainer reports what is missing. With EmbedOptions.RequirePDFA,
+// Embed refuses a host that does not declare PDF/A-2, PDF/A-3 or PDF/A-4,
+// with an error wrapping ErrNotPDFA. With EmbedOptions.ConvertPDFA, such a
+// host is first converted to PDF/A-3 by ConvertPDFA. Nor
 // does it validate the XML: only BT-24 is read, when Profile is unset, and
 // the seller's country (BT-40), when Relationship is Data or Source for
 // BASIC and above.
@@ -1053,6 +1062,14 @@ func Embed(pdfData, xml []byte, opts *EmbedOptions) ([]byte, error) {
 	c, err := openContainer(pdfData)
 	if err != nil {
 		return nil, err
+	}
+	if o.ConvertPDFA && c.requirePDFA() != nil {
+		if pdfData, err = ConvertPDFA(pdfData, &ConvertOptions{ModDate: o.ModDate}); err != nil {
+			return nil, err
+		}
+		if c, err = openContainer(pdfData); err != nil {
+			return nil, err
+		}
 	}
 	if o.RequirePDFA {
 		if err := c.requirePDFA(); err != nil {

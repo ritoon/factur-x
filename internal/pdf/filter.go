@@ -70,6 +70,22 @@ func (r *Reader) decode(s *Stream, hint int) ([]byte, error) {
 			if data, err = r.unpredict(data, parm); err != nil {
 				return nil, err
 			}
+		case "LZWDecode", "LZW":
+			early := true
+			if v, ok := AsInt(r.Resolve(parm.Get("EarlyChange"))); ok {
+				early = v != 0
+			}
+			data, err = lzwDecode(data, early)
+			if err != nil {
+				return data, err
+			}
+			if data, err = r.unpredict(data, parm); err != nil {
+				return nil, err
+			}
+		case "RunLengthDecode", "RL":
+			if data, err = runLengthDecode(data); err != nil {
+				return nil, err
+			}
 		case "ASCIIHexDecode", "AHx":
 			data = asciiHexDecode(data)
 		case "ASCII85Decode", "A85":
