@@ -373,17 +373,19 @@ Le lecteur XML est lui aussi écrit pour ce package : un seul passage sur les oc
 
 ## Performances
 
-Apple M4 Pro, Go 1.26, 16/11/2026. Comparaison avec le plus rapide des autres packages Go qui réussit l'opération ; tableaux complets dans [bench/ecosystem/results/2026-11-16/tables.md](bench/ecosystem/results/2026-11-16/tables.md). Le contrôle complet a été remesuré le 17/11/2026 (Go 1.26.4), après l'ajout des contrôles PDF/A du conteneur (polices, JavaScript et actions, `/Info`, LZW).
+Apple M4 Pro, Go 1.26.4, 17/11/2026, version v0.1.0. Comparaison avec le plus rapide des autres packages Go qui réussit l'opération ; tableaux complets dans [bench/ecosystem/results/2026-11-17/tables.md](bench/ecosystem/results/2026-11-17/tables.md).
 
 | Opération | ZeRechnung | Meilleur autre package Go |
 |---|---|---|
-| Extraction du XML (PDF de 149 Ko) | 28 µs | 75 µs (speedata) |
-| Lecture XML → modèle (13 Ko) | 15 µs | 126 µs (fX) |
-| Lecture et validation complète (13 Ko) | 23 µs | 132 µs (pdf0 + formalis, sans règles françaises) |
-| Lecture et validation complète (1,3 Mo, pièces jointes base64) | 744 µs | 7,01 ms (angelo) |
-| Écriture modèle → XML (13 Ko) | 2,7 µs | 20,7 µs (fX) |
-| Injection dans un PDF à flux xref | 80 µs | 543 µs (pdfcpu) |
-| Contrôle complet d'un PDF hybride (149 Ko) | 68 µs | 1,18 ms (DCNWS) |
+| Extraction du XML (PDF de 149 Ko) | 30 µs | 75 µs (speedata) |
+| Lecture XML → modèle (13 Ko) | 17 µs | 124 µs (fX) |
+| Lecture et validation complète (13 Ko) | 24 µs | 126 µs (pdf0 + formalis, sans règles françaises) |
+| Lecture et validation complète (1,3 Mo, pièces jointes base64) | 742 µs | 6,81 ms (pdf0 + formalis) |
+| Écriture modèle → XML (13 Ko) | 3,0 µs | 20,2 µs (fX) |
+| Injection dans un PDF à flux xref | 89 µs | 522 µs (pdf0) |
+| Contrôle complet d'un PDF hybride (149 Ko) | 74 µs | 1,14 ms (DCNWS) |
+
+Avec les règles françaises BR-FR, la lecture et la validation complète d'une facture de 13 Ko prennent 34 µs.
 
 Le harnais est dans [bench/ecosystem](bench/ecosystem) ; chaque librairie y a son propre module.
 
