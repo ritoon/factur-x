@@ -100,7 +100,7 @@ func TestCheckContainer(t *testing.T) {
 		{"PDF/A-4 without rev", pdfa4(func(f *fixture) { f.xmp = replaced(f.xmp, "<pdfaid:rev>2020</pdfaid:rev>", "") }), "PDF-29"},
 		{"PDF/A-4 bad rev", pdfa4(func(f *fixture) { f.xmp = replaced(f.xmp, "<pdfaid:rev>2020<", "<pdfaid:rev>20<") }), "PDF-29"},
 		{"PDF/A-4 in PDF 1.7", pdfa4(func(f *fixture) { f.version = "1.7" }), "PDF-30"},
-		{"PDF/A-3 in PDF 2.0", mod(func(f *fixture) { f.version = "2.0" }), "PDF-30"},
+		{"PDF/A-3 in PDF 2.0", mod(func(f *fixture) { f.version = "2.0" }), "PDF-30,PDF-41"},
 		{"PDF/A-1", mod(func(f *fixture) { f.xmp = replaced(f.xmp, "<pdfaid:part>3<", "<pdfaid:part>1<") }), "PDF-04"},
 		{"no part", mod(func(f *fixture) { f.xmp = replaced(f.xmp, "<pdfaid:part>3</pdfaid:part>", "") }), "PDF-04"},
 		{"no output intent", mod(func(f *fixture) { f.noOutputIntent = true }), "PDF-06"},
@@ -359,6 +359,12 @@ func TestCheckContainerPDFA(t *testing.T) {
 		})
 	}
 	js := "<< /S /JavaScript /JS (app.alert\\(1\\)) >>"
+	// appearance returns the flags and the appearance dictionary PDF/A
+	// requires from an annotation (PDF-62, PDF-63).
+	appearance := func(b *pdftest.Builder) string {
+		return fmt.Sprintf("/F 4 /AP << /N %d 0 R >>", b.AddStream("<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] >>", nil))
+	}
+	const widths = "/FirstChar 32 /LastChar 33 /Widths [250 300]"
 
 	for _, tc := range []struct {
 		name  string
@@ -368,16 +374,16 @@ func TestCheckContainerPDFA(t *testing.T) {
 		// PDF-31: embedded fonts.
 		{"standard font not embedded", pageFont(font("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")), "PDF-31"},
 		{"embedded TrueType font", pageFont(func(b *pdftest.Builder) string {
-			return fmt.Sprintf("<< /Type /Font /Subtype /TrueType /BaseFont /ABCDEF+Arial /FontDescriptor %d 0 R >>", descriptor(b, "FontFile2"))
+			return fmt.Sprintf("<< /Type /Font /Subtype /TrueType /BaseFont /ABCDEF+Arial /Encoding /WinAnsiEncoding %s /FontDescriptor %d 0 R >>", widths, descriptor(b, "FontFile2"))
 		}), ""},
 		{"embedded CFF font", pageFont(func(b *pdftest.Builder) string {
-			return fmt.Sprintf("<< /Type /Font /Subtype /Type1 /BaseFont /ABCDEF+Font /FontDescriptor %d 0 R >>", descriptor(b, "FontFile3"))
+			return fmt.Sprintf("<< /Type /Font /Subtype /Type1 /BaseFont /ABCDEF+Font %s /FontDescriptor %d 0 R >>", widths, descriptor(b, "FontFile3"))
 		}), ""},
 		{"descriptor without font file", pageFont(func(b *pdftest.Builder) string {
-			return fmt.Sprintf("<< /Type /Font /Subtype /TrueType /BaseFont /Arial /FontDescriptor %d 0 R >>", descriptor(b, ""))
+			return fmt.Sprintf("<< /Type /Font /Subtype /TrueType /BaseFont /Arial /Encoding /WinAnsiEncoding %s /FontDescriptor %d 0 R >>", widths, descriptor(b, ""))
 		}), "PDF-31"},
 		{"embedded composite font", pageFont(func(b *pdftest.Builder) string {
-			cid := b.Add(fmt.Sprintf("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /ABCDEF+Arial /FontDescriptor %d 0 R >>", descriptor(b, "FontFile2")))
+			cid := b.Add(fmt.Sprintf("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /ABCDEF+Arial /CIDToGIDMap /Identity /FontDescriptor %d 0 R >>", descriptor(b, "FontFile2")))
 			return fmt.Sprintf("<< /Type /Font /Subtype /Type0 /BaseFont /ABCDEF+Arial /Encoding /Identity-H /DescendantFonts [%d 0 R] >>", cid)
 		}), ""},
 		{"composite font not embedded", pageFont(func(b *pdftest.Builder) string {
@@ -389,7 +395,7 @@ func TestCheckContainerPDFA(t *testing.T) {
 			return "", fmt.Sprintf("/Resources << /XObject << /X1 %d 0 R >> >>", form(b))
 		}), "PDF-31"},
 		{"font of an annotation appearance", extra(func(b *pdftest.Builder) (string, string) {
-			return "", fmt.Sprintf("/Annots [<< /Type /Annot /Subtype /FreeText /Rect [0 0 1 1] /AP << /N %d 0 R >> >>]", form(b))
+			return "", fmt.Sprintf("/Annots [<< /Type /Annot /Subtype /FreeText /Rect [0 0 1 1] /F 4 /AP << /N %d 0 R >> >>]", form(b))
 		}), "PDF-31"},
 		{"inherited resources", mod(func(f *fixture) {
 			f.pagesExtra = " /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >>"
@@ -407,8 +413,8 @@ func TestCheckContainerPDFA(t *testing.T) {
 		{"forbidden named action", catalog("/OpenAction << /S /Named /N /Print >>"), "PDF-33"},
 		{"chained ImportData action", catalog("/OpenAction << /S /GoTo /D [3 0 R /Fit] /Next << /S /ImportData /F (data.fdf) >> >>"), "PDF-33"},
 		{"chain of actions", catalog("/OpenAction << /S /GoTo /D [3 0 R /Fit] /Next [<< /S /URI /URI (https://example.com) >> << /S /ResetForm >>] >>"), "PDF-33"},
-		{"Launch link", page("/Annots [<< /Type /Annot /Subtype /Link /Rect [0 0 1 1] /A << /S /Launch /F (calc.exe) >> >>]"), "PDF-33"},
-		{"URI link", page("/Annots [<< /Type /Annot /Subtype /Link /Rect [0 0 1 1] /A << /S /URI /URI (https://example.com) >> >>]"), ""},
+		{"Launch link", page("/Annots [<< /Type /Annot /Subtype /Link /Rect [0 0 1 1] /F 4 /A << /S /Launch /F (calc.exe) >> >>]"), "PDF-33"},
+		{"URI link", page("/Annots [<< /Type /Annot /Subtype /Link /Rect [0 0 1 1] /F 4 /A << /S /URI /URI (https://example.com) >> >>]"), ""},
 		{"outline action", extra(func(b *pdftest.Builder) (string, string) {
 			root, item := b.Reserve(), b.Reserve()
 			b.Set(root, fmt.Sprintf("<< /Type /Outlines /First %d 0 R /Last %d 0 R /Count 1 >>", item, item))
@@ -419,13 +425,13 @@ func TestCheckContainerPDFA(t *testing.T) {
 		{"page additional actions", page("/AA << /O << /S /GoTo /D [3 0 R /Fit] >> >>"), "PDF-34"},
 		{"widget additional actions", extra(func(b *pdftest.Builder) (string, string) {
 			// A field merged with its widget is reported once.
-			w := b.Add("<< /Type /Annot /Subtype /Widget /FT /Tx /T (amount) /Rect [0 0 1 1] /P 3 0 R /AA << /K " + js + " >> >>")
+			w := b.Add("<< /Type /Annot /Subtype /Widget /FT /Tx /T (amount) /Rect [0 0 1 1] /P 3 0 R " + appearance(b) + " /AA << /K " + js + " >> >>")
 			return fmt.Sprintf("/AcroForm << /Fields [%d 0 R] >>", w), fmt.Sprintf("/Annots [%d 0 R]", w)
 		}), "PDF-34"},
 		{"field additional actions", extra(func(b *pdftest.Builder) (string, string) {
 			parent, w := b.Reserve(), b.Reserve()
 			b.Set(parent, fmt.Sprintf("<< /FT /Tx /T (amount) /Kids [%d 0 R] /AA << /F %s >> >>", w, js))
-			b.Set(w, fmt.Sprintf("<< /Type /Annot /Subtype /Widget /Parent %d 0 R /Rect [0 0 1 1] /P 3 0 R >>", parent))
+			b.Set(w, fmt.Sprintf("<< /Type /Annot /Subtype /Widget /Parent %d 0 R /Rect [0 0 1 1] /P 3 0 R %s >>", parent, appearance(b)))
 			return fmt.Sprintf("/AcroForm << /Fields [%d 0 R] >>", parent), fmt.Sprintf("/Annots [%d 0 R]", w)
 		}), "PDF-34"},
 		{"no invoice, JavaScript", mod(func(f *fixture) {
@@ -461,7 +467,7 @@ func TestCheckContainerPDFA(t *testing.T) {
 			return "", fmt.Sprintf("/AF [%d 0 R]", spec)
 		}), ""},
 		{"other attachment in an annotation AF", listed(func(b *pdftest.Builder, spec int) (string, string) {
-			return "", fmt.Sprintf("/Annots [<< /Type /Annot /Subtype /Text /Rect [0 0 1 1] /AF [%d 0 R] >>]", spec)
+			return "", fmt.Sprintf("/Annots [<< /Type /Annot /Subtype /Text /Rect [0 0 1 1] %s /AF [%d 0 R] >>]", appearance(b), spec)
 		}), ""},
 		{"other attachment in a form XObject AF", listed(func(b *pdftest.Builder, spec int) (string, string) {
 			x := b.AddStream(fmt.Sprintf("<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] /AF [%d 0 R] >>", spec), nil)
@@ -486,12 +492,12 @@ func TestCheckContainerPDFA(t *testing.T) {
 		}), ""},
 		{"file attachment annotation", extra(func(b *pdftest.Builder) (string, string) {
 			ef := b.AddStream("<< /Type /EmbeddedFile >>", []byte("notes"))
-			return "", fmt.Sprintf("/Annots [<< /Type /Annot /Subtype /FileAttachment /Rect [0 0 1 1] /FS << /Type /Filespec /F (a.txt) /UF (a.txt) /EF << /F %d 0 R >> >> >>]", ef)
+			return "", fmt.Sprintf("/Annots [<< /Type /Annot /Subtype /FileAttachment /Rect [0 0 1 1] %s /FS << /Type /Filespec /F (a.txt) /UF (a.txt) /EF << /F %d 0 R >> >> >>]", appearance(b), ef)
 		}), "PDF-36,PDF-37,PDF-39"},
 		{"file attachment annotation with AF", extra(func(b *pdftest.Builder) (string, string) {
 			ef := b.AddStream("<< /Type /EmbeddedFile /Subtype /text#2Fplain >>", []byte("notes"))
 			fs := b.Add(fmt.Sprintf("<< /Type /Filespec /F (a.txt) /UF (a.txt) /AFRelationship /Supplement /EF << /F %d 0 R >> >>", ef))
-			return "", fmt.Sprintf("/Annots [<< /Type /Annot /Subtype /FileAttachment /Rect [0 0 1 1] /FS %d 0 R /AF [%d 0 R] >>]", fs, fs)
+			return "", fmt.Sprintf("/Annots [<< /Type /Annot /Subtype /FileAttachment /Rect [0 0 1 1] %s /FS %d 0 R /AF [%d 0 R] >>]", appearance(b), fs, fs)
 		}), ""},
 
 		// PDF-38: LZWDecode.
@@ -513,7 +519,7 @@ func TestCheckContainerPDFALimit(t *testing.T) {
 	f.extra = func(b *pdftest.Builder) (string, string) {
 		var fonts []string
 		for i := 0; i < maxReported+5; i++ {
-			fonts = append(fonts, fmt.Sprintf("/F%d %d 0 R", i, b.Add(fmt.Sprintf("<< /Type /Font /Subtype /Type1 /BaseFont /Font%d >>", i))))
+			fonts = append(fonts, fmt.Sprintf("/F%d %d 0 R", i, b.Add(fmt.Sprintf("<< /Type /Font /Subtype /Type1 /BaseFont /Font%d /FirstChar 32 /LastChar 32 /Widths [250] >>", i))))
 		}
 		return "", "/Resources << /Font << " + strings.Join(fonts, " ") + " >> >>"
 	}

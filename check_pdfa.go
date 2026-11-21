@@ -2,7 +2,9 @@ package zerechnung
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ritoon/zerechnung/internal/pdf"
@@ -61,15 +63,29 @@ type pdfaScan struct {
 	files  []*fileSpec      // file specifications of FileAttachment annotations
 	afRefs map[pdf.Ref]bool // file specifications listed in an /AF array besides the catalog's
 	counts map[string]int   // findings per rule
+
+	// The requirements of ISO 19005-2 and 19005-3 (check_pdfa_iso.go).
+	iso   bool                       // they apply: the document does not declare PDF/A-4
+	outCS string                     // colour space of the PDF/A output intent profile
+	iccs  map[pdf.Ref]iccHeader      // ICC profiles read
+	seps  map[pdf.Name][2]pdf.Object // alternate space and tint transform of the Separation colour spaces
+	xmp   xmp.Declared               // properties described by the extension schemas of the document metadata
 }
 
 // pdfa runs the PDF/A scan. invoice is the file specification of the
-// invoice attachment, checked by CheckContainer itself; it may be nil.
-func (k *containerCheck) pdfa(c *container, invoice *fileSpec) {
+// invoice attachment, checked by CheckContainer itself; it may be nil. info
+// is the XMP metadata, or nil: the requirements of ISO 19005-2 and 19005-3
+// (PDF-41 to PDF-69) apply unless it declares PDF/A-4.
+func (k *containerCheck) pdfa(c *container, invoice *fileSpec, info *xmp.Info) {
 	// fonts, afRefs and counts, rarely needed, are made on first use.
 	s := &pdfaScan{c: c, k: k, seen: map[pdf.Ref]uint16{}}
+	s.iso = info == nil || strings.TrimSpace(info.PDFAPart) != "4"
 	r := c.r
 	cat := c.catalog
+	if s.iso {
+		s.outCS = s.outputSpace()
+		s.documentLevel()
+	}
 	if s.present(cat, "AA") {
 		s.report("PDF-34", "catalog /AA", "the document catalog has an additional-actions dictionary (/AA)")
 	}
@@ -90,8 +106,18 @@ func (k *containerCheck) pdfa(c *container, invoice *fileSpec) {
 		}
 	}
 	s.embeddedFiles(invoice)
+	if s.iso {
+		s.structureNames()
+		s.metadata()
+		s.fileStructure() // last: it skips the streams the walk checked
+	}
 
-	for _, id := range []string{"PDF-31", "PDF-32", "PDF-33", "PDF-34", "PDF-36", "PDF-37", "PDF-38", "PDF-39"} {
+	ids := make([]string, 0, len(s.counts))
+	for id := range s.counts {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
 		if n := s.counts[id] - maxReported; n > 0 {
 			k.add(id, "", "%d more occurrences not listed", n)
 		}
@@ -230,8 +256,9 @@ func (s *pdfaScan) fields() {
 func (s *pdfaScan) pages() {
 	r := s.c.r
 	n := 0
-	var walk func(o, res pdf.Object, depth int)
-	walk = func(o, res pdf.Object, depth int) {
+	// inherited holds the resources and the inheritable page boundaries.
+	var walk func(o pdf.Object, inherited map[pdf.Name]pdf.Object, depth int)
+	walk = func(o pdf.Object, inherited map[pdf.Name]pdf.Object, depth int) {
 		if depth > maxScanDepth || !s.visit(o, roleNode) {
 			return
 		}
@@ -239,12 +266,20 @@ func (s *pdfaScan) pages() {
 		if !ok {
 			return
 		}
-		if x := d.Get("Resources"); x != nil {
-			res = x
+		for _, key := range []pdf.Name{"Resources", "MediaBox", "CropBox"} {
+			if x := d.Get(key); x != nil {
+				m := make(map[pdf.Name]pdf.Object, 3)
+				for k, v := range inherited {
+					m[k] = v
+				}
+				m[key] = x
+				inherited = m
+			}
 		}
+		res := inherited["Resources"]
 		if kids, ok := r.Resolve(d.Get("Kids")).(pdf.Array); ok && s.name(d, "Type") != "Page" {
 			for _, kid := range kids {
-				walk(kid, res, depth+1)
+				walk(kid, inherited, depth+1)
 			}
 			return
 		}
@@ -254,6 +289,19 @@ func (s *pdfaScan) pages() {
 		if s.present(d, "AA") {
 			s.report("PDF-34", where+" /AA", "the page has an additional-actions dictionary (/AA)")
 		}
+		var def uint8
+		if resDict, ok := r.Dict(res); ok {
+			def = s.defaults(resDict)
+		}
+		if s.iso {
+			s.pageBoxes(d, inherited, where)
+			if g, ok := r.Dict(d.Get("Group")); ok {
+				s.colourSpace(g.Get("CS"), where+" /Group /CS", def, 0)
+			}
+			if d.Has("PresSteps") {
+				s.report("PDF-69", where+" /PresSteps", "the page has presentation steps (/PresSteps), which PDF/A forbids")
+			}
+		}
 		switch contents := d.Get("Contents"); v := r.Resolve(contents).(type) {
 		case *pdf.Stream:
 			s.stream(contents, where+" /Contents")
@@ -262,7 +310,7 @@ func (s *pdfaScan) pages() {
 				s.stream(x, fmt.Sprintf("%s /Contents [%d]", where, i))
 			}
 		}
-		s.resources(res, where+" /Resources", 0)
+		s.resources(res, where+" /Resources", 0, 0)
 		if annots, ok := r.Resolve(d.Get("Annots")).(pdf.Array); ok {
 			for i, a := range annots {
 				s.annotation(a, fmt.Sprintf("%s /Annots [%d]", where, i))
@@ -286,16 +334,19 @@ func (s *pdfaScan) annotation(o pdf.Object, where string) {
 	if s.present(d, "AA") {
 		s.report("PDF-34", where+" /AA", "the annotation has an additional-actions dictionary (/AA)")
 	}
+	if s.iso {
+		s.annotationDict(d, where)
+	}
 	s.associate(d.Get("AF"))
 	s.action(d.Get("A"), where+" /A", 0)
 	if ap, ok := r.Dict(d.Get("AP")); ok {
 		for _, key := range []pdf.Name{"N", "R", "D"} {
 			x := ap.Get(key)
 			if _, ok := r.Resolve(x).(*pdf.Stream); ok {
-				s.xobject(x, where+" /AP /"+string(key), 0)
+				s.xobject(x, where+" /AP /"+string(key), 0, 0)
 			} else if states, ok := r.Resolve(x).(pdf.Dict); ok {
 				for _, st := range states {
-					s.xobject(st.Val, where+" /AP /"+string(key)+" /"+string(st.Key), 0)
+					s.xobject(st.Val, where+" /AP /"+string(key)+" /"+string(st.Key), 0, 0)
 				}
 			}
 		}
@@ -309,9 +360,10 @@ func (s *pdfaScan) annotation(o pdf.Object, where string) {
 	}
 }
 
-// resources checks the fonts, XObjects, patterns, shadings and soft masks of
-// a resource dictionary.
-func (s *pdfaScan) resources(o pdf.Object, where string, depth int) {
+// resources checks the fonts, XObjects, patterns, shadings, soft masks,
+// colour spaces and graphics states of a resource dictionary. def holds the
+// default colour spaces of the enclosing content streams.
+func (s *pdfaScan) resources(o pdf.Object, where string, depth int, def uint8) {
 	if o == nil || depth > maxScanDepth || !s.visit(o, roleResources) {
 		return
 	}
@@ -320,14 +372,15 @@ func (s *pdfaScan) resources(o pdf.Object, where string, depth int) {
 	if !ok {
 		return
 	}
+	def |= s.defaults(d)
 	if fonts, ok := r.Dict(d.Get("Font")); ok {
 		for _, f := range fonts {
-			s.font(f.Val, where+" /Font /"+string(f.Key), depth)
+			s.font(f.Val, where+" /Font /"+string(f.Key), depth, def)
 		}
 	}
 	if xobjects, ok := r.Dict(d.Get("XObject")); ok {
 		for _, x := range xobjects {
-			s.xobject(x.Val, where+" /XObject /"+string(x.Key), depth)
+			s.xobject(x.Val, where+" /XObject /"+string(x.Key), depth, def)
 		}
 	}
 	if patterns, ok := r.Dict(d.Get("Pattern")); ok {
@@ -335,15 +388,18 @@ func (s *pdfaScan) resources(o pdf.Object, where string, depth int) {
 			path := where + " /Pattern /" + string(p.Key)
 			switch v := r.Resolve(p.Val).(type) {
 			case *pdf.Stream: // tiling pattern
-				s.xobject(p.Val, path, depth)
+				s.xobject(p.Val, path, depth, def)
 			case pdf.Dict: // shading pattern
-				s.stream(v.Get("Shading"), path+" /Shading")
+				s.shading(v.Get("Shading"), path+" /Shading", def)
+				if g, ok := r.Dict(v.Get("ExtGState")); ok && s.iso {
+					s.extGState(g, path+" /ExtGState")
+				}
 			}
 		}
 	}
 	if shadings, ok := r.Dict(d.Get("Shading")); ok {
 		for _, sh := range shadings {
-			s.stream(sh.Val, where+" /Shading /"+string(sh.Key))
+			s.shading(sh.Val, where+" /Shading /"+string(sh.Key), def)
 		}
 	}
 	if props, ok := r.Dict(d.Get("Properties")); ok {
@@ -356,17 +412,41 @@ func (s *pdfaScan) resources(o pdf.Object, where string, depth int) {
 	if states, ok := r.Dict(d.Get("ExtGState")); ok {
 		for _, gs := range states {
 			if g, ok := r.Dict(gs.Val); ok {
-				if mask, ok := r.Resolve(g.Get("SMask")).(pdf.Dict); ok {
-					s.xobject(mask.Get("G"), where+" /ExtGState /"+string(gs.Key)+" /SMask /G", depth)
+				path := where + " /ExtGState /" + string(gs.Key)
+				if s.iso {
+					s.extGState(g, path)
 				}
+				if mask, ok := r.Resolve(g.Get("SMask")).(pdf.Dict); ok {
+					s.xobject(mask.Get("G"), path+" /SMask /G", depth, def)
+				}
+			}
+		}
+	}
+	if s.iso {
+		if spaces, ok := r.Dict(d.Get("ColorSpace")); ok {
+			for _, cs := range spaces {
+				s.colourSpace(cs.Val, where+" /ColorSpace /"+string(cs.Key), def, 0)
 			}
 		}
 	}
 }
 
+// shading checks the filters and the colour space of a shading.
+func (s *pdfaScan) shading(o pdf.Object, where string, def uint8) {
+	s.stream(o, where)
+	if !s.iso {
+		return
+	}
+	if d, ok := s.c.r.Dict(o); ok {
+		s.colourSpace(d.Get("ColorSpace"), where+" /ColorSpace", def, 0)
+	} else if st, ok := s.c.r.Resolve(o).(*pdf.Stream); ok {
+		s.colourSpace(st.Dict.Get("ColorSpace"), where+" /ColorSpace", def, 0)
+	}
+}
+
 // xobject checks a form or image XObject, a tiling pattern or an
 // appearance stream: its filters and, for a content stream, its resources.
-func (s *pdfaScan) xobject(o pdf.Object, where string, depth int) {
+func (s *pdfaScan) xobject(o pdf.Object, where string, depth int, def uint8) {
 	st, ok := s.c.r.Resolve(o).(*pdf.Stream)
 	if !ok {
 		return
@@ -376,32 +456,57 @@ func (s *pdfaScan) xobject(o pdf.Object, where string, depth int) {
 		return
 	}
 	s.associate(st.Dict.Get("AF"))
-	if s.name(st.Dict, "Subtype") == "Image" {
-		s.stream(st.Dict.Get("SMask"), where+" /SMask")
-		s.stream(st.Dict.Get("Mask"), where+" /Mask")
+	switch s.name(st.Dict, "Subtype") {
+	case "Image":
+		if s.iso {
+			s.image(st.Dict, where, def, imageXObject)
+		}
+		for _, m := range []struct {
+			key  pdf.Name
+			kind imageKind
+		}{{"SMask", imageSMask}, {"Mask", imageMask}} {
+			x := st.Dict.Get(m.key)
+			s.stream(x, where+" /"+string(m.key))
+			if mask, ok := s.c.r.Resolve(x).(*pdf.Stream); ok && s.iso {
+				s.image(mask.Dict, where+" /"+string(m.key), def, m.kind)
+			}
+		}
+		return
+	case "PS":
+		if s.iso {
+			s.report("PDF-57", where, "the XObject is a PostScript XObject, which PDF/A forbids")
+		}
 		return
 	}
-	s.resources(st.Dict.Get("Resources"), where+" /Resources", depth+1)
+	if s.iso {
+		s.form(st.Dict, where, def)
+	}
+	s.resources(st.Dict.Get("Resources"), where+" /Resources", depth+1, def)
 }
 
-// font checks that a font embeds its font program. Type 3 fonts, whose
-// glyphs are content streams, have none: their resources are checked
+// font checks that a font embeds its font program, and, where ISO 19005-2
+// and 19005-3 apply, its font dictionary. Type 3 fonts, whose glyphs are
+// content streams, have no font program: their resources are checked
 // instead.
-func (s *pdfaScan) font(o pdf.Object, where string, depth int) {
+func (s *pdfaScan) font(o pdf.Object, where string, depth int, def uint8) {
 	if !s.visit(o, roleFont) {
 		return
 	}
-	// The glyph widths (/Widths, /W), hundreds of numbers, are skipped.
+	// The glyph widths of a CIDFont (/W), thousands of numbers, are
+	// skipped. Those of a simple font (/Widths) are 256 at most.
 	r := s.c.r
-	d, ok := r.DictSkipArrays(o, "DescendantFonts")
+	d, ok := r.DictSkipArrays(o, "DescendantFonts", "Widths")
 	if !ok {
 		return
 	}
 	sub := s.name(d, "Subtype")
+	if s.iso {
+		s.fontDict(d, where)
+	}
 	desc := d
 	switch sub {
 	case "Type3":
-		s.resources(d.Get("Resources"), where+" /Resources", depth+1)
+		s.resources(d.Get("Resources"), where+" /Resources", depth+1, def)
 		return
 	case "Type0":
 		desc = nil
@@ -433,23 +538,16 @@ func (s *pdfaScan) font(o pdf.Object, where string, depth int) {
 	s.report("PDF-31", where, "font %q (%s) is not embedded: its font descriptor has no /FontFile, /FontFile2 or /FontFile3", name, sub)
 }
 
-// stream checks the filters of a stream: PDF/A forbids LZWDecode.
+// stream checks the filters of a stream (6.1.7.2).
 func (s *pdfaScan) stream(o pdf.Object, where string) {
-	r := s.c.r
-	st, ok := r.Resolve(o).(*pdf.Stream)
+	st, ok := s.c.r.Resolve(o).(*pdf.Stream)
 	if !ok || !s.visit(o, roleStream) {
 		return
 	}
-	var filters pdf.Array
-	switch f := r.Resolve(st.Dict.Get("Filter")).(type) {
-	case pdf.Name:
-		filters = pdf.Array{f}
-	case pdf.Array:
-		filters = f
-	}
-	for _, f := range filters {
-		if n, _ := r.Resolve(f).(pdf.Name); n == "LZWDecode" || n == "LZW" {
-			s.report("PDF-38", where, "the stream uses the LZWDecode filter, which PDF/A forbids")
+	names, parms := s.filters(st.Dict)
+	for i, f := range names {
+		if msg := s.filterIssue(f, parms[i]); msg != "" {
+			s.report("PDF-38", where, "%s", msg)
 			return
 		}
 	}

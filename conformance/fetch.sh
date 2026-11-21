@@ -44,6 +44,11 @@ fetch_git "$DEST/peppol-bis-invoice-3" https://github.com/OpenPEPPOL/peppol-bis-
 RFE_COMMIT=97ba0f3d4ef2abed5780e9490d5c3a2be832ab1d
 fetch_git "$DEST/France_RFE" https://github.com/fnfempe/France_RFE.git "$RFE_COMMIT"
 
+# veraPDF corpus, staging branch (CC BY 4.0): the PDF/A-2b and PDF/A-3b test
+# files only (FX_VERAPDF).
+VERAPDF_COMMIT=bb75f4f0073d9350dfd058c0162a367e6fadf25e
+fetch_git_sparse "$DEST/verapdf-corpus" https://github.com/veraPDF/veraPDF-corpus.git "$VERAPDF_COMMIT" PDF_A-2b PDF_A-3b
+
 # Artefacts of the Dutch rules (FX_NL, FX_NL_TESTS), pinned in fetch-nl.sh,
 # which the CI workflow runs alone.
 "$here/fetch-nl.sh" "$DEST"
@@ -148,5 +153,6 @@ vars=(
 	"FX_XSD=$DEST/xsd"
 	"FX_XSD_DIR=$DEST/xsd"
 	"FX_FACTURX_SCH=$DEST/facturx-sch"
+	"FX_VERAPDF=$DEST/verapdf-corpus"
 )
 export_vars "${vars[@]}"
